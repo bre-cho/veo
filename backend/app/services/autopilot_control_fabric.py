@@ -207,6 +207,7 @@ def run_autopilot_cycle(db: Session, *, actor: str = "autopilot-bot", now: datet
     escalations.extend(run_escalation_policy(db, evaluation=evaluation, actor=actor, now=now))
     release_actions = run_release_unblocking_policy(db, evaluation=evaluation, actor=actor, now=now)
     provider_actions = run_provider_override_expiry_policy(db, actor=actor, now=now)
+    ml_recommendations = run_ml_recommendation_layer(db, actor=actor, now=now)
 
     if executed:
         send_notification_event(db, event_type="autopilot_executed", payload={"executed": executed, "evaluated_at": now.isoformat()})
@@ -227,6 +228,7 @@ def run_autopilot_cycle(db: Session, *, actor: str = "autopilot-bot", now: datet
         "escalations": escalations,
         "release_actions": release_actions,
         "provider_actions": provider_actions,
+        "ml_recommendations": ml_recommendations,
     }
 
 
@@ -379,3 +381,67 @@ def _write_autopilot_audit(
         "execution_status": row.execution_status,
         "recommendation_key": recommendation_key,
     }
+
+
+def run_ml_recommendation_layer(
+    db: Session,
+    *,
+    actor: str,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Run ML-based render risk predictions for queued jobs.
+
+    Produces lightweight recommendation entries that inform the autopilot
+    result payload without triggering hard actuations.
+    Returns a list of prediction dicts (one per queued job, up to 10).
+    """
+    from app.core.config import settings as _s
+    if not _s.ml_enabled:
+        return []
+
+    try:
+        from app.models.render_job import RenderJob
+        from app.services.ml.render_predictor import get_predictor
+
+        predictor = get_predictor(model_path=_s.ml_model_path)
+        if not predictor.is_trained:
+            return []
+
+        queued_jobs = (
+            db.query(RenderJob)
+            .filter(RenderJob.status == "queued")
+            .order_by(RenderJob.created_at.asc())
+            .limit(10)
+            .all()
+        )
+        if not queued_jobs:
+            return []
+
+        now_local = now or _utcnow()
+        results = []
+        for job in queued_jobs:
+            features = {
+                "planned_scene_count": job.planned_scene_count or 0,
+                "provider_veo": int(job.provider == "veo"),
+                "provider_runway": int(job.provider == "runway"),
+                "provider_kling": int(job.provider == "kling"),
+                "provider_other": int(job.provider not in ("veo", "runway", "kling")),
+                "hour_of_day": (job.created_at or now_local).hour,
+                "day_of_week": (job.created_at or now_local).weekday(),
+            }
+            scores = predictor.predict(features)
+            entry: dict[str, Any] = {
+                "job_id": job.id,
+                "fail_risk": scores["fail_risk"],
+                "slow_render": scores["slow_render"],
+            }
+            if scores["fail_risk"] >= 0.7:
+                entry["alert"] = "high_fail_risk"
+            elif scores["slow_render"] >= 0.7:
+                entry["alert"] = "slow_render_expected"
+            results.append(entry)
+        return results
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("ML recommendation layer error: %s", exc)
+        return []
