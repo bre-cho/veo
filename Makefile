@@ -1,4 +1,4 @@
-.PHONY: bootstrap up down logs backend-logs frontend-logs health test-backend tree smoke-sign-runway smoke-sign-kling smoke-sign-veo e2e-up e2e-test e2e-local e2e-down e2e-reset-state ci-e2e ci-report
+.PHONY: bootstrap up down logs backend-logs frontend-logs health test-backend tree smoke-sign-runway smoke-sign-kling smoke-sign-veo e2e-up e2e-test e2e-local e2e-down e2e-reset-state ci-e2e ci-report production-readiness
 
 E2E_BACKEND_SCHEMA_BOOTSTRAP ?= metadata-create-all
 
@@ -77,6 +77,9 @@ ci-e2e:
 
 ci-report:
 	python scripts/ci/export_fail_fast_report.py
+
+production-readiness:
+	bash ./scripts/production_readiness_test.sh
 
 ci-e2e-matrix:
 	mkdir -p artifacts/playwright artifacts/ci
