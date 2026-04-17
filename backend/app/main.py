@@ -33,6 +33,8 @@ from app.api.template_extraction import router as template_extraction_router
 from app.api.template_governance_scheduling import router as template_governance_scheduling_router
 from app.api.google_accounts import router as google_accounts_router
 from app.api.ai_engine import router as ai_engine_router
+from app.api.rag_chat import router as rag_chat_router
+from app.api.ml_recommendation import router as ml_recommendation_router
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -92,6 +94,8 @@ app.include_router(template_extraction_router)
 app.include_router(template_governance_scheduling_router)
 app.include_router(google_accounts_router)
 app.include_router(ai_engine_router)
+app.include_router(rag_chat_router)
+app.include_router(ml_recommendation_router)
 
 
 @app.get("/", tags=["root"])
