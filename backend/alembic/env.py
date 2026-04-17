@@ -30,6 +30,8 @@ from app.db.base import Base
 from app.models.provider_webhook_event import ProviderWebhookEvent
 from app.models.render_job import RenderJob
 from app.models.render_scene_task import RenderSceneTask
+from app.models.rag_document import RagDocument
+from app.models.ml_recommendation_log import MlRecommendationLog
 
 
 target_metadata = Base.metadata

@@ -97,5 +97,32 @@ class Settings(BaseModel):
     celery_worker_prefetch_multiplier: int = _get_int("CELERY_WORKER_PREFETCH_MULTIPLIER", 1)
     celery_task_acks_late: bool = _get_bool("CELERY_TASK_ACKS_LATE", True)
 
+    # RAG / Embedding settings
+    rag_enabled: bool = _get_bool("RAG_ENABLED", True)
+    rag_chunk_size: int = _get_int("RAG_CHUNK_SIZE", 400)
+    rag_chunk_overlap: int = _get_int("RAG_CHUNK_OVERLAP", 80)
+    rag_top_k: int = _get_int("RAG_TOP_K", 5)
+    rag_embedding_backend: str = os.getenv("RAG_EMBEDDING_BACKEND", "tfidf")  # "tfidf" | "openrouter"
+    rag_embedding_model: str = os.getenv("RAG_EMBEDDING_MODEL", "openai/text-embedding-ada-002")
+    rag_vector_store_path: str = os.getenv("RAG_VECTOR_STORE_PATH", "/app/storage/rag_index.json")
+    rag_docs_root: str = os.getenv("RAG_DOCS_ROOT", "docs")
+    rag_llm_system_prompt: str = os.getenv(
+        "RAG_LLM_SYSTEM_PROMPT",
+        "You are an operations assistant for the Render Factory platform. "
+        "Answer questions ONLY using the provided context passages. "
+        "If the answer is not found in the context, say 'I don't have enough context to answer that.' "
+        "Do not speculate or fabricate information.",
+    )
+
+    # ML / prediction settings
+    ml_enabled: bool = _get_bool("ML_ENABLED", True)
+    ml_model_path: str = os.getenv("ML_MODEL_PATH", "/app/storage/ml_render_predictor.json")
+    ml_min_training_samples: int = _get_int("ML_MIN_TRAINING_SAMPLES", 10)
+    ml_feature_lookback_days: int = _get_int("ML_FEATURE_LOOKBACK_DAYS", 30)
+
+    # LLM function calling
+    llm_function_calling_enabled: bool = _get_bool("LLM_FUNCTION_CALLING_ENABLED", True)
+    llm_max_tool_calls_per_request: int = _get_int("LLM_MAX_TOOL_CALLS_PER_REQUEST", 5)
+
 
 settings = Settings()

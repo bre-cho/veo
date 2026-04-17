@@ -7,6 +7,8 @@ flower
 google-genai
 httpx
 kombu
+numpy>=2.2.5
+pandas>=2.2.3
 psycopg[binary]
 PyJWT
 pydantic
@@ -15,5 +17,6 @@ python-dotenv
 python-multipart
 pytest
 redis
+scikit-learn>=1.6.1
 sqlalchemy
 uvicorn[standard]
