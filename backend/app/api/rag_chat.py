@@ -30,7 +30,6 @@ from app.services.ai_engine_service import get_ai_engine_config
 from app.services.rag.retrieval_service import (
     add_text_to_index,
     build_index_from_directory,
-    retrieve_and_assemble,
     _get_store,
 )
 

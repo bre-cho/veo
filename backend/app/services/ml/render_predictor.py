@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +24,6 @@ from app.services.ml.feature_engineering import (
     build_job_features,
     normalize_matrix,
     to_feature_matrix,
-    train_inference_split,
 )
 
 logger = logging.getLogger(__name__)
@@ -209,7 +207,7 @@ def train_predictor_from_db(
     min_samples: int = 10,
 ) -> dict[str, Any]:
     """Train the RenderPredictor from DB data and optionally persist it."""
-    from app.services.ml.feature_engineering import load_jobs_dataframe, build_job_features, train_inference_split
+    from app.services.ml.feature_engineering import load_jobs_dataframe, train_inference_split
 
     df_raw = load_jobs_dataframe(db, lookback_days=lookback_days)
     if len(df_raw) < min_samples:

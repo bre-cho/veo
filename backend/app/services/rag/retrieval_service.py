@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from app.services.rag.document_chunker import DocumentChunk, chunk_directory, chunk_text
+from app.services.rag.document_chunker import chunk_directory, chunk_text
 from app.services.rag.embedder import BaseEmbedder, TFIDFEmbedder, get_embedder
 from app.services.rag.vector_store import SearchResult, VectorStore
 
