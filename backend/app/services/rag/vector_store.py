@@ -111,28 +111,52 @@ class VectorStore:
     # ── Persistence ───────────────────────────────────────────────────────────
 
     def save(self, path: str | Path) -> None:
-        """Serialise the store to a JSON file."""
+        """Serialise the store: metadata to a JSON sidecar, vectors to a binary .npy file.
+
+        The ``.npy`` format is 10–100× faster to read/write than JSON for large
+        matrices and avoids the precision loss of ``float.tolist()``.
+        """
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {
-            "metadata": self._metadata,
-            "vectors": self._vectors.tolist() if self._vectors is not None else [],
-        }
-        p.write_text(json.dumps(payload), encoding="utf-8")
+        meta_path = p.with_suffix(".meta.json")
+        npy_path = p.with_suffix(".npy")
+        meta_path.write_text(json.dumps(self._metadata), encoding="utf-8")
+        if self._vectors is not None:
+            np.save(str(npy_path), self._vectors)
+        elif npy_path.exists():
+            npy_path.unlink()
         logger.info("VectorStore saved: %d chunks to %s", len(self._metadata), p)
 
     def load(self, path: str | Path) -> bool:
-        """Load store from a JSON file. Returns True on success."""
+        """Load store from disk.  Supports both the new ``.npy`` binary format and
+        the legacy single-JSON format for backwards compatibility.
+        """
         p = Path(path)
-        if not p.exists():
-            return False
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            self._metadata = data.get("metadata", [])
-            vecs = data.get("vectors", [])
-            self._vectors = np.array(vecs, dtype=np.float32) if vecs else None
-            logger.info("VectorStore loaded: %d chunks from %s", len(self._metadata), p)
-            return True
-        except Exception as exc:
-            logger.warning("Failed to load VectorStore from %s: %s", p, exc)
-            return False
+        meta_path = p.with_suffix(".meta.json")
+        npy_path = p.with_suffix(".npy")
+
+        # --- New binary format ---
+        if meta_path.exists():
+            try:
+                self._metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+                self._vectors = np.load(str(npy_path), allow_pickle=False) if npy_path.exists() else None
+                logger.info("VectorStore loaded: %d chunks from %s", len(self._metadata), p)
+                return True
+            except Exception as exc:
+                logger.warning("Failed to load VectorStore (binary) from %s: %s", p, exc)
+                return False
+
+        # --- Legacy JSON format (single file) ---
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                self._metadata = data.get("metadata", [])
+                vecs = data.get("vectors", [])
+                self._vectors = np.array(vecs, dtype=np.float32) if vecs else None
+                logger.info("VectorStore loaded (legacy JSON): %d chunks from %s", len(self._metadata), p)
+                return True
+            except Exception as exc:
+                logger.warning("Failed to load VectorStore from %s: %s", p, exc)
+                return False
+
+        return False

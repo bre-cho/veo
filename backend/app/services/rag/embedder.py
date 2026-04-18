@@ -124,6 +124,28 @@ class TFIDFEmbedder(BaseEmbedder):
         obj._is_fitted = data.get("is_fitted", False)
         return obj
 
+    def save(self, path: str | Path) -> None:
+        """Persist vocabulary and IDF weights to a JSON file."""
+        import json as _json
+        p = Path(path) if not hasattr(path, "write_text") else path  # type: ignore[attr-defined]
+        from pathlib import Path as _Path
+        p = _Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json.dumps(self.to_dict()), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path) -> "TFIDFEmbedder | None":
+        """Load a persisted embedder from disk.  Returns ``None`` if the file is missing."""
+        import json as _json
+        from pathlib import Path as _Path
+        p = _Path(path)
+        if not p.exists():
+            return None
+        try:
+            return cls.from_dict(_json.loads(p.read_text(encoding="utf-8")))
+        except Exception:
+            return None
+
 
 # ── OpenRouter embeddings ─────────────────────────────────────────────────────
 

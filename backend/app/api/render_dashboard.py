@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -31,6 +31,80 @@ from app.services.render_console_explainability import evaluate_bulk_guardrails,
 router = APIRouter(prefix="/api/v1/render/dashboard", tags=["render-dashboard"])
 
 
+class CombinedDashboardResponse(BaseModel):
+    """Single response containing all four data sets polled by the dashboard UI.
+
+    Replaces the four individual requests:
+      GET /summary
+      GET /jobs
+      GET /incidents/recent
+      GET /incidents/metrics
+    """
+    summary: RenderDashboardSummaryResponse
+    jobs: RenderJobListPage
+    incidents: RecentIncidentsResponse
+    segment_metrics: IncidentSegmentMetricsResponse
+
+
+@router.get("/combined", response_model=CombinedDashboardResponse)
+async def combined_dashboard(
+    limit: int = Query(50, ge=1, le=200),
+    provider: str | None = Query(None),
+    health_status: str | None = Query(None),
+    incident_limit: int = Query(50, ge=1, le=200),
+    segment: str | None = Query(None),
+    show_muted: bool = Query(False),
+    assigned_to: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> CombinedDashboardResponse:
+    """Aggregate endpoint: returns summary + jobs + incidents + segment metrics in one round-trip."""
+    summary_data = get_render_dashboard_summary(db)
+
+    q = db.query(RenderJob).order_by(RenderJob.created_at.desc())
+    if provider:
+        q = q.filter(RenderJob.provider == provider)
+    if health_status:
+        q = q.filter(RenderJob.health_status == health_status)
+    job_rows = q.limit(limit).all()
+    jobs_page = RenderJobListPage(
+        items=[
+            RenderJobListItem(
+                id=j.id,
+                project_id=j.project_id,
+                provider=j.provider,
+                status=j.status,
+                health_status=j.health_status,
+                health_reason=j.health_reason,
+                aspect_ratio=j.aspect_ratio,
+                style_preset=j.style_preset,
+                subtitle_mode=j.subtitle_mode,
+                planned_scene_count=j.planned_scene_count,
+                processing_scene_count=j.processing_scene_count,
+                succeeded_scene_count=j.completed_scene_count,
+                failed_scene_count_snapshot=j.failed_scene_count_snapshot,
+                stalled_scene_count=j.stalled_scene_count,
+                degraded_scene_count=j.degraded_scene_count,
+                active_scene_count=j.active_scene_count,
+                created_at=j.created_at,
+                updated_at=j.updated_at,
+                last_event_at=j.last_event_at,
+                last_health_transition_at=j.last_health_transition_at,
+            )
+            for j in job_rows
+        ],
+        total=len(job_rows),
+        limit=limit,
+    )
+
+    incidents_data = get_recent_incidents(db, limit=incident_limit, provider=provider, segment=segment, show_muted=show_muted, assigned_to=assigned_to)
+    metrics_data = get_incident_segment_metrics(db, provider=provider, show_muted=show_muted, assignee=assigned_to)
+
+    return CombinedDashboardResponse(
+        summary=RenderDashboardSummaryResponse(**summary_data),
+        jobs=jobs_page,
+        incidents=RecentIncidentsResponse(**incidents_data),
+        segment_metrics=IncidentSegmentMetricsResponse(**metrics_data),
+    )
 
 
 @router.get("/access-profiles", response_model=RenderAccessProfileListResponse)

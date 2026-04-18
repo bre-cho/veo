@@ -99,19 +99,18 @@ def find_scene_by_provider_refs(
     provider_task_id: str | None,
     provider_operation_name: str | None,
 ) -> RenderSceneTask | None:
-    query = db.query(RenderSceneTask).filter(RenderSceneTask.provider == provider)
-
+    if not provider_task_id and not provider_operation_name:
+        return None
+    conditions = []
     if provider_task_id:
-        found = query.filter(RenderSceneTask.provider_task_id == provider_task_id).first()
-        if found:
-            return found
-
+        conditions.append(RenderSceneTask.provider_task_id == provider_task_id)
     if provider_operation_name:
-        found = query.filter(RenderSceneTask.provider_operation_name == provider_operation_name).first()
-        if found:
-            return found
-
-    return None
+        conditions.append(RenderSceneTask.provider_operation_name == provider_operation_name)
+    return (
+        db.query(RenderSceneTask)
+        .filter(RenderSceneTask.provider == provider, or_(*conditions))
+        .first()
+    )
 
 
 def list_queued_scene_tasks(db: Session, job_id: str) -> list[RenderSceneTask]:
@@ -195,7 +194,7 @@ def mark_job_status(
     if error_message is not None:
         job.error_message = error_message
 
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -208,8 +207,9 @@ def mark_job_status(
         new_state=status,
         reason=reason or error_message,
         metadata=metadata,
+        _flush_only=True,
     )
-    append_timeline_event(
+    timeline_event = append_timeline_event(
         db,
         job_id=job.id,
         scene_task_id=None,
@@ -220,7 +220,9 @@ def mark_job_status(
         provider=job.provider,
         error_message=error_message,
         payload={"old_status": current_status, "reason": reason, **(metadata or {})},
+        _flush_only=True,
     )
+    db.commit()
     refresh_render_job_health_snapshot(db, get_render_job_by_id(db, job.id, with_scenes=True) or job)
 
     return True
@@ -235,7 +237,6 @@ def finalize_render_job(
     final_timeline: dict,
     source: str = "postprocess",
 ) -> bool:
-    db.refresh(job)
     old_status = job.status
 
     try:
@@ -258,7 +259,7 @@ def finalize_render_job(
     job.final_video_path = final_video_path
     job.final_timeline_json = _json_dumps(final_timeline)
 
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -274,7 +275,9 @@ def finalize_render_job(
             "final_video_url": final_video_url,
             "final_video_path": final_video_path,
         },
+        _flush_only=True,
     )
+    db.commit()
 
     return True
 
@@ -324,7 +327,7 @@ def mark_scene_submitted(
     scene.provider_callback_url = provider_callback_url
     scene.submitted_at = scene.submitted_at or datetime.now(timezone.utc).replace(tzinfo=None)
     scene.response_payload_json = _json_dumps(raw_response or {})
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -343,8 +346,10 @@ def mark_scene_submitted(
             "provider_request_id": provider_request_id,
             "provider_model": provider_model,
         },
+        _flush_only=True,
     )
-    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=source, event_type='scene_submitted', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload={"title": scene.title})
+    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=source, event_type='scene_submitted', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload={"title": scene.title}, _flush_only=True)
+    db.commit()
     refresh_render_job_health_snapshot(db, get_render_job_by_id(db, scene.job_id, with_scenes=True) or scene.job)
 
     return True
@@ -391,7 +396,7 @@ def transition_scene_to_processing(
     if raw_response is not None:
         scene.response_payload_json = _json_dumps(raw_response)
 
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -407,8 +412,10 @@ def transition_scene_to_processing(
             "provider": scene.provider,
             "provider_status_raw": provider_status_raw,
         },
+        _flush_only=True,
     )
-    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type='scene_processing', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload=metadata or {})
+    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type='scene_processing', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload=metadata or {}, _flush_only=True)
+    db.commit()
     refresh_render_job_health_snapshot(db, get_render_job_by_id(db, scene.job_id, with_scenes=True) or scene.job)
 
     return True
@@ -464,7 +471,7 @@ def transition_scene_to_succeeded(
     if raw_response is not None:
         scene.response_payload_json = _json_dumps(raw_response)
 
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -482,8 +489,10 @@ def transition_scene_to_succeeded(
             "output_video_url": output_video_url,
             "output_thumbnail_url": output_thumbnail_url,
         },
+        _flush_only=True,
     )
-    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type='scene_succeeded', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload={"output_video_url": output_video_url, "output_thumbnail_url": output_thumbnail_url})
+    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type='scene_succeeded', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, payload={"output_video_url": output_video_url, "output_thumbnail_url": output_thumbnail_url}, _flush_only=True)
+    db.commit()
     refresh_render_job_health_snapshot(db, get_render_job_by_id(db, scene.job_id, with_scenes=True) or scene.job)
 
     return True
@@ -539,7 +548,7 @@ def transition_scene_to_failed(
     if raw_response is not None:
         scene.response_payload_json = _json_dumps(raw_response)
 
-    db.commit()
+    db.flush()
 
     create_state_transition_event(
         db,
@@ -557,8 +566,10 @@ def transition_scene_to_failed(
             "failure_code": failure_code,
             "failure_category": failure_category,
         },
+        _flush_only=True,
     )
-    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type=f'scene_{final_status}', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, failure_code=failure_code, failure_category=failure_category, error_message=error_message, payload={"error_message": error_message})
+    append_timeline_event(db, job_id=scene.job_id, scene_task_id=scene.id, scene_index=scene.scene_index, source=f'provider_{source}', event_type=f'scene_{final_status}', status=scene.status, provider=scene.provider, provider_status_raw=scene.provider_status_raw, provider_request_id=scene.provider_request_id, provider_task_id=scene.provider_task_id, provider_operation_name=scene.provider_operation_name, failure_code=failure_code, failure_category=failure_category, error_message=error_message, payload={"error_message": error_message}, _flush_only=True)
+    db.commit()
     refresh_render_job_health_snapshot(db, get_render_job_by_id(db, scene.job_id, with_scenes=True) or scene.job)
 
     return True

@@ -25,6 +25,7 @@ def create_state_transition_event(
     new_state: str,
     reason: str | None = None,
     metadata: dict | None = None,
+    _flush_only: bool = False,
 ) -> StateTransitionEvent:
     event = StateTransitionEvent(
         id=str(uuid.uuid4()),
@@ -39,8 +40,11 @@ def create_state_transition_event(
         metadata_json=_json_dumps(metadata or {}),
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
+    if _flush_only:
+        db.flush()
+    else:
+        db.commit()
+        db.refresh(event)
     return event
 
 

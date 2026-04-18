@@ -1,52 +1,124 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.models.render_incident_state import RenderIncidentState
 
 SEGMENTS = ["active", "untriaged", "assigned", "muted", "resolved", "mine"]
 
-
-def _base_query(db: Session, provider: str | None = None, show_muted: bool = False):
-    q = db.query(RenderIncidentState)
-    if provider:
-        q = q.filter(RenderIncidentState.provider == provider)
-    if not show_muted:
-        q = q.filter(RenderIncidentState.suppressed.is_(False))
-    return q
+_STALE_SECONDS = 1800
+_HIGH_SEVERITY_RANK = 20
 
 
-def _segment_filter(q, segment: str, assignee: str | None = None):
+def _build_segment_flag(segment: str, ris: type, assignee: str | None = None):
+    """Return a SQLAlchemy boolean expression that is truthy for rows in *segment*."""
     if segment == "untriaged":
-        return q.filter(RenderIncidentState.acknowledged.is_(False), RenderIncidentState.assigned_to.is_(None), RenderIncidentState.resolved_at.is_(None))
-    if segment == "mine" and assignee:
-        return q.filter(RenderIncidentState.assigned_to == assignee)
+        return (
+            ris.acknowledged.is_(False)
+            & ris.assigned_to.is_(None)
+            & ris.resolved_at.is_(None)
+        )
+    if segment == "mine":
+        if assignee:
+            return ris.assigned_to == assignee
+        # No assignee → no rows belong to "mine"
+        return False
     if segment == "assigned":
-        return q.filter(RenderIncidentState.assigned_to.is_not(None), RenderIncidentState.resolved_at.is_(None))
+        return ris.assigned_to.is_not(None) & ris.resolved_at.is_(None)
     if segment == "muted":
-        return q.filter(RenderIncidentState.muted.is_(True))
+        return ris.muted.is_(True)
     if segment == "resolved":
-        return q.filter(RenderIncidentState.resolved_at.is_not(None))
-    return q.filter(RenderIncidentState.resolved_at.is_(None))
+        return ris.resolved_at.is_not(None)
+    # "active" — everything not yet resolved
+    return ris.resolved_at.is_(None)
 
 
-def get_incident_segment_metrics(db: Session, *, provider: str | None = None, show_muted: bool = False, assignee: str | None = None) -> dict:
-    items = []
+def get_incident_segment_metrics(
+    db: Session,
+    *,
+    provider: str | None = None,
+    show_muted: bool = False,
+    assignee: str | None = None,
+) -> dict:
+    """Return per-segment counts using a single SQL query instead of 6 full-table scans."""
+    ris = RenderIncidentState
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    for segment in SEGMENTS:
-        q = _segment_filter(_base_query(db, provider=provider, show_muted=show_muted), segment, assignee=assignee)
-        rows = q.all()
+
+    # Build the base filter (applied once, not per segment).
+    base_filters = []
+    if provider:
+        base_filters.append(ris.provider == provider)
+    if not show_muted:
+        base_filters.append(ris.suppressed.is_(False))
+
+    # We aggregate each segment as a separate COUNT(CASE WHEN … THEN 1 END) column.
+    # This produces exactly one DB round-trip regardless of the number of segments.
+    def _cnt(expr):
+        """COUNT rows where *expr* is true."""
+        return func.sum(case((expr, 1), else_=0))
+
+    def _cnt_and(seg_expr, extra_expr):
+        """COUNT rows that are in the segment AND satisfy *extra_expr*."""
+        return func.sum(case(((seg_expr & extra_expr), 1), else_=0))
+
+    segment_exprs = {seg: _build_segment_flag(seg, ris, assignee) for seg in SEGMENTS}
+
+    # Sub-expressions reused across segments
+    stale_threshold = now - timedelta(seconds=_STALE_SECONDS)
+    unacked_expr = ris.acknowledged.is_(False)
+    assigned_expr = ris.assigned_to.isnot(None)
+    muted_expr = ris.muted.is_(True)
+    resolved_expr = ris.resolved_at.isnot(None)
+    stale_expr = ris.last_seen_at <= stale_threshold
+    high_sev_expr = func.coalesce(ris.current_severity_rank, 0) >= _HIGH_SEVERITY_RANK
+
+    # Build one aggregation query with all per-segment columns.
+    # Each segment contributes 8 aggregate columns (total + 7 sub-counts).
+    agg_cols = []
+    seg_order = list(SEGMENTS)
+    for seg in seg_order:
+        se = segment_exprs[seg]
+        if se is False:
+            # "mine" with no assignee: all counts are 0, skip expensive columns
+            agg_cols += [
+                func.literal(0),  # total
+                func.literal(0),  # unacknowledged
+                func.literal(0),  # assigned
+                func.literal(0),  # muted
+                func.literal(0),  # resolved
+                func.literal(0),  # stale_over_30m
+                func.literal(0),  # high_severity
+            ]
+        else:
+            agg_cols += [
+                _cnt(se),
+                _cnt_and(se, unacked_expr),
+                _cnt_and(se, assigned_expr),
+                _cnt_and(se, muted_expr),
+                _cnt_and(se, resolved_expr),
+                _cnt_and(se, stale_expr),
+                _cnt_and(se, high_sev_expr),
+            ]
+
+    row = db.query(*agg_cols).filter(*base_filters).one()
+
+    # Unpack the flat tuple into per-segment dicts.
+    items = []
+    for i, seg in enumerate(seg_order):
+        base = i * 7
         items.append({
-            "segment": segment,
-            "total": len(rows),
-            "unacknowledged": sum(1 for r in rows if not r.acknowledged),
-            "assigned": sum(1 for r in rows if bool(r.assigned_to)),
-            "muted": sum(1 for r in rows if r.muted),
-            "resolved": sum(1 for r in rows if r.resolved_at is not None),
-            "stale_over_30m": sum(1 for r in rows if (now - r.last_seen_at).total_seconds() >= 1800),
-            "high_severity": sum(1 for r in rows if (r.current_severity_rank or 0) >= 20),
+            "segment": seg,
+            "total": int(row[base] or 0),
+            "unacknowledged": int(row[base + 1] or 0),
+            "assigned": int(row[base + 2] or 0),
+            "muted": int(row[base + 3] or 0),
+            "resolved": int(row[base + 4] or 0),
+            "stale_over_30m": int(row[base + 5] or 0),
+            "high_severity": int(row[base + 6] or 0),
         })
+
     return {"generated_at": now, "provider": provider, "show_muted": show_muted, "items": items}
 
 
