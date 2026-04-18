@@ -35,6 +35,29 @@ celery_app.conf.update(
     task_send_sent_event=True,
     timezone="UTC",
     enable_utc=True,
+    # Route tasks to dedicated queues so separate worker pools can be
+    # configured per queue (e.g. higher concurrency for poll, single worker
+    # for postprocess, low-priority queue for template work).
+    task_routes={
+        "render.dispatch": {"queue": "render_dispatch"},
+        "render.poll": {"queue": "render_poll"},
+        "render.postprocess": {"queue": "render_postprocess"},
+        "render.recover_stuck": {"queue": "render_maintenance"},
+        "autopilot.evaluate_control_fabric": {"queue": "autopilot"},
+        "audio.run_narration": {"queue": "audio"},
+        "audio.generate_music": {"queue": "audio"},
+        "audio.mix_tracks": {"queue": "audio"},
+        "audio.mux_video": {"queue": "audio"},
+        "audio.clone_voice_profile": {"queue": "audio"},
+        "app.workers.template_analytics_worker.run": {"queue": "template"},
+        "app.workers.template_batch_worker.run": {"queue": "template"},
+        "app.workers.template_generation_worker.run": {"queue": "template"},
+        "app.workers.template_extraction_worker.run": {"queue": "template"},
+        "app.workers.template_rescore_worker.run": {"queue": "template"},
+        "app.workers.template_feedback_worker.run": {"queue": "template"},
+    },
+    # Default queue for any task not explicitly routed above.
+    task_default_queue="celery",
 )
 
 celery_app.conf.beat_schedule = {

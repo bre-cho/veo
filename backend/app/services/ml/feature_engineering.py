@@ -55,22 +55,38 @@ def load_jobs_dataframe(
     lookback_days: int = 30,
     statuses: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Return a DataFrame of completed RenderJob rows for the lookback window."""
+    """Return a DataFrame of completed RenderJob rows for the lookback window.
+
+    Only the columns required for feature engineering are fetched from the DB
+    to reduce memory pressure and serialisation overhead.
+    """
     statuses = statuses or ["done", "failed", "cancelled"]
     cutoff = _utcnow() - timedelta(days=lookback_days)
+    _COLS = (
+        RenderJob.id,
+        RenderJob.project_id,
+        RenderJob.provider,
+        RenderJob.status,
+        RenderJob.planned_scene_count,
+        RenderJob.completed_scene_count,
+        RenderJob.failed_scene_count,
+        RenderJob.created_at,
+        RenderJob.started_at,
+        RenderJob.completed_at,
+    )
     rows = (
-        db.query(RenderJob)
+        db.query(*_COLS)
         .filter(
             RenderJob.status.in_(statuses),
             RenderJob.created_at >= cutoff,
         )
         .all()
     )
+    _NAMES = ["id", "project_id", "provider", "status",
+              "planned_scene_count", "completed_scene_count",
+              "failed_scene_count", "created_at", "started_at", "completed_at"]
     if not rows:
-        return pd.DataFrame(columns=["id", "project_id", "provider", "status",
-                                     "planned_scene_count", "completed_scene_count",
-                                     "failed_scene_count", "created_at",
-                                     "started_at", "completed_at"])
+        return pd.DataFrame(columns=_NAMES)
     records = [
         {
             "id": r.id,
@@ -95,17 +111,35 @@ def load_scenes_dataframe(
     job_ids: list[str] | None = None,
     lookback_days: int = 30,
 ) -> pd.DataFrame:
-    """Return a DataFrame of RenderSceneTask rows."""
+    """Return a DataFrame of RenderSceneTask rows.
+
+    Only the columns required for feature engineering are fetched from the DB.
+    """
     cutoff = _utcnow() - timedelta(days=lookback_days)
-    q = db.query(RenderSceneTask).filter(RenderSceneTask.created_at >= cutoff)
+    _NAMES = ["id", "job_id", "scene_index", "provider",
+              "status", "retry_count", "poll_fallback_enabled",
+              "created_at", "submitted_at", "finished_at",
+              "failure_code", "failure_category"]
+    _COLS = (
+        RenderSceneTask.id,
+        RenderSceneTask.job_id,
+        RenderSceneTask.scene_index,
+        RenderSceneTask.provider,
+        RenderSceneTask.status,
+        RenderSceneTask.retry_count,
+        RenderSceneTask.poll_fallback_enabled,
+        RenderSceneTask.created_at,
+        RenderSceneTask.submitted_at,
+        RenderSceneTask.finished_at,
+        RenderSceneTask.failure_code,
+        RenderSceneTask.failure_category,
+    )
+    q = db.query(*_COLS).filter(RenderSceneTask.created_at >= cutoff)
     if job_ids:
         q = q.filter(RenderSceneTask.job_id.in_(job_ids))
     rows = q.all()
     if not rows:
-        return pd.DataFrame(columns=["id", "job_id", "scene_index", "provider",
-                                     "status", "retry_count", "poll_fallback_enabled",
-                                     "created_at", "submitted_at", "finished_at",
-                                     "failure_code", "failure_category"])
+        return pd.DataFrame(columns=_NAMES)
     records = [
         {
             "id": r.id,
