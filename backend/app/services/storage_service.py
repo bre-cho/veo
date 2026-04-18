@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.schemas.storage import StoredObject
+
 # Optional SDK imports. Chỉ cần cài khi dùng thật.
 try:
     import boto3
@@ -211,3 +213,29 @@ def get_storage_service() -> StorageAdapter:
         )
 
     raise ValueError(f"Unsupported STORAGE_BACKEND: {backend}")
+
+
+def upload_video_asset(local_path: str, object_key: str) -> StoredObject:
+    """Compatibility helper used by asset uploader flows.
+
+    Normalizes storage adapter output to the legacy StoredObject schema.
+    """
+    service = get_storage_service()
+    result = service.upload_file(local_path=local_path, object_key=object_key)
+
+    bucket = (
+        os.getenv("STORAGE_BUCKET")
+        or os.getenv("S3_BUCKET_NAME")
+        or os.getenv("GCS_BUCKET")
+        or "local"
+    )
+
+    return StoredObject(
+        bucket=bucket,
+        key=result.get("storage_key", object_key),
+        etag=result.get("etag"),
+        public_url=result.get("url"),
+        signed_url=None,
+        content_type=result.get("content_type"),
+        size_bytes=result.get("size_bytes"),
+    )

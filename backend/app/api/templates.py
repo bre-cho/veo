@@ -15,6 +15,7 @@ from app.services.template_library_service import TemplateLibraryService
 from app.services.template_generation_service import TemplateGenerationService
 from app.services.template_batch_service import TemplateBatchService
 from app.services.template_analytics_service import TemplateAnalyticsService
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
 
