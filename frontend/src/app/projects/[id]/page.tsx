@@ -14,6 +14,7 @@ import {
   updateProjectVeoConfig,
   createVeoBatchRun,
 } from "@/src/lib/api";
+import { useSmartPoll } from "@/src/hooks/useSmartPoll";
 
 export default function ProjectWorkspacePage() {
   const params = useParams<{ id: string }>();
@@ -62,10 +63,17 @@ export default function ProjectWorkspacePage() {
   };
 
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
+    void refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  const TERMINAL_STATUSES = ["final_ready", "render_failed"] as const;
+  type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
+  useSmartPoll(refresh, {
+    interval: 5000,
+    isTerminal: () => TERMINAL_STATUSES.includes(project?.status as TerminalStatus),
+    enabled: !!projectId,
+  });
 
   const canRender = project && ["ready_to_render", "draft", "render_failed", "final_ready"].includes(project.status);
 

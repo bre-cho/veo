@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import DashboardShell from "@/src/components/DashboardShell";
 import IncidentDrawer from "@/src/components/IncidentDrawer";
 import ToastViewport, { type ToastItem, type ToastTone } from "@/src/components/ToastViewport";
+import { useSmartPoll } from "@/src/hooks/useSmartPoll";
 import {
   acknowledgeRenderIncident,
   assignRenderIncident,
@@ -23,13 +24,10 @@ import {
   listRenderAccessProfiles,
   createIncidentSavedView,
   deleteIncidentSavedView,
-  getIncidentSegmentMetrics,
-  getRecentRenderIncidents,
-  getRenderDashboardSummary,
+  getCombinedDashboard,
   getRenderIncidentHistory,
   listIncidentSavedViews,
   previewBulkIncidentAction,
-  listRenderDashboardJobs,
   muteRenderIncident,
   reopenRenderIncident,
   resolveRenderIncident,
@@ -292,17 +290,20 @@ function RenderJobsDashboardPageContent() {
   const loadDashboard = useCallback(async (mode: "initial" | "refresh" = "refresh") => {
     mode === "initial" ? setLoading(true) : setRefreshing(true);
     try {
-      const [summaryData, jobsData, incidentData, metricsData] = await Promise.all([
-        getRenderDashboardSummary(),
-        listRenderDashboardJobs({ limit: 100, provider: providerFilter === "all" ? undefined : providerFilter, health_status: healthFilter === "all" ? undefined : healthFilter }),
-        getRecentRenderIncidents({ limit: 50, provider: providerFilter === "all" ? undefined : providerFilter, show_muted: showMuted, segment, assigned_to: segment === "mine" ? assignee : undefined }),
-        getIncidentSegmentMetrics({ provider: providerFilter === "all" ? undefined : providerFilter, show_muted: showMuted, assignee }),
-      ]);
-      setSummary(summaryData);
-      setJobs(jobsData.items || []);
-      setIncidents(mergeIncidentsWithOptimistic(incidentData.items || []));
-      setSegmentMetrics(metricsData);
-      setSelectedKeys((prev) => prev.filter((key) => incidentData.items?.some((item) => item.incident_key === key)));
+      const combined = await getCombinedDashboard({
+        limit: 100,
+        provider: providerFilter === "all" ? undefined : providerFilter,
+        health_status: healthFilter === "all" ? undefined : healthFilter,
+        incident_limit: 50,
+        segment,
+        show_muted: showMuted,
+        assigned_to: segment === "mine" ? assignee : undefined,
+      });
+      setSummary(combined.summary);
+      setJobs(combined.jobs.items || []);
+      setIncidents(mergeIncidentsWithOptimistic(combined.incidents.items || []));
+      setSegmentMetrics(combined.segment_metrics);
+      setSelectedKeys((prev) => prev.filter((key) => combined.incidents.items?.some((item) => item.incident_key === key)));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
@@ -319,17 +320,12 @@ function RenderJobsDashboardPageContent() {
   useEffect(() => { if (accessProfile) void loadAccessProfiles(); }, [accessProfile, loadAccessProfiles]);
   useEffect(() => { if (accessProfile?.role === "team_lead" || accessProfile?.role === "admin") void loadProductivity(); }, [accessProfile, loadProductivity]);
 
-  useEffect(() => {
-    let active = true;
-    let timer: number | null = null;
-    const loop = async (mode: "initial" | "refresh") => {
-      await loadDashboard(mode);
-      if (!active) return;
-      timer = window.setTimeout(() => void loop("refresh"), 7000);
-    };
-    void loop("initial");
-    return () => { active = false; if (timer) window.clearTimeout(timer); };
-  }, [loadDashboard]);
+  useSmartPoll(
+    useCallback(() => loadDashboard("refresh"), [loadDashboard]),
+    { interval: 7000 },
+  );
+
+  useEffect(() => { void loadDashboard("initial"); }, [loadDashboard]);
 
   const selectedIncident = useMemo(() => incidents.find((item) => item.incident_key === selectedIncidentKey) || null, [incidents, selectedIncidentKey]);
 

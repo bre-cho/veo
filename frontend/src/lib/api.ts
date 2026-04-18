@@ -470,6 +470,10 @@ export async function listRenderDashboardJobs(input?: { limit?: number; provider
 
 export async function getRenderDashboardSummary(): Promise<RenderDashboardSummaryResponse> { return request<RenderDashboardSummaryResponse>("/render/dashboard/summary", { method: "GET" }); }
 
+export interface CombinedDashboardResponse { summary: RenderDashboardSummaryResponse; jobs: RenderJobListPage; incidents: RecentIncidentsResponse; segment_metrics: IncidentSegmentMetricsResponse; }
+
+export async function getCombinedDashboard(input?: { limit?: number; provider?: string; health_status?: string; incident_limit?: number; segment?: string; show_muted?: boolean; assigned_to?: string; }): Promise<CombinedDashboardResponse> { const params = new URLSearchParams(); if (input?.limit) params.set("limit", String(input.limit)); if (input?.provider) params.set("provider", input.provider); if (input?.health_status) params.set("health_status", input.health_status); if (input?.incident_limit) params.set("incident_limit", String(input.incident_limit)); if (input?.segment) params.set("segment", input.segment); if (typeof input?.show_muted === "boolean") params.set("show_muted", String(input.show_muted)); if (input?.assigned_to) params.set("assigned_to", input.assigned_to); const suffix = params.toString() ? `?${params.toString()}` : ""; return request<CombinedDashboardResponse>(`/render/dashboard/combined${suffix}`, { method: "GET" }); }
+
 
 export async function acknowledgeRenderIncident(input: { incident_key: string; actor: string; reason?: string; }): Promise<{ ok: boolean; incident_key: string; status: string }> { return request<{ ok: boolean; incident_key: string; status: string }>(`/render/dashboard/incidents/${encodeURIComponent(input.incident_key)}/acknowledge`, { method: "POST", body: JSON.stringify({ actor: input.actor, reason: input.reason }) }); }
 

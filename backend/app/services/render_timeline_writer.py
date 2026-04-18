@@ -39,6 +39,7 @@ def append_timeline_event(
     processed: bool | None = None,
     event_idempotency_key: str | None = None,
     payload: dict[str, Any] | None = None,
+    _flush_only: bool = False,
 ) -> RenderTimelineEvent:
     event = RenderTimelineEvent(
         id=f"rte_{uuid.uuid4().hex[:24]}",
@@ -63,8 +64,11 @@ def append_timeline_event(
         occurred_at=occurred_at or datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
+    if _flush_only:
+        db.flush()
+    else:
+        db.commit()
+        db.refresh(event)
     return event
 
 
