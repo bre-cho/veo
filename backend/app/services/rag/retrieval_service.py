@@ -18,8 +18,6 @@ Performance notes
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -154,28 +152,22 @@ def build_index_from_directory(
 
         return {"ok": True, "chunks_indexed": len(all_chunks), "docs_root": str(root)}
 
-    # Non-TF-IDF backend: incremental — add only changed-file chunks.
-    changed_chunks = list(chunk_directory(
-        root,
-        chunk_size=chunk_size,
-        overlap=overlap,
-        include_files={str(f) for f in changed_files},
-    ) if hasattr(chunk_directory, "__code__") and "include_files" in chunk_directory.__code__.co_varnames else
-        # Fallback: full rebuild if chunk_directory doesn't support include_files.
-        chunk_directory(root, chunk_size=chunk_size, overlap=overlap))
-
-    if not changed_chunks:
+    # Non-TF-IDF backend: rebuild the whole store from changed files.
+    # We still benefit from the early-exit above when no files changed.
+    all_chunks = list(chunk_directory(root, chunk_size=chunk_size, overlap=overlap))
+    if not all_chunks:
         return {"ok": False, "reason": "No documents found to index"}
 
     store = _get_store()
-    vectors = emb.embed([c.text for c in changed_chunks])
-    store.add(changed_chunks, vectors)
+    store.clear()
+    vectors = emb.embed([c.text for c in all_chunks])
+    store.add(all_chunks, vectors)
     _file_mtimes.update(current_mtimes)
 
     if store_path:
         store.save(store_path)
 
-    return {"ok": True, "chunks_indexed": len(changed_chunks), "docs_root": str(root), "incremental": True}
+    return {"ok": True, "chunks_indexed": len(all_chunks), "docs_root": str(root)}
 
 
 def add_text_to_index(
@@ -204,11 +196,11 @@ def load_index(store_path: str | Path) -> bool:
     Also attempts to restore a saved TFIDFEmbedder vocabulary so that
     subsequent ``embed_one`` calls use the same IDF weights.
     """
+    global _embedder
     ok = _get_store().load(store_path)
     if ok:
         saved_emb = _try_load_embedder(str(store_path))
         if saved_emb is not None:
-            global _embedder
             _embedder = saved_emb
     return ok
 
