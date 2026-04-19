@@ -65,6 +65,8 @@ class MockProviderClient:
 
 
 class ProviderRouterClient:
+    """Provider client shim that routes submit/query calls through provider_router."""
+
     def __init__(self, provider_name: str):
         self.provider_name = provider_name
 

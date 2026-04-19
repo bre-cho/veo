@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.services.video_merger import merge_clips_concat
 
 TERMINAL_JOB_STATUSES = {"completed", "failed"}
 ACTIVE_POSTPROCESS_JOB_STATUSES = {"merging", "burning_subtitles"}
+logger = logging.getLogger(__name__)
 
 
 def _is_job_terminal(job) -> bool:
@@ -44,6 +46,13 @@ def _build_output_url(job_id: str, filename: str) -> str:
         relative_output_dir = render_output_dir.relative_to(storage_root)
         mapped_dir = relative_output_dir.as_posix().strip("/")
     except ValueError:
+        logger.warning(
+            "render_output_dir_not_under_storage_root",
+            extra={
+                "render_output_dir": str(render_output_dir),
+                "storage_root": str(storage_root),
+            },
+        )
         mapped_dir = render_output_dir.name.strip("/")
 
     return f"/storage/{mapped_dir}/{job_id}/{filename}"

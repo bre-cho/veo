@@ -166,6 +166,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return request<T>(path, init);
 }
 
+async function requestRaw<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(buildRawUrl(path), init);
+}
+
 function buildUrl(path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -256,7 +260,7 @@ export async function uploadScriptFileForPreview(input: {
   form.append("aspect_ratio", input.aspect_ratio || "9:16");
   form.append("target_platform", input.target_platform || "shorts");
   form.append("style_preset", input.style_preset || "cinematic_dark");
-  return request<ScriptPreviewPayload>(buildRawUrl("/api/v1/script-upload/preview"), {
+  return request<ScriptPreviewPayload>("/script-upload/preview", {
     method: "POST",
     body: form,
   });
@@ -390,19 +394,19 @@ export async function getRenderJob(jobId: string): Promise<RenderJob> {
 }
 
 export async function getHealth(): Promise<HealthCheckPayload> {
-  return request<HealthCheckPayload>(buildRawUrl("/healthz"), { method: "GET" });
+  return requestRaw<HealthCheckPayload>("/healthz", { method: "GET" });
 }
 
 export async function getWorkerHealth(): Promise<HealthCheckPayload> {
-  return request<HealthCheckPayload>(buildRawUrl("/healthz/workers"), { method: "GET" });
+  return requestRaw<HealthCheckPayload>("/healthz/workers", { method: "GET" });
 }
 
 export async function getPostgresHealth(): Promise<HealthCheckPayload> {
-  return request<HealthCheckPayload>(buildRawUrl("/healthz/postgres"), { method: "GET" });
+  return requestRaw<HealthCheckPayload>("/healthz/postgres", { method: "GET" });
 }
 
 export async function getRedisHealth(): Promise<HealthCheckPayload> {
-  return request<HealthCheckPayload>(buildRawUrl("/healthz/redis"), { method: "GET" });
+  return requestRaw<HealthCheckPayload>("/healthz/redis", { method: "GET" });
 }
 
 

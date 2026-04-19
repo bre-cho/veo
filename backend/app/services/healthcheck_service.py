@@ -16,8 +16,8 @@ def check_postgres() -> dict[str, Any]:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return {"ok": True, "service": "postgres"}
-    except Exception as exc:
-        return {"ok": False, "service": "postgres", "error": str(exc)}
+    except Exception:
+        return {"ok": False, "service": "postgres", "error": "Postgres connectivity check failed"}
 
 
 def check_redis() -> dict[str, Any]:
