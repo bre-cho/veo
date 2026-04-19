@@ -17,7 +17,7 @@ router = APIRouter(tags=["ai-engine"])
 class AiEngineConfigUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    openrouter_api_key: str | None = None
+    openrouter_api_key: SecretStr | None = None
     default_model: str | None = None
 
 
@@ -51,6 +51,8 @@ async def get_config(db: Session = Depends(get_db)):
 @router.patch("/api/v1/ai-engine/config")
 async def update_config(payload: AiEngineConfigUpdateRequest, db: Session = Depends(get_db)):
     config_data = payload.model_dump(exclude_unset=True)
+    if payload.openrouter_api_key is not None:
+        config_data["openrouter_api_key"] = payload.openrouter_api_key.get_secret_value()
     if not config_data:
         raise HTTPException(status_code=400, detail="No valid fields provided")
     row = save_ai_engine_config(db, config_data)
