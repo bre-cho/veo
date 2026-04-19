@@ -58,6 +58,7 @@ class Settings(BaseModel):
     celery_broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
     celery_result_backend: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
     storage_root: str = os.getenv("STORAGE_ROOT", "/app/storage")
+    storage_public_base_url: str = os.getenv("STORAGE_PUBLIC_BASE_URL", "/storage")
     render_cache_dir: str = os.getenv("RENDER_CACHE_DIR", "/app/storage/render_cache")
     render_output_dir: str = os.getenv("RENDER_OUTPUT_DIR", "/app/storage/render_outputs")
     object_storage_provider: str = os.getenv("OBJECT_STORAGE_PROVIDER", "minio")
