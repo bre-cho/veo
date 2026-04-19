@@ -52,8 +52,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     existing_idx = _existing_indexes()
-    if "ix_render_scene_tasks_provider_operation_name" in existing_idx:
-        op.drop_index("ix_render_scene_tasks_provider_operation_name", table_name=_TABLE)
     if "ix_render_scene_tasks_provider_task_id" in existing_idx:
         op.drop_index("ix_render_scene_tasks_provider_task_id", table_name=_TABLE)
     existing = _existing_columns()
