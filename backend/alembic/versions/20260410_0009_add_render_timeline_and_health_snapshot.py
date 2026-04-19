@@ -5,6 +5,7 @@ Revises: 20260410_0008
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "20260410_0009"
 down_revision = "20260410_0008"
@@ -29,8 +30,8 @@ def upgrade() -> None:
 
     op.create_table('render_timeline_events',
         sa.Column('id', sa.String(length=64), primary_key=True),
-        sa.Column('job_id', sa.String(length=36), nullable=False),
-        sa.Column('scene_task_id', sa.String(length=64), nullable=True),
+        sa.Column('job_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('scene_task_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('scene_index', sa.Integer(), nullable=True),
         sa.Column('source', sa.String(length=32), nullable=False),
         sa.Column('event_type', sa.String(length=128), nullable=False),

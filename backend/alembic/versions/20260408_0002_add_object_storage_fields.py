@@ -73,7 +73,7 @@ def upgrade() -> None:
     # Các bảng thường chứa artifact/output trong Render Core
     # Có thể tồn tại hoặc không tùy phiên bản repo hiện tại.
     target_tables = [
-        "scene_tasks",
+        "render_scene_tasks",
         "render_jobs",
         "exports",
         "uploads",
@@ -87,12 +87,12 @@ def upgrade() -> None:
     bind = op.get_bind()
 
     # Index có điều kiện: chỉ tạo nếu bảng/cột tồn tại
-    if _has_table(bind, "scene_tasks"):
-        cols = _get_column_names(bind, "scene_tasks")
+    if _has_table(bind, "render_scene_tasks"):
+        cols = _get_column_names(bind, "render_scene_tasks")
         if {"storage_bucket", "storage_key"}.issubset(cols):
             op.create_index(
-                "ix_scene_tasks_storage_bucket_key",
-                "scene_tasks",
+                "ix_render_scene_tasks_storage_bucket_key",
+                "render_scene_tasks",
                 ["storage_bucket", "storage_key"],
                 unique=False,
             )
@@ -146,10 +146,10 @@ def downgrade() -> None:
         if {"storage_bucket", "storage_key"}.issubset(cols):
             op.drop_index("ix_render_jobs_storage_bucket_key", table_name="render_jobs")
 
-    if _has_table(bind, "scene_tasks"):
-        cols = _get_column_names(bind, "scene_tasks")
+    if _has_table(bind, "render_scene_tasks"):
+        cols = _get_column_names(bind, "render_scene_tasks")
         if {"storage_bucket", "storage_key"}.issubset(cols):
-            op.drop_index("ix_scene_tasks_storage_bucket_key", table_name="scene_tasks")
+            op.drop_index("ix_render_scene_tasks_storage_bucket_key", table_name="render_scene_tasks")
 
     target_tables = [
         "scene_assets",
@@ -157,7 +157,7 @@ def downgrade() -> None:
         "uploads",
         "exports",
         "render_jobs",
-        "scene_tasks",
+        "render_scene_tasks",
     ]
 
     for table_name in target_tables:

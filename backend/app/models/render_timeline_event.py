@@ -13,8 +13,8 @@ class RenderTimelineEvent(Base):
     __tablename__ = "render_timeline_events"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("render_jobs.id"), index=True, nullable=False)
-    scene_task_id: Mapped[Optional[str]] = mapped_column(ForeignKey("render_scene_tasks.id"), index=True, nullable=True)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("render_jobs.id"), index=True, nullable=False)
+    scene_task_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("render_scene_tasks.id"), index=True, nullable=True)
     scene_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

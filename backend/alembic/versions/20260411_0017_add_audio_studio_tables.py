@@ -7,6 +7,7 @@ Create Date: 2026-04-11 00:17:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20260411_0017"
@@ -60,7 +61,7 @@ def upgrade() -> None:
     op.create_table(
         "narration_jobs",
         sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("render_job_id", sa.String(length=36), nullable=True),
+        sa.Column("render_job_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("voice_profile_id", sa.String(length=36), nullable=False),
         sa.Column("script_text", sa.Text(), nullable=False),
         sa.Column("style_preset", sa.String(length=64), nullable=False),
@@ -142,7 +143,7 @@ def upgrade() -> None:
     op.create_table(
         "audio_render_outputs",
         sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("render_job_id", sa.String(length=36), nullable=True),
+        sa.Column("render_job_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("narration_job_id", sa.String(length=36), nullable=True),
         sa.Column("music_asset_id", sa.String(length=36), nullable=True),
         sa.Column("mix_profile_id", sa.String(length=36), nullable=True),

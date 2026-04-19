@@ -127,7 +127,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
-        "ix_template_governance_action_outcome_analytics_bulk_operation_id",
+        "ix_tgaoa_bulk_operation_id",
         "template_governance_action_outcome_analytics",
         ["bulk_operation_id"],
     )
@@ -153,7 +153,7 @@ def downgrade() -> None:
         table_name="template_governance_action_outcome_analytics",
     )
     op.drop_index(
-        "ix_template_governance_action_outcome_analytics_bulk_operation_id",
+        "ix_tgaoa_bulk_operation_id",
         table_name="template_governance_action_outcome_analytics",
     )
     op.drop_table("template_governance_action_outcome_analytics")
