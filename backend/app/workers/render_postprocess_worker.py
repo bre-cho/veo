@@ -37,7 +37,16 @@ def _job_output_dir(job_id: str) -> Path:
 
 
 def _build_output_url(job_id: str, filename: str) -> str:
-    return f"/storage/render_outputs/{job_id}/{filename}"
+    render_output_dir = Path(settings.render_output_dir)
+    storage_root = Path(settings.storage_root)
+
+    try:
+        relative_output_dir = render_output_dir.relative_to(storage_root)
+        mapped_dir = relative_output_dir.as_posix().strip("/")
+    except ValueError:
+        mapped_dir = render_output_dir.name.strip("/")
+
+    return f"/storage/{mapped_dir}/{job_id}/{filename}"
 
 
 def _normalize_subtitle_segments(value: object) -> list[dict]:
@@ -154,6 +163,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
         return
 
     all_stub = all(path.stat().st_size == 0 for path in file_paths)
+    subtitle_segments = _normalize_subtitle_segments(job.subtitle_segments)
     if all_stub:
         fallback_url = next(
             (s.output_video_url for s in successful_scenes if s.output_video_url),
@@ -169,7 +179,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
                 }
                 for s in successful_scenes
             ],
-            subtitle_segments=[],
+            subtitle_segments=subtitle_segments,
             merged_video_url=fallback_url,
         )
         latest_job = get_render_job_by_id(db, job_id, with_scenes=False)
@@ -190,7 +200,6 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
 
     final_path = merged_path
 
-    subtitle_segments = _normalize_subtitle_segments(job.subtitle_segments)
     if job.subtitle_mode == "burn" and subtitle_segments:
         updated = mark_job_status(
             db,
@@ -221,7 +230,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
             }
             for s in successful_scenes
         ],
-        subtitle_segments=[],
+        subtitle_segments=subtitle_segments,
         merged_video_url=final_video_url,
     )
 
