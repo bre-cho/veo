@@ -47,7 +47,7 @@ def _build_output_url(job_id: str, filename: str) -> str:
         mapped_dir = relative_output_dir.as_posix().strip("/")
     except ValueError:
         logger.warning(
-            "render_output_dir_not_under_storage_root",
+            "Render output directory is not under storage root; falling back to output directory name mapping.",
             extra={
                 "render_output_dir": str(render_output_dir),
                 "storage_root": str(storage_root),

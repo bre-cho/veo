@@ -10,16 +10,22 @@ router = APIRouter(tags=["template-runtime"])
 
 
 class TemplateRunRequest(BaseModel):
+    """Runtime usage run payload for a template invocation."""
+
     project_id: str
     generation_mode: str = "manual"
 
 
 class TemplatePerformanceSnapshotRequest(BaseModel):
+    """Performance snapshot payload with required project_id and flexible metric keys."""
+
     project_id: str
     model_config = ConfigDict(extra="allow")
 
 
 class TemplateAutoPickRequest(BaseModel):
+    """Template auto-pick context (target platform/format/aspect ratio plus optional hints)."""
+
     target_platform: str | None = None
     format: str | None = None
     aspect_ratio: str | None = None
