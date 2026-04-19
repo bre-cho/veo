@@ -38,6 +38,14 @@ def _job_output_dir(job_id: str) -> Path:
     return Path(settings.render_output_dir) / job_id
 
 
+def _join_public_url(*parts: str) -> str:
+    base = "/" if settings.storage_public_base_url == "/" else settings.storage_public_base_url.rstrip("/")
+    suffix = "/".join(p.strip("/") for p in parts if p and p.strip("/"))
+    if suffix:
+        return f"/{suffix}" if not base else f"{base}/{suffix}"
+    return base or "/"
+
+
 def _build_output_url(job_id: str, filename: str) -> str:
     render_output_dir = Path(settings.render_output_dir)
     storage_root = Path(settings.storage_root)
@@ -55,7 +63,7 @@ def _build_output_url(job_id: str, filename: str) -> str:
         )
         mapped_dir = render_output_dir.name.strip("/")
 
-    return f"/storage/{mapped_dir}/{job_id}/{filename}"
+    return _join_public_url(mapped_dir, job_id, filename)
 
 
 def _normalize_subtitle_segments(value: object) -> list[dict]:

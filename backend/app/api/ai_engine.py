@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, SecretStr
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,6 +12,20 @@ from app.services.ai_engine_service import (
 )
 
 router = APIRouter(tags=["ai-engine"])
+
+
+class AiEngineConfigUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    openrouter_api_key: SecretStr | None = None
+    default_model: str | None = None
+
+
+class OpenRouterKeyTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: SecretStr
+    model: str | None = None
 
 
 def _mask_key(key: str | None) -> str | None:
@@ -34,12 +49,13 @@ async def get_config(db: Session = Depends(get_db)):
 
 
 @router.patch("/api/v1/ai-engine/config")
-async def update_config(payload: dict, db: Session = Depends(get_db)):
-    allowed = {"openrouter_api_key", "default_model"}
-    filtered = {k: v for k, v in payload.items() if k in allowed}
-    if not filtered:
+async def update_config(payload: AiEngineConfigUpdateRequest, db: Session = Depends(get_db)):
+    config_data = payload.model_dump(exclude_unset=True)
+    if payload.openrouter_api_key is not None:
+        config_data["openrouter_api_key"] = payload.openrouter_api_key.get_secret_value()
+    if not config_data:
         raise HTTPException(status_code=400, detail="No valid fields provided")
-    row = save_ai_engine_config(db, filtered)
+    row = save_ai_engine_config(db, config_data)
     return {
         "has_openrouter_api_key": bool(row.openrouter_api_key),
         "openrouter_api_key_masked": _mask_key(row.openrouter_api_key),
@@ -49,8 +65,8 @@ async def update_config(payload: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/api/v1/ai-engine/test-key")
-async def test_key(payload: dict):
-    api_key = (payload.get("api_key") or "").strip()
+async def test_key(payload: OpenRouterKeyTestRequest):
+    api_key = payload.api_key.get_secret_value().strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="api_key is required")
     result = test_openrouter_key(api_key)
