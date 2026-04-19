@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -19,7 +19,7 @@ class GoogleAccountCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    gemini_api_key: str | None = None
+    gemini_api_key: SecretStr | None = None
     google_cloud_project: str | None = None
     google_cloud_location: str | None = "global"
     gcs_output_uri: str | None = None
@@ -32,7 +32,7 @@ class GoogleAccountPatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str | None = None
-    gemini_api_key: str | None = None
+    gemini_api_key: SecretStr | None = None
     google_cloud_project: str | None = None
     google_cloud_location: str | None = None
     gcs_output_uri: str | None = None
@@ -49,12 +49,18 @@ async def get_google_accounts(db: Session = Depends(get_db)):
 @router.post("/api/v1/google-accounts")
 async def post_google_account(payload: GoogleAccountCreateRequest, db: Session = Depends(get_db)):
     data = payload.model_dump()
+    if payload.gemini_api_key is not None:
+        data["gemini_api_key"] = payload.gemini_api_key.get_secret_value()
     return create_google_account(db, data)
 
 
 @router.patch("/api/v1/google-accounts/{account_id}")
 async def patch_google_account(account_id: str, payload: GoogleAccountPatchRequest, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude_unset=True)
+    if "gemini_api_key" in payload.model_fields_set:
+        data["gemini_api_key"] = (
+            payload.gemini_api_key.get_secret_value() if payload.gemini_api_key is not None else None
+        )
     result = update_google_account(db, account_id, data)
     if result is None:
         raise HTTPException(status_code=404, detail="Account not found")

@@ -39,9 +39,11 @@ def _job_output_dir(job_id: str) -> Path:
 
 
 def _join_public_url(*parts: str) -> str:
-    base = settings.storage_public_base_url.rstrip("/") or "/"
+    base = "/" if settings.storage_public_base_url == "/" else settings.storage_public_base_url.rstrip("/")
     suffix = "/".join(p.strip("/") for p in parts if p and p.strip("/"))
-    return f"{base}/{suffix}" if suffix else base
+    if suffix:
+        return f"/{suffix}" if not base else f"{base}/{suffix}"
+    return base or "/"
 
 
 def _build_output_url(job_id: str, filename: str) -> str:
