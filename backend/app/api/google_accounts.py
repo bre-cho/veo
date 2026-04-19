@@ -48,7 +48,7 @@ async def get_google_accounts(db: Session = Depends(get_db)):
 
 @router.post("/api/v1/google-accounts")
 async def post_google_account(payload: GoogleAccountCreateRequest, db: Session = Depends(get_db)):
-    data = payload.model_dump(exclude_unset=True)
+    data = payload.model_dump()
     return create_google_account(db, data)
 
 
