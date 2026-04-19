@@ -25,6 +25,14 @@ class ProviderHTTPError(RuntimeError):
     pass
 
 
+class ProviderAuthError(RuntimeError):
+    pass
+
+
+class ProviderTransientError(RuntimeError):
+    pass
+
+
 def canonical_json(value: dict[str, Any] | None) -> str:
     return json.dumps(value or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -82,6 +90,23 @@ async def request_json(
                 return {}
             payload = response.json()
             return payload if isinstance(payload, dict) else {"data": payload}
+        except httpx.HTTPStatusError as exc:
+            last_error = exc
+            code = exc.response.status_code if exc.response is not None else None
+            if code in {401, 403}:
+                raise ProviderAuthError(f"{method} {url} unauthorized: {code}") from exc
+            if code in {408, 409, 425, 429, 500, 502, 503, 504}:
+                if attempt <= retries:
+                    await sleep_backoff(attempt)
+                    continue
+                raise ProviderTransientError(f"{method} {url} transient HTTP error: {code}") from exc
+            raise ProviderHTTPError(f"{method} {url} HTTP error: {code}") from exc
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as exc:
+            last_error = exc
+            if attempt <= retries:
+                await sleep_backoff(attempt)
+                continue
+            raise ProviderTransientError(f"{method} {url} transient network error: {exc}") from exc
         except (httpx.HTTPError, ValueError) as exc:
             last_error = exc
             if attempt <= retries:

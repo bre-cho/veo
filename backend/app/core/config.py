@@ -51,7 +51,7 @@ class Settings(BaseModel):
     elevenlabs_api_key: str | None = os.getenv("ELEVENLABS_API_KEY")
     elevenlabs_tts_model_id: str = os.getenv("ELEVENLABS_TTS_MODEL_ID", "eleven_multilingual_v2")
     default_music_duration_seconds: int = _get_int("DEFAULT_MUSIC_DURATION_SECONDS", 30)
-    app_env: str = os.getenv("APP_ENV", "development")
+    app_env: str = os.getenv("APP_ENV", "production")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     public_base_url: str = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
     database_url: str = os.getenv("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/render_factory")
@@ -86,7 +86,7 @@ class Settings(BaseModel):
     provider_callback_relay_path_template: str = os.getenv("PROVIDER_CALLBACK_RELAY_PATH_TEMPLATE", "/hooks/{provider}")
     provider_max_retries: int = _get_int("PROVIDER_MAX_RETRIES", 2)
     provider_retry_base_seconds: int = _get_int("PROVIDER_RETRY_BASE_SECONDS", 2)
-    provider_allow_mock_fallback: bool = _get_bool("PROVIDER_ALLOW_MOCK_FALLBACK", True)
+    provider_allow_mock_fallback: bool = _get_bool("PROVIDER_ALLOW_MOCK_FALLBACK", False)
     provider_callback_shared_secret: str | None = os.getenv("PROVIDER_CALLBACK_SHARED_SECRET")
     provider_relay_shared_secret: str | None = os.getenv("PROVIDER_RELAY_SHARED_SECRET")
     veo_relay_shared_secret: str | None = os.getenv("VEO_RELAY_SHARED_SECRET")
@@ -126,3 +126,5 @@ class Settings(BaseModel):
 
 
 settings = Settings()
+if settings.app_env.strip().lower() == "production" and settings.provider_allow_mock_fallback:
+    raise ValueError("PROVIDER_ALLOW_MOCK_FALLBACK must be false when APP_ENV=production")

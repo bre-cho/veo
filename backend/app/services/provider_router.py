@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from app.providers.base import BaseVideoProviderAdapter
+from app.providers.common import (
+    ProviderAuthError,
+    ProviderConfigError,
+    ProviderHTTPError,
+    ProviderTransientError,
+)
 from app.providers.veo.adapter import VeoAdapter
 from app.schemas.provider_common import (
     NormalizedCallbackEvent,
@@ -11,6 +19,7 @@ from app.services.provider_normalize import normalize_provider_name
 
 
 _ADAPTER_CACHE: dict[str, BaseVideoProviderAdapter] = {}
+logger = logging.getLogger(__name__)
 
 
 def get_provider_adapter(provider: str) -> BaseVideoProviderAdapter:
@@ -55,7 +64,50 @@ async def submit_render_task(
             raw_response=result.raw_response,
             error_message=result.error_message,
         )
+    except ProviderConfigError as exc:
+        logger.error(
+            "provider_submit_config_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedSubmitResult(
+            accepted=False,
+            provider=normalized_provider,
+            provider_model=scene_payload.get("provider_model"),
+            callback_url_used=callback_url,
+            raw_response=None,
+            error_message=str(exc),
+        )
+    except ProviderAuthError as exc:
+        logger.error(
+            "provider_submit_auth_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedSubmitResult(
+            accepted=False,
+            provider=normalized_provider,
+            provider_model=scene_payload.get("provider_model"),
+            callback_url_used=callback_url,
+            raw_response=None,
+            error_message=str(exc),
+        )
+    except (ProviderTransientError, ProviderHTTPError, ValueError) as exc:
+        logger.warning(
+            "provider_submit_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedSubmitResult(
+            accepted=False,
+            provider=normalized_provider,
+            provider_model=scene_payload.get("provider_model"),
+            callback_url_used=callback_url,
+            raw_response=None,
+            error_message=str(exc),
+        )
     except Exception as exc:
+        logger.exception(
+            "provider_submit_unhandled_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
         return NormalizedSubmitResult(
             accepted=False,
             provider=normalized_provider,
@@ -93,7 +145,79 @@ async def query_render_task(
             failure_category=result.failure_category,
             raw_response=result.raw_response,
         )
+    except ProviderConfigError as exc:
+        logger.error(
+            "provider_query_config_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedStatusResult(
+            provider=normalized_provider,
+            state="failed",
+            provider_status_raw=None,
+            output_video_url=None,
+            output_thumbnail_url=None,
+            metadata=None,
+            error_message=str(exc),
+            failure_code="PROVIDER_CONFIG_ERROR",
+            failure_category="provider_config",
+            raw_response=None,
+        )
+    except ProviderAuthError as exc:
+        logger.error(
+            "provider_query_auth_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedStatusResult(
+            provider=normalized_provider,
+            state="failed",
+            provider_status_raw=None,
+            output_video_url=None,
+            output_thumbnail_url=None,
+            metadata=None,
+            error_message=str(exc),
+            failure_code="PROVIDER_AUTH_ERROR",
+            failure_category="provider_auth",
+            raw_response=None,
+        )
+    except ProviderTransientError as exc:
+        logger.warning(
+            "provider_query_transient_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedStatusResult(
+            provider=normalized_provider,
+            state="failed",
+            provider_status_raw=None,
+            output_video_url=None,
+            output_thumbnail_url=None,
+            metadata=None,
+            error_message=str(exc),
+            failure_code="PROVIDER_TRANSIENT_ERROR",
+            failure_category="provider_poll_transient",
+            raw_response=None,
+        )
+    except (ProviderHTTPError, ValueError) as exc:
+        logger.error(
+            "provider_query_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return NormalizedStatusResult(
+            provider=normalized_provider,
+            state="failed",
+            provider_status_raw=None,
+            output_video_url=None,
+            output_thumbnail_url=None,
+            metadata=None,
+            error_message=str(exc),
+            failure_code="PROVIDER_POLL_ERROR",
+            failure_category="provider_poll",
+            raw_response=None,
+        )
     except Exception as exc:
+        logger.exception(
+            "provider_query_unhandled_error",
+            extra={"provider": normalized_provider, "error_type": type(exc).__name__, "error": str(exc)},
+        )
         return NormalizedStatusResult(
             provider=normalized_provider,
             state="failed",
@@ -119,7 +243,16 @@ def verify_render_callback(
     try:
         adapter = get_provider_adapter(normalized_provider)
         return bool(adapter.verify_callback(headers, raw_body))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "provider_callback_verify_error",
+            extra={
+                "provider": normalized_provider,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "header_keys": sorted(headers.keys()),
+            },
+        )
         return False
 
 

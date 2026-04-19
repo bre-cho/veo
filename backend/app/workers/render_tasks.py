@@ -7,6 +7,7 @@ from app.db.session import SessionLocal
 from app.workers.render_dispatch_worker import process_render_dispatch
 from app.workers.render_poll_worker import process_render_poll
 from app.workers.render_postprocess_worker import process_render_postprocess
+from app.workers.provider_callback_worker import process_provider_callback_event
 
 
 @celery_app.task(name="render.dispatch")
@@ -32,5 +33,14 @@ def render_postprocess_task(job_id: str) -> None:
     db = SessionLocal()
     try:
         asyncio.run(process_render_postprocess(db, job_id))
+    finally:
+        db.close()
+
+
+@celery_app.task(name="render.callback_process")
+def render_callback_process_task(event_id: str) -> None:
+    db = SessionLocal()
+    try:
+        asyncio.run(process_provider_callback_event(db, event_id))
     finally:
         db.close()

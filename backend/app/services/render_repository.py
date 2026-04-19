@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.provider_webhook_event import ProviderWebhookEvent
@@ -272,6 +273,22 @@ def finalize_render_job(
         new_state="completed",
         reason="Final merged output completed successfully",
         metadata={
+            "final_video_url": final_video_url,
+            "final_video_path": final_video_path,
+        },
+        _flush_only=True,
+    )
+    append_timeline_event(
+        db,
+        job_id=job.id,
+        scene_task_id=None,
+        scene_index=None,
+        source=source,
+        event_type="job_completed",
+        status="completed",
+        provider=job.provider,
+        payload={
+            "old_status": old_status,
             "final_video_url": final_video_url,
             "final_video_path": final_video_path,
         },
@@ -776,7 +793,7 @@ def create_webhook_event(
     headers_json: dict | None,
     payload_json: dict,
     normalized_payload_json: dict | None,
-) -> ProviderWebhookEvent:
+) -> tuple[ProviderWebhookEvent, bool]:
     event = ProviderWebhookEvent(
         id=str(uuid.uuid4()),
         provider=provider,
@@ -793,9 +810,16 @@ def create_webhook_event(
         received_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
-    return event
+    try:
+        db.commit()
+        db.refresh(event)
+        return event, True
+    except IntegrityError:
+        db.rollback()
+        existing = get_webhook_event_by_idempotency_key(db, event_idempotency_key)
+        if existing is None:
+            raise
+        return existing, False
 
 
 def mark_webhook_event_processed(db: Session, event: ProviderWebhookEvent) -> None:
