@@ -64,7 +64,12 @@ class MockProviderClient:
         }
 
 
-class VeoProviderClient:
+class ProviderRouterClient:
+    """Provider client shim that routes submit/query calls through provider_router."""
+
+    def __init__(self, provider_name: str):
+        self.provider_name = provider_name
+
     async def dispatch_scene(self, *, job: Any, scene_task: Any) -> dict[str, Any]:
         payload_raw = getattr(scene_task, "request_payload_json", None)
         if isinstance(payload_raw, dict):
@@ -76,7 +81,7 @@ class VeoProviderClient:
                 payload = {}
 
         result = await submit_render_task(
-            provider=getattr(job, "provider", "veo"),
+            provider=self.provider_name,
             scene_payload=payload,
             callback_url=None,
         )
@@ -97,7 +102,7 @@ class VeoProviderClient:
         job: Any,
     ) -> dict[str, Any]:
         result = await query_render_task(
-            provider=getattr(job, "provider", "veo"),
+            provider=self.provider_name,
             provider_task_id=provider_task_id,
             provider_operation_name=provider_operation_name,
         )
@@ -120,7 +125,7 @@ def get_provider_client(provider_name: str) -> ProviderClientProtocol:
     allow_mock = bool(settings.provider_allow_mock_fallback) and app_env in {"development", "test", "testing", "local"}
 
     if normalized in {"veo", "veo_3", "veo_3_1"}:
-        return VeoProviderClient()
+        return ProviderRouterClient("veo")
     if allow_mock:
         return MockProviderClient()
     if bool(settings.provider_allow_mock_fallback):

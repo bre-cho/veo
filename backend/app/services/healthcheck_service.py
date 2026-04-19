@@ -5,35 +5,19 @@ from typing import Any
 from kombu import Connection
 from redis import Redis
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.db.session import engine
 
 
-def check_database() -> dict[str, Any]:
-    try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        return {
-            "ok": True,
-            "service": "postgres",
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "service": "postgres",
-            "error": str(exc),
-        }
-
 def check_postgres() -> dict[str, Any]:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return {"ok": True, "service": "postgres"}
-    except SQLAlchemyError as exc:
-        return {"ok": False, "service": "postgres", "error": str(exc)}
+    except Exception:
+        return {"ok": False, "service": "postgres", "error": "Postgres connectivity check failed"}
 
 
 def check_redis() -> dict[str, Any]:
@@ -71,7 +55,7 @@ def check_object_storage() -> dict[str, Any]:
         }
 
 
-def check_worker_runtime() -> dict[str, Any]:
+def check_worker_config() -> dict[str, Any]:
     """
     Health check cơ bản cho Celery runtime.
     Hiện tại chỉ xác nhận broker/backend config có mặt.
@@ -87,13 +71,13 @@ def check_worker_runtime() -> dict[str, Any]:
     if missing:
         return {
             "ok": False,
-            "service": "workers",
+            "service": "worker_config",
             "error": f"Missing worker config: {', '.join(missing)}",
         }
 
     return {
         "ok": True,
-        "service": "workers",
+        "service": "worker_config",
         "broker_url": settings.celery_broker_url,
         "result_backend": settings.celery_result_backend,
     }

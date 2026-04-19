@@ -162,18 +162,12 @@ const RAW_BASE_URL = API_BASE_URL.endsWith("/api/v1")
   ? API_BASE_URL.slice(0, -7)
   : API_BASE_URL;
 
-// Backward-compat helpers used by older API wrappers in this file.
-const API_BASE = RAW_BASE_URL;
-
-async function handle<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-  return (await res.json()) as T;
-}
-
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return request<T>(path, init);
+}
+
+async function requestRaw<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(buildRawUrl(path), init);
 }
 
 function buildUrl(path: string): string {
@@ -210,18 +204,34 @@ async function parseErrorResponse(res: Response): Promise<string> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers || {});
+  const method = (init?.method || "GET").toUpperCase();
+  const isIdempotentMethod = method === "GET" || method === "HEAD";
+  const maxRetries = isIdempotentMethod ? 2 : 0;
 
   if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(buildUrl(path), {
-    ...init,
-    headers,
-  });
+  let res: Response | null = null;
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    res = await fetch(buildUrl(path), {
+      ...init,
+      headers,
+    });
+    if (
+      res.ok ||
+      attempt === maxRetries ||
+      ![408, 429, 500, 502, 503, 504].includes(res.status)
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+    attempt += 1;
+  }
 
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
+  if (!res || !res.ok) {
+    throw new Error(await parseErrorResponse(res as Response));
   }
 
   const json = (await res.json()) as ApiEnvelope<T> | T;
@@ -250,22 +260,10 @@ export async function uploadScriptFileForPreview(input: {
   form.append("aspect_ratio", input.aspect_ratio || "9:16");
   form.append("target_platform", input.target_platform || "shorts");
   form.append("style_preset", input.style_preset || "cinematic_dark");
-
-  const res = await fetch(buildRawUrl("/api/v1/script-upload/preview"), {
+  return request<ScriptPreviewPayload>("/script-upload/preview", {
     method: "POST",
     body: form,
   });
-
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-
-  const json = (await res.json()) as ApiEnvelope<ScriptPreviewPayload>;
-  if (!json.ok) {
-    throw new Error(json.error?.message || "Failed to upload script file for preview");
-  }
-
-  return json.data;
 }
 
 export async function previewScriptUpload(input: {
@@ -396,51 +394,19 @@ export async function getRenderJob(jobId: string): Promise<RenderJob> {
 }
 
 export async function getHealth(): Promise<HealthCheckPayload> {
-  const res = await fetch(buildRawUrl("/healthz"), {
-    method: "GET",
-  });
-
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-
-  return (await res.json()) as HealthCheckPayload;
+  return requestRaw<HealthCheckPayload>("/healthz", { method: "GET" });
 }
 
 export async function getWorkerHealth(): Promise<HealthCheckPayload> {
-  const res = await fetch(buildRawUrl("/healthz/workers"), {
-    method: "GET",
-  });
-
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-
-  return (await res.json()) as HealthCheckPayload;
+  return requestRaw<HealthCheckPayload>("/healthz/workers", { method: "GET" });
 }
 
 export async function getPostgresHealth(): Promise<HealthCheckPayload> {
-  const res = await fetch(buildRawUrl("/healthz/postgres"), {
-    method: "GET",
-  });
-
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-
-  return (await res.json()) as HealthCheckPayload;
+  return requestRaw<HealthCheckPayload>("/healthz/postgres", { method: "GET" });
 }
 
 export async function getRedisHealth(): Promise<HealthCheckPayload> {
-  const res = await fetch(buildRawUrl("/healthz/redis"), {
-    method: "GET",
-  });
-
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res));
-  }
-
-  return (await res.json()) as HealthCheckPayload;
+  return requestRaw<HealthCheckPayload>("/healthz/redis", { method: "GET" });
 }
 
 
@@ -776,249 +742,190 @@ export async function createAudioMixJob(payload: {
 
 
 export async function getProductionRuns() {
-  return handle<{items: any[]}>(await fetch(`${API_BASE}/api/v1/dashboard/production-runs`, { cache: "no-store" }));
+  return request<{items: any[]}>("/dashboard/production-runs", { cache: "no-store" });
 }
 
 
 export async function getRenderJobTimeline(renderJobId: string) {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/render-jobs/${renderJobId}/timeline`, { cache: "no-store" }));
+  return request<any>(`/render-jobs/${renderJobId}/timeline`, { cache: "no-store" });
 }
 
 
 export async function createProductionEvent(payload: any) {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/production/events`, {
+  return request<any>("/production/events", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }));
+  });
 }
 
 
 export async function getStrategyState() {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/state`, { cache: "no-store" }));
+  return request<any>("/strategy/state", { cache: "no-store" });
 }
 
 
 export async function createStrategySignal(payload: any) {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/signals`, {
+  return request<any>("/strategy/signals", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }));
+  });
 }
 
 
 export async function activateStrategyMode(payload: any) {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/modes`, {
+  return request<any>("/strategy/modes", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }));
+  });
 }
 
 
 export async function getStrategyDirectives() {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/directives`, { cache: "no-store" }));
+  return request<any>("/strategy/directives", { cache: "no-store" });
 }
 
 
 export async function getStrategyPortfolio() {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/portfolio`, { cache: "no-store" }));
+  return request<any>("/strategy/portfolio", { cache: "no-store" });
 }
 
 
 export async function getStrategySlaRisk() {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/sla-risk`, { cache: "no-store" }));
+  return request<any>("/strategy/sla-risk", { cache: "no-store" });
 }
 
 
 export async function getStrategyBusinessOutcomes() {
-  return handle<any>(await fetch(`${API_BASE}/api/v1/strategy/business-outcomes`, { cache: "no-store" }));
+  return request<any>("/strategy/business-outcomes", { cache: "no-store" });
 }
 
 
 
 export async function getTemplates(status?: string): Promise<any> {
-  const url = status ? `${API_BASE}/api/v1/templates?status=${encodeURIComponent(status)}` : `${API_BASE}/api/v1/templates`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load templates");
-  return res.json();
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<any>(`/templates${suffix}`, { cache: "no-store" });
 }
 
 export async function getTemplateDetail(templateId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/${templateId}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load template detail");
-  return res.json();
+  return request<any>(`/templates/${templateId}`, { cache: "no-store" });
 }
 
 export async function createTemplate(payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates`, {
+  return request<any>("/templates", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to create template");
-  return res.json();
 }
 
 export async function publishTemplate(templateId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/${templateId}/publish`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to publish template");
-  return res.json();
+  return request<any>(`/templates/${templateId}/publish`, { method: "POST" });
 }
 
 export async function archiveTemplate(templateId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/${templateId}/archive`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to archive template");
-  return res.json();
+  return request<any>(`/templates/${templateId}/archive`, { method: "POST" });
 }
 
 export async function extractTemplate(payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/extract`, {
+  return request<any>("/templates/extract", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to queue extraction");
-  return res.json();
 }
 
 export async function generateFromTemplate(templateId: string, payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/${templateId}/generate`, {
+  return request<any>(`/templates/${templateId}/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to generate from template");
-  return res.json();
 }
 
 export async function batchGenerateFromTemplate(templateId: string, payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/${templateId}/batch-generate`, {
+  return request<any>(`/templates/${templateId}/batch-generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to queue template batch");
-  return res.json();
 }
 
 
 
 export async function getProjects(): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load projects");
-  return res.json();
+  return request<any>("/projects", { cache: "no-store" });
 }
 
 export async function getProject(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load project");
-  return res.json();
+  return request<any>(`/projects/${projectId}`, { cache: "no-store" });
 }
 
 export async function triggerProjectRender(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/render`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to trigger render");
-  return res.json();
+  return request<any>(`/projects/${projectId}/render`, { method: "POST" });
 }
 
 export async function getProjectRenderStatus(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/render-status`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load render status");
-  return res.json();
+  return request<any>(`/projects/${projectId}/render-status`, { cache: "no-store" });
 }
 
 export async function getProjectRenderEvents(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/render-events`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load render events");
-  return res.json();
+  return request<any>(`/projects/${projectId}/render-events`, { cache: "no-store" });
 }
 
 export async function retryProjectRender(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/render/retry`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to retry render");
-  return res.json();
+  return request<any>(`/projects/${projectId}/render/retry`, { method: "POST" });
 }
 
 export async function rerenderScene(projectId: string, sceneId: string | number): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/scenes/${sceneId}/rerender`, {
+  return request<any>(`/scenes/${sceneId}/rerender`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId }),
   });
-  if (!res.ok) throw new Error("Failed to rerender scene");
-  return res.json();
 }
 
 export async function getTemplatesRanked(limit = 20): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/ranked?limit=${limit}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load ranked templates");
-  return res.json();
+  return request<any>(`/templates/ranked?limit=${limit}`, { cache: "no-store" });
 }
 
 export async function autoPickTemplate(payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/auto-pick`, {
+  return request<any>("/templates/auto-pick", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to auto-pick template");
-  return res.json();
 }
 
 export async function processTemplateProjectFeedback(projectId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/feedback/process-project`, {
+  return request<any>("/templates/feedback/process-project", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId }),
   });
-  if (!res.ok) throw new Error("Failed to process template feedback");
-  return res.json();
 }
 
 
 
 export async function getCharacterReferencePacks(): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/character-reference-packs`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load character reference packs");
-  return res.json();
+  return request<any>("/character-reference-packs", { cache: "no-store" });
 }
 
 export async function createCharacterReferencePack(payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/character-reference-packs`, {
+  return request<any>("/character-reference-packs", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to create character reference pack");
-  return res.json();
 }
 
 export async function updateProjectVeoConfig(projectId: string, payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/projects/${projectId}/veo-config`, {
+  return request<any>(`/projects/${projectId}/veo-config`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to update Veo config");
-  return res.json();
 }
 
 export async function createVeoBatchRun(payload: any): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/veo/batch-runs`, {
+  return request<any>("/veo/batch-runs", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to create Veo batch run");
-  return res.json();
 }
 
 export async function getVeoBatchRun(batchId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/veo/batch-runs/${batchId}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load Veo batch run");
-  return res.json();
+  return request<any>(`/veo/batch-runs/${batchId}`, { cache: "no-store" });
 }
 
 
@@ -1032,13 +939,10 @@ export async function scheduleExecutionPlan(
     allow_run_outside_window: boolean;
   }
 ): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/schedule`, {
+  return request<any>(`/templates/governance/execution-plans/${planId}/schedule`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to schedule execution plan");
-  return res.json();
 }
 
 export async function pauseExecutionPlan(
@@ -1046,26 +950,20 @@ export async function pauseExecutionPlan(
   actorId: string,
   reason?: string
 ): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/pause`, {
+  return request<any>(`/templates/governance/execution-plans/${planId}/pause`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ actor_id: actorId, reason: reason || "" }),
   });
-  if (!res.ok) throw new Error("Failed to pause execution plan");
-  return res.json();
 }
 
 export async function resumeExecutionPlan(
   planId: string,
   actorId: string
 ): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/resume`, {
+  return request<any>(`/templates/governance/execution-plans/${planId}/resume`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ actor_id: actorId }),
   });
-  if (!res.ok) throw new Error("Failed to resume execution plan");
-  return res.json();
 }
 
 export async function cancelExecutionPlan(
@@ -1073,37 +971,26 @@ export async function cancelExecutionPlan(
   actorId: string,
   reason?: string
 ): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/cancel`, {
+  return request<any>(`/templates/governance/execution-plans/${planId}/cancel`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ actor_id: actorId, reason: reason || "" }),
   });
-  if (!res.ok) throw new Error("Failed to cancel execution plan");
-  return res.json();
 }
 
 export async function evaluateExecutionPlan(planId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/evaluate`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to evaluate execution plan");
-  return res.json();
+  return request<any>(`/templates/governance/execution-plans/${planId}/evaluate`, { method: "POST" });
 }
 
 export async function getExecutionPlanEvaluation(planId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/evaluation`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load execution plan evaluation");
-  return res.json();
+  return request<any>(`/templates/governance/execution-plans/${planId}/evaluation`, { cache: "no-store" });
 }
 
 export async function evaluateExecutionPlanPolicyPath(planId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/policy-path/evaluate`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to evaluate execution plan policy path");
-  return res.json();
+  return request<any>(`/templates/governance/execution-plans/${planId}/policy-path/evaluate`, { method: "POST" });
 }
 
 export async function getExecutionPlanPolicyPath(planId: string): Promise<any> {
-  const res = await fetch(`${API_BASE}/api/v1/templates/governance/execution-plans/${planId}/policy-path`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load execution plan policy path");
-  return res.json();
+  return request<any>(`/templates/governance/execution-plans/${planId}/policy-path`, { cache: "no-store" });
 }
 
 
@@ -1125,9 +1012,7 @@ export interface GoogleAccount {
 }
 
 export async function listGoogleAccounts(): Promise<{ items: GoogleAccount[] }> {
-  return handle<{ items: GoogleAccount[] }>(
-    await fetch(`${API_BASE}/api/v1/google-accounts`, { cache: "no-store" })
-  );
+  return request<{ items: GoogleAccount[] }>("/google-accounts", { cache: "no-store" });
 }
 
 export async function createGoogleAccount(payload: {
@@ -1140,13 +1025,10 @@ export async function createGoogleAccount(payload: {
   is_active?: boolean;
   rotation_enabled?: boolean;
 }): Promise<GoogleAccount> {
-  return handle<GoogleAccount>(
-    await fetch(`${API_BASE}/api/v1/google-accounts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
+  return request<GoogleAccount>("/google-accounts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateGoogleAccount(
@@ -1162,19 +1044,14 @@ export async function updateGoogleAccount(
     rotation_enabled: boolean;
   }>
 ): Promise<GoogleAccount> {
-  return handle<GoogleAccount>(
-    await fetch(`${API_BASE}/api/v1/google-accounts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
+  return request<GoogleAccount>(`/google-accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function deleteGoogleAccount(id: string): Promise<{ deleted: boolean }> {
-  return handle<{ deleted: boolean }>(
-    await fetch(`${API_BASE}/api/v1/google-accounts/${id}`, { method: "DELETE" })
-  );
+  return request<{ deleted: boolean }>(`/google-accounts/${id}`, { method: "DELETE" });
 }
 
 // ─── AI Engine Config ────────────────────────────────────────────────────────
@@ -1187,30 +1064,22 @@ export interface AiEngineConfig {
 }
 
 export async function getAiEngineConfig(): Promise<AiEngineConfig> {
-  return handle<AiEngineConfig>(
-    await fetch(`${API_BASE}/api/v1/ai-engine/config`, { cache: "no-store" })
-  );
+  return request<AiEngineConfig>("/ai-engine/config", { cache: "no-store" });
 }
 
 export async function saveAiEngineConfig(payload: {
   openrouter_api_key?: string;
   default_model?: string;
 }): Promise<AiEngineConfig> {
-  return handle<AiEngineConfig>(
-    await fetch(`${API_BASE}/api/v1/ai-engine/config`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-  );
+  return request<AiEngineConfig>("/ai-engine/config", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function testOpenRouterKey(api_key: string): Promise<{ ok: boolean }> {
-  return handle<{ ok: boolean }>(
-    await fetch(`${API_BASE}/api/v1/ai-engine/test-key`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key }),
-    })
-  );
+  return request<{ ok: boolean }>("/ai-engine/test-key", {
+    method: "POST",
+    body: JSON.stringify({ api_key }),
+  });
 }

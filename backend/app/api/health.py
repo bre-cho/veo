@@ -3,10 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.services.healthcheck_service import (
-    check_database,
+    check_postgres,
     check_object_storage,
     check_redis,
-    check_worker_runtime,
+    check_worker_config,
     summarize_health,
 )
 from app.services.render_fsm import describe_fsm, get_transition_metrics_snapshot
@@ -20,10 +20,10 @@ async def healthz() -> dict:
     Aggregate health endpoint cho toàn bộ backend runtime.
     """
     checks = [
-        check_database(),
+        check_postgres(),
         check_redis(),
         check_object_storage(),
-        check_worker_runtime(),
+        check_worker_config(),
     ]
     return summarize_health(checks)
 
@@ -33,7 +33,7 @@ async def healthz_postgres() -> dict:
     """
     Health check riêng cho Postgres.
     """
-    return check_database()
+    return check_postgres()
 
 
 @router.get("/healthz/redis")
@@ -57,7 +57,7 @@ async def healthz_workers() -> dict:
     """
     Health check cơ bản cho Celery worker runtime.
     """
-    return check_worker_runtime()
+    return check_worker_config()
 
 
 @router.get("/healthz/fsm")
