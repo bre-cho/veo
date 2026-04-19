@@ -71,7 +71,7 @@ def upgrade() -> None:
     op.create_index("ix_render_jobs_idempotency_key", "render_jobs", ["idempotency_key"], unique=True)
 
     op.create_table(
-        "scene_tasks",
+        "render_scene_tasks",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column(
             "project_id",
@@ -119,40 +119,40 @@ def upgrade() -> None:
         sa.CheckConstraint("max_attempts >= 1", name="ck_scene_tasks_max_attempts"),
     )
 
-    op.create_index("ix_scene_tasks_project_id", "scene_tasks", ["project_id"], unique=False)
-    op.create_index("ix_scene_tasks_scene_id", "scene_tasks", ["scene_id"], unique=False)
-    op.create_index("ix_scene_tasks_render_job_id", "scene_tasks", ["render_job_id"], unique=False)
-    op.create_index("ix_scene_tasks_task_type", "scene_tasks", ["task_type"], unique=False)
-    op.create_index("ix_scene_tasks_status", "scene_tasks", ["status"], unique=False)
-    op.create_index("ix_scene_tasks_provider", "scene_tasks", ["provider"], unique=False)
-    op.create_index("ix_scene_tasks_provider_account_id", "scene_tasks", ["provider_account_id"], unique=False)
-    op.create_index("ix_scene_tasks_provider_task_id", "scene_tasks", ["provider_task_id"], unique=False)
-    op.create_index("ix_scene_tasks_priority", "scene_tasks", ["priority"], unique=False)
-    op.create_index("ix_scene_tasks_scheduled_at", "scene_tasks", ["scheduled_at"], unique=False)
-    op.create_index("ix_scene_tasks_created_at", "scene_tasks", ["created_at"], unique=False)
+    op.create_index("ix_render_scene_tasks_project_id", "render_scene_tasks", ["project_id"], unique=False)
+    op.create_index("ix_render_scene_tasks_scene_id", "render_scene_tasks", ["scene_id"], unique=False)
+    op.create_index("ix_render_scene_tasks_render_job_id", "render_scene_tasks", ["render_job_id"], unique=False)
+    op.create_index("ix_render_scene_tasks_task_type", "render_scene_tasks", ["task_type"], unique=False)
+    op.create_index("ix_render_scene_tasks_status", "render_scene_tasks", ["status"], unique=False)
+    op.create_index("ix_render_scene_tasks_provider", "render_scene_tasks", ["provider"], unique=False)
+    op.create_index("ix_render_scene_tasks_provider_account_id", "render_scene_tasks", ["provider_account_id"], unique=False)
+    op.create_index("ix_render_scene_tasks_provider_task_id", "render_scene_tasks", ["provider_task_id"], unique=False)
+    op.create_index("ix_render_scene_tasks_priority", "render_scene_tasks", ["priority"], unique=False)
+    op.create_index("ix_render_scene_tasks_scheduled_at", "render_scene_tasks", ["scheduled_at"], unique=False)
+    op.create_index("ix_render_scene_tasks_created_at", "render_scene_tasks", ["created_at"], unique=False)
 
     op.create_index(
-        "ux_scene_tasks_scene_task_type_active",
-        "scene_tasks",
+        "ux_render_scene_tasks_scene_task_type_active",
+        "render_scene_tasks",
         ["scene_id", "task_type", "status"],
         unique=False,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ux_scene_tasks_scene_task_type_active", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_created_at", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_scheduled_at", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_priority", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_provider_task_id", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_provider_account_id", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_provider", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_status", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_task_type", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_render_job_id", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_scene_id", table_name="scene_tasks")
-    op.drop_index("ix_scene_tasks_project_id", table_name="scene_tasks")
-    op.drop_table("scene_tasks")
+    op.drop_index("ux_render_scene_tasks_scene_task_type_active", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_created_at", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_scheduled_at", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_priority", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_provider_task_id", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_provider_account_id", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_provider", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_status", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_task_type", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_render_job_id", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_scene_id", table_name="render_scene_tasks")
+    op.drop_index("ix_render_scene_tasks_project_id", table_name="render_scene_tasks")
+    op.drop_table("render_scene_tasks")
 
     op.drop_index("ix_render_jobs_idempotency_key", table_name="render_jobs")
     op.drop_index("ix_render_jobs_provider_account_id", table_name="render_jobs")
