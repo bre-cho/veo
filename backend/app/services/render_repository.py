@@ -818,7 +818,10 @@ def create_webhook_event(
         db.rollback()
         existing = get_webhook_event_by_idempotency_key(db, event_idempotency_key)
         if existing is None:
-            raise
+            raise RuntimeError(
+                f"Webhook idempotency conflict detected for key '{event_idempotency_key}', "
+                "but no existing event was found."
+            )
         return existing, False
 
 

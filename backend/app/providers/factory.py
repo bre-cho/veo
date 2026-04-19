@@ -123,4 +123,10 @@ def get_provider_client(provider_name: str) -> ProviderClientProtocol:
         return VeoProviderClient()
     if allow_mock:
         return MockProviderClient()
-    raise ValueError(f"Unsupported provider: {provider_name}")
+    if bool(settings.provider_allow_mock_fallback):
+        raise ValueError(
+            f"Unsupported provider: {provider_name}; mock fallback is only allowed in development/test environments."
+        )
+    raise ValueError(
+        f"Unsupported provider: {provider_name}; mock fallback is disabled for environment '{settings.app_env}'."
+    )

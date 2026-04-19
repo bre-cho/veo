@@ -40,6 +40,27 @@ def _build_output_url(job_id: str, filename: str) -> str:
     return f"/storage/render_outputs/{job_id}/{filename}"
 
 
+def _normalize_subtitle_segments(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict] = []
+    for seg in value:
+        if not isinstance(seg, dict):
+            continue
+        if {"start_sec", "end_sec", "text"} - seg.keys():
+            continue
+        try:
+            start_sec = float(seg["start_sec"])
+            end_sec = float(seg["end_sec"])
+            text = str(seg["text"])
+        except (TypeError, ValueError):
+            continue
+        if end_sec <= start_sec:
+            continue
+        normalized.append({"start_sec": start_sec, "end_sec": end_sec, "text": text})
+    return normalized
+
+
 async def process_render_postprocess(db: Session, job_id: str) -> None:
     job = get_render_job_by_id(db, job_id, with_scenes=False)
     if not job:
@@ -169,7 +190,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
 
     final_path = merged_path
 
-    subtitle_segments: list[dict] = []
+    subtitle_segments = _normalize_subtitle_segments(job.subtitle_segments)
     if job.subtitle_mode == "burn" and subtitle_segments:
         updated = mark_job_status(
             db,
