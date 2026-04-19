@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.services.final_timeline_builder import build_final_preview_timeline
 from app.services.render_repository import (
     finalize_render_job,
@@ -29,6 +30,35 @@ def _is_job_already_in_postprocess(job) -> bool:
 
 def _should_fail_due_to_partial_success(job) -> bool:
     return job.failed_scene_count > 0
+
+
+def _job_output_dir(job_id: str) -> Path:
+    return Path(settings.render_output_dir) / job_id
+
+
+def _build_output_url(job_id: str, filename: str) -> str:
+    return f"/storage/render_outputs/{job_id}/{filename}"
+
+
+def _normalize_subtitle_segments(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict] = []
+    for seg in value:
+        if not isinstance(seg, dict):
+            continue
+        if {"start_sec", "end_sec", "text"} - seg.keys():
+            continue
+        try:
+            start_sec = float(seg["start_sec"])
+            end_sec = float(seg["end_sec"])
+            text = str(seg["text"])
+        except (TypeError, ValueError):
+            continue
+        if end_sec <= start_sec:
+            continue
+        normalized.append({"start_sec": start_sec, "end_sec": end_sec, "text": text})
+    return normalized
 
 
 async def process_render_postprocess(db: Session, job_id: str) -> None:
@@ -90,7 +120,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
     if not updated:
         return
 
-    out_dir = Path("storage/render_outputs") / job.id
+    out_dir = _job_output_dir(job.id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     video_paths = [scene.local_video_path for scene in successful_scenes if scene.local_video_path]
@@ -109,11 +139,25 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
     # Check if all files are real (non-zero) video files. If they are empty stubs
     # (as created by the mock asset_collector), skip ffmpeg and use the first
     # scene's output_video_url directly as the final URL.
-    all_stub = all(Path(p).stat().st_size == 0 for p in video_paths if Path(p).exists())
+    file_paths = [Path(p) for p in video_paths]
+    missing_paths = [str(path) for path in file_paths if not path.exists()]
+    if missing_paths:
+        mark_job_status(
+            db,
+            job,
+            "failed",
+            "Postprocess blocked: one or more local video files are missing.",
+            source="postprocess",
+            reason="missing_local_video_file",
+            metadata={"missing_paths": missing_paths},
+        )
+        return
+
+    all_stub = all(path.stat().st_size == 0 for path in file_paths)
     if all_stub:
         fallback_url = next(
             (s.output_video_url for s in successful_scenes if s.output_video_url),
-            f"/storage/render_outputs/{job.id}/mock-output.mp4",
+            _build_output_url(job.id, "mock-output.mp4"),
         )
         final_timeline = build_final_preview_timeline(
             scenes=[
@@ -146,7 +190,8 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
 
     final_path = merged_path
 
-    if job.subtitle_mode == "burn":
+    subtitle_segments = _normalize_subtitle_segments(job.subtitle_segments)
+    if job.subtitle_mode == "burn" and subtitle_segments:
         updated = mark_job_status(
             db,
             job,
@@ -157,7 +202,6 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
         if not updated:
             return
 
-        subtitle_segments: list[dict] = []
         srt_path = str(out_dir / "subtitles.srt")
         write_srt(subtitle_segments, srt_path)
 
@@ -165,7 +209,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
         burn_subtitles(merged_path, srt_path, burned_path)
         final_path = burned_path
 
-    final_video_url = f"/storage/render_outputs/{job.id}/{Path(final_path).name}"
+    final_video_url = _build_output_url(job.id, Path(final_path).name)
 
     final_timeline = build_final_preview_timeline(
         scenes=[

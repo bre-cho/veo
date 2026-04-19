@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.project_workspace_service import load_project, list_projects
@@ -7,6 +8,10 @@ from app.services.project_render_runtime import trigger_project_render, get_proj
 from app.services.render_events import build_project_render_event_summary
 
 router = APIRouter(tags=["project-workspace"])
+
+
+class SceneRerenderRequest(BaseModel):
+    project_id: str
 
 @router.get("/api/v1/projects")
 async def get_projects():
@@ -48,9 +53,9 @@ async def retry_project_render_api(project_id: str, db: Session = Depends(get_db
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-@router.post("/api/v1/scenes/{scene_id}/rerender")
-async def rerender_scene_api(scene_id: str, payload: dict, db: Session = Depends(get_db)):
+@router.post("/api/v1/scenes/{scene_index}/rerender")
+async def rerender_scene_api(scene_index: int, payload: SceneRerenderRequest, db: Session = Depends(get_db)):
     try:
-        return rerender_scene(db, payload["project_id"], int(scene_id))
+        return rerender_scene(db, payload.project_id, scene_index)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

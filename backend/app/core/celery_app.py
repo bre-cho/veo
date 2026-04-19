@@ -42,6 +42,7 @@ celery_app.conf.update(
         "render.dispatch": {"queue": "render_dispatch"},
         "render.poll": {"queue": "render_poll"},
         "render.postprocess": {"queue": "render_postprocess"},
+        "render.callback_process": {"queue": "render_callback"},
         "render.recover_stuck": {"queue": "render_maintenance"},
         "autopilot.evaluate_control_fabric": {"queue": "autopilot"},
         "audio.run_narration": {"queue": "audio"},

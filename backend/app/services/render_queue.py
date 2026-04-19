@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.workers.render_tasks import (
+    render_callback_process_task,
     render_dispatch_task,
     render_poll_task,
     render_postprocess_task,
@@ -48,5 +49,18 @@ def enqueue_render_postprocess(job_id: str, countdown: int = 0) -> dict:
         "task_name": "render.postprocess",
         "celery_task_id": result.id,
         "job_id": job_id,
+        "countdown": countdown,
+    }
+
+
+def enqueue_render_callback_process(event_id: str, countdown: int = 0) -> dict:
+    if countdown > 0:
+        result = render_callback_process_task.apply_async(args=[event_id], countdown=countdown)
+    else:
+        result = render_callback_process_task.delay(event_id)
+    return {
+        "task_name": "render.callback_process",
+        "celery_task_id": result.id,
+        "event_id": event_id,
         "countdown": countdown,
     }
