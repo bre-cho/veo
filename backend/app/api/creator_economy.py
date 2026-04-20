@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser, get_current_user
 from app.db.session import get_db
 from app.repositories.marketplace_repo import MarketplaceRepo
 from app.schemas.creator_economy import (
@@ -24,13 +25,36 @@ _mp_repo = MarketplaceRepo()
 
 
 @router.post("/creators")
-def create_creator(req: CreatorCreate, db: Session = Depends(get_db)):
+def create_creator(req: CreatorCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    profile = _mp_repo.upsert_creator_profile(
+        db,
+        creator_id=req.creator_id,
+        user_id=str(current_user.id),
+        display_name=req.display_name,
+        bio=req.bio,
+        market_code=req.market_code,
+    )
     ranking = _mp_repo.upsert_creator_ranking(
         db,
         req.creator_id,
         {"avatar_count": 0},
     )
-    return {"ok": True, "creator_id": req.creator_id, "rank_score": float(ranking.rank_score)}
+    return {
+        "ok": True,
+        "creator": {
+            "creator_id": profile.creator_id,
+            "user_id": profile.user_id,
+            "display_name": profile.display_name,
+            "bio": profile.bio,
+            "market_code": profile.market_code,
+        },
+        "ranking": {
+            "creator_id": ranking.creator_id,
+            "rank_score": float(ranking.rank_score),
+            "total_earnings_usd": float(ranking.total_earnings_usd),
+            "avatar_count": ranking.avatar_count,
+        },
+    }
 
 
 @router.get("/creators/top")
@@ -71,6 +95,13 @@ def get_creator_earnings(creator_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/creators/{creator_id}/request-payout", response_model=PayoutRequestOut)
-def request_payout(creator_id: str, req: PayoutRequestIn, db: Session = Depends(get_db)):
+def request_payout(
+    creator_id: str,
+    req: PayoutRequestIn,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    if not _mp_repo.is_creator_owner(db, creator_id=creator_id, user_id=str(current_user.id)):
+        raise HTTPException(status_code=403, detail="Not allowed for this creator")
     result = _payout_service.request_payout(db, creator_id, float(req.amount_usd))
     return PayoutRequestOut(**result)

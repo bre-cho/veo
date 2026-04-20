@@ -16,6 +16,9 @@ class AvatarListingService:
         )
         results = []
         for avatar in avatars:
+            item = _mp_repo.get_item_by_avatar(db, avatar.id)
+            if not item or not item.is_active or avatar.moderation_status != "approved":
+                continue
             if avatar.is_featured:
                 results.append({"id": avatar.id, "name": avatar.name, "niche_code": avatar.niche_code, "is_featured": True})
         # Pad with non-featured if needed
@@ -30,7 +33,8 @@ class AvatarListingService:
         results = []
         for ranking in rankings:
             avatar = _avatar_repo.get_avatar(db, ranking.avatar_id)
-            if avatar:
+            item = _mp_repo.get_item_by_avatar(db, ranking.avatar_id)
+            if avatar and item and item.is_active and avatar.is_published and avatar.moderation_status == "approved":
                 results.append({
                     "id": avatar.id,
                     "name": avatar.name,

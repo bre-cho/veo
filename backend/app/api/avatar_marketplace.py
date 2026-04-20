@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.repositories.avatar_repo import AvatarRepo
+from app.repositories.marketplace_repo import MarketplaceRepo
 from app.services.marketplace.avatar_listing_service import AvatarListingService
 from app.services.marketplace.avatar_usage_service import AvatarUsageService
 from app.services.marketplace.marketplace_service import MarketplaceService
@@ -17,6 +18,7 @@ _mp_service = MarketplaceService()
 _listing_service = AvatarListingService()
 _usage_service = AvatarUsageService()
 _avatar_repo = AvatarRepo()
+_mp_repo = MarketplaceRepo()
 
 
 @router.get("/avatars")
@@ -29,6 +31,13 @@ def list_avatars(
     db: Session = Depends(get_db),
 ):
     items = _mp_service.list_avatars(db, market_code=market_code, niche_code=niche_code, role_id=role_id, limit=limit, offset=offset)
+    items = [
+        item
+        for item in items
+        if item.get("is_published", True)
+        and bool(item.get("marketplace_item", {}).get("is_active"))
+        and item.get("moderation_status") == "approved"
+    ]
     return {"items": items, "total": len(items), "page": offset // limit + 1, "page_size": limit}
 
 
@@ -43,7 +52,12 @@ def trending_avatars(limit: int = 10, db: Session = Depends(get_db)):
 
 
 @router.get("/avatars/recently-used")
-def recently_used_avatars(user_id: Optional[str] = None, limit: int = 10, db: Session = Depends(get_db)):
+def recently_used_avatars(
+    user_id: Optional[str] = None,
+    market_code: Optional[str] = None,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
     from app.repositories.creator_economy_repo import CreatorEconomyRepo
     _eco_repo = CreatorEconomyRepo()
     events = _eco_repo.list_usage_events(db, user_id=user_id, limit=limit)
@@ -53,8 +67,13 @@ def recently_used_avatars(user_id: Optional[str] = None, limit: int = 10, db: Se
         if event.avatar_id not in seen:
             seen.append(event.avatar_id)
             avatar = _avatar_repo.get_avatar(db, event.avatar_id)
-            if avatar:
-                result.append({"id": avatar.id, "name": avatar.name, "niche_code": avatar.niche_code})
+            if not avatar:
+                continue
+            if not _mp_repo.is_avatar_publicly_listable(db, avatar.id):
+                continue
+            if market_code and not _mp_repo.is_avatar_market_compatible(db, avatar.id, market_code):
+                continue
+            result.append({"id": avatar.id, "name": avatar.name, "niche_code": avatar.niche_code})
     return {"items": result}
 
 

@@ -40,6 +40,7 @@ class AvatarDna(Base):
     owner_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     creator_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    moderation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending", index=True)
     is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tags: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     meta: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
@@ -205,6 +206,16 @@ class CreatorRanking(Base):
     total_earnings_usd: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False, default=Decimal("0"))
     avatar_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CreatorProfile(Base):
+    __tablename__ = "creator_profiles"
+
+    creator_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    market_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
 
 
 class AvatarCollection(Base):
