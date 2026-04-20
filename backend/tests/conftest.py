@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -14,6 +15,9 @@ if str(ROOT) not in sys.path:
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.channel_plan import ChannelPlan  # noqa: F401
+from app.models.optimization_run import OptimizationRun  # noqa: F401
+from app.models.publish_job import PublishJob  # noqa: F401
 
 
 class _RedisFixtureClient:
@@ -38,7 +42,11 @@ class _RedisFixtureClient:
 
 @pytest.fixture(scope="session")
 def db_engine():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(bind=engine)
     try:
         yield engine
