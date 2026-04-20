@@ -577,7 +577,6 @@ class PerformanceLearningEngine:
                 json.dump(self._records, fh, indent=2)
         except OSError:
             pass  # Non-fatal — in-memory store still works
-        return rec
 
     def top_hook_patterns(
         self,
