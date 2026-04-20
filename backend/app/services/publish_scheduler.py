@@ -21,6 +21,10 @@ from app.services.publish_providers import (
     YouTubePublishProvider,
 )
 from app.services.publish_providers.preflight import PublishPreflightValidator
+from app.services.publish_providers.campaign_budget_policy import (
+    BudgetExceededError,
+    CampaignBudgetPolicy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,8 @@ _PUBLISH_MODE: str = os.getenv("PUBLISH_MODE", PUBLISH_MODE_SIMULATED).upper()
 __all__ = [
     "PublishProviderBase",
     "SimulatedPublishProvider",
+    "BudgetExceededError",
+    "CampaignBudgetPolicy",
     "ConfigurationError",
     "PublishScheduler",
 ]
@@ -175,6 +181,24 @@ class PublishScheduler:
             db.refresh(job)
             raise ValueError(f"Publish preflight failed: {preflight_errors}")
         job.preflight_status = "ok"
+
+        # --- Campaign / platform budget check ---
+        budget_policy = CampaignBudgetPolicy()
+        try:
+            budget_policy.check(db, job)
+        except BudgetExceededError as exc:
+            job.status = "failed"
+            job.failed_at = now
+            job.error_log = {
+                "mode": job.publish_mode or _PUBLISH_MODE,
+                "error": "budget_exceeded",
+                "budget_reason": exc.reason,
+                "budget_detail": exc.detail,
+            }
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            raise
 
         provider = _get_provider(platform=job.platform)
 

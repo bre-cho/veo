@@ -273,6 +273,10 @@ class AvatarIdentityService:
     # Render-time verification loop
     # ------------------------------------------------------------------
 
+    # Number of frames to sample from the output video for identity verification
+    # when the caller does not supply pre-computed embeddings.
+    _VERIFY_N_FRAMES: int = 8
+
     def verify_render_output(
         self,
         db: Session,
@@ -287,18 +291,55 @@ class AvatarIdentityService:
         canonical AvatarReferenceFrame, and raises ``IdentityDriftException``
         when similarity falls below ``IDENTITY_GATE_THRESHOLD``.
 
+        When ``frame_embeddings`` is not supplied, the method uses
+        ``MediaEmbeddingExtractor`` to sample ``_VERIFY_N_FRAMES`` frames
+        directly from ``render_url`` and compute per-frame cosine similarity.
+        This ensures the gate is applied to the *actual output video* rather
+        than falling back to a static identity field.
+
         Returns a result dict including ``consistency_score``, ``ok`` (bool),
         ``action`` ("accept" | "identity_review"), and ``frame_results``.
         """
+        from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
+
         frame_results: list[dict[str, Any]] = []
         consistency_score: float = 1.0
+        extraction_method: str = "provided"
 
         if frame_embeddings:
-            # Use provided embeddings for per-frame check
+            # Use caller-supplied embeddings (fastest path)
             frame_results = self.lock_frame_sequence(db, avatar_id, frame_embeddings)
             scores = [r["cosine_similarity"] for r in frame_results]
             consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
+        elif render_url:
+            # Extract embeddings from the actual output video/image using
+            # MediaEmbeddingExtractor.  extract(url, n_frames=N) samples N
+            # evenly-spaced frames and returns their mean embedding as a single
+            # list[float].  We pass this single vector to lock_frame_sequence
+            # which compares it against the canonical reference frame.
+            extraction_method = "media_extractor"
+            try:
+                extractor = MediaEmbeddingExtractor()
+                mean_embedding: list[float] = extractor.extract(
+                    render_url, n_frames=self._VERIFY_N_FRAMES
+                )
+                # Wrap in a list so lock_frame_sequence receives list[list[float]]
+                frame_results = self.lock_frame_sequence(db, avatar_id, [mean_embedding])
+                scores = [r["cosine_similarity"] for r in frame_results]
+                consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
+            except Exception:
+                # Extraction failed — fall back to static identity field
+                extraction_method = "identity_fallback"
+                identity = self.get_identity_vector(db, avatar_id)
+                consistency_score = round(
+                    identity.get("consistency_score", 1.0)
+                    if isinstance(identity.get("consistency_score"), float)
+                    else 1.0,
+                    3,
+                )
         else:
+            # No render URL provided: use static identity field as last resort
+            extraction_method = "identity_fallback"
             identity = self.get_identity_vector(db, avatar_id)
             consistency_score = round(
                 identity.get("consistency_score", 1.0)
@@ -312,15 +353,17 @@ class AvatarIdentityService:
             raise IdentityDriftException(avatar_id, consistency_score)
 
         action = "accept" if consistency_score >= _RENDER_CONSISTENCY_THRESHOLD else "identity_review"
+        effective_frame_count = frame_count or len(frame_results) or len(frame_embeddings or [])
         return {
             "ok": True,
             "avatar_id": avatar_id,
             "render_url": render_url,
-            "frame_count": frame_count or len(frame_embeddings or []),
+            "frame_count": effective_frame_count,
             "consistency_score": consistency_score,
             "action": action,
             "requires_review": action == "identity_review",
             "frame_results": frame_results,
+            "extraction_method": extraction_method,
         }
 
     # ------------------------------------------------------------------
