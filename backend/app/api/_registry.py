@@ -74,6 +74,7 @@ from app.api.lookbook import router as lookbook_router
 from app.api.motion_clone import router as motion_clone_router
 from app.api.patterns import router as patterns_router
 from app.api.creative_runs import router as creative_runs_router
+from app.api.publish_signal import router as publish_signal_router
 
 _CORE_ROUTERS = [
     health_router,
@@ -150,6 +151,7 @@ _CREATIVE_ROUTERS = [
     motion_clone_router,
     patterns_router,
     creative_runs_router,
+    publish_signal_router,
 ]
 
 

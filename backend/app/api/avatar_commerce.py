@@ -331,3 +331,17 @@ def record_performance(req: RecordPerformanceRequest):
 @router.get("/learning/summary", response_model=FeedbackSummaryResponse)
 def learning_summary():
     return FeedbackSummaryResponse(**_learning_engine.feedback_summary())
+
+
+@router.get("/learning/health", response_model=dict)
+def learning_health():
+    """Return data quality and drift diagnostics for the learning engine.
+
+    Useful for ops dashboards, CI health gates, and adaptive model governance.
+    """
+    quality = _learning_engine.data_quality_report()
+    drift = _learning_engine.score_drift_summary()
+    return {
+        "data_quality": quality,
+        "score_drift": drift,
+    }

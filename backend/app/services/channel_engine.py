@@ -104,6 +104,11 @@ _STABLE_HOOK_MIN_SAMPLES = 3
 # Minimum number of records required before any adaptive adjustment is made.
 _ADAPTIVE_MIN_RECORDS = 5
 
+# Adjustment applied when a top template family consistently wins for the
+# specific platform/market/goal context (contextual specialisation).
+_CONTEXT_WIN_BOOST = 0.04
+_CONTEXT_WIN_THRESHOLD = 2  # minimum wins to apply contextual boost
+
 
 def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]:
     """Return bounded additive adjustments to ``_SCORE_WEIGHTS`` from learning feedback.
@@ -161,6 +166,66 @@ def _apply_weight_adjustments(
     if total > 0:
         adjusted = {k: round(v / total, 4) for k, v in adjusted.items()}
     return adjusted
+
+
+def _derive_contextual_weight_adjustments(
+    learning_store: Any,
+    *,
+    platform: str | None,
+    goal: str | None,
+    market_code: str | None,
+) -> dict[str, float]:
+    """Derive weight adjustments filtered to the exact platform/market/goal context.
+
+    This supplements the global ``_derive_adaptive_weight_adjustments()`` with
+    context-specific signal: when we have enough data for this exact platform +
+    market combination, those records are the strongest signal available and
+    should dominate weight recalibration.
+
+    Returns an additive adjustment dict (same shape as ``_SCORE_WEIGHTS``).
+    Falls back to an empty dict when context-filtered data is insufficient.
+    """
+    if learning_store is None:
+        return {}
+    if not platform and not market_code:
+        return {}  # no context to filter on – global adjustments are sufficient
+    try:
+        summary = learning_store.feedback_summary(platform=platform, market_code=market_code)
+    except Exception:
+        return {}
+
+    if summary.get("total_records", 0) < _ADAPTIVE_MIN_RECORDS:
+        return {}
+
+    adjustments: dict[str, float] = {}
+    avg_score: float = summary.get("avg_conversion_score", 0.0)
+
+    # Inherit the same high/low threshold logic as the global version but with
+    # doubled magnitude because the data is more contextually relevant.
+    if avg_score >= _HIGH_CONVERSION_THRESHOLD:
+        adjustments["conversion_potential"] = min(_MAX_WEIGHT_ADJUSTMENT, _CONVERSION_HIGH_BOOST * 1.5)
+        adjustments["audience_fit"] = max(-_MAX_WEIGHT_ADJUSTMENT, _AUDIENCE_HIGH_PENALTY * 1.5)
+    elif avg_score < _LOW_CONVERSION_THRESHOLD:
+        adjustments["audience_fit"] = min(_MAX_WEIGHT_ADJUSTMENT, _AUDIENCE_LOW_BOOST * 1.5)
+        adjustments["platform_fit"] = min(_MAX_WEIGHT_ADJUSTMENT, _PLATFORM_LOW_BOOST * 1.5)
+        adjustments["conversion_potential"] = max(-_MAX_WEIGHT_ADJUSTMENT, _CONVERSION_LOW_PENALTY * 1.5)
+
+    # Boost platform_fit when context data is platform-specific (strong signal that
+    # platform matters for this channel).
+    if platform:
+        top_hooks = summary.get("top_hook_patterns", [])
+        for hook in top_hooks:
+            if hook.get("sample_count", 0) >= _CONTEXT_WIN_THRESHOLD:
+                adjustments["platform_fit"] = (
+                    adjustments.get("platform_fit", 0.0) + _CONTEXT_WIN_BOOST
+                )
+                break
+
+    # Clamp all adjustments
+    return {
+        k: max(-_MAX_WEIGHT_ADJUSTMENT, min(_MAX_WEIGHT_ADJUSTMENT, v))
+        for k, v in adjustments.items()
+    }
 
 
 def _compute_score_profile(req: ChannelPlanRequest) -> list[tuple[str, dict[str, float]]]:
@@ -295,14 +360,31 @@ class ChannelEngine:
         ]
         score_profiles = _compute_score_profile(req)
 
-        # Derive adaptive weight adjustments from learning store when available
+        # Derive adaptive weight adjustments from learning store when available.
+        # Global adjustments are derived first; contextual (platform/market/goal)
+        # adjustments are merged on top to give platform-specific signal priority.
         adjustments = _derive_adaptive_weight_adjustments(learning_store)
+        contextual = _derive_contextual_weight_adjustments(
+            learning_store,
+            platform=getattr(req, "platform", None),
+            goal=req.goal,
+            market_code=req.market_code,
+        )
+        # Merge: contextual values override global for the same key
+        merged_adjustments = {**adjustments, **{
+            k: adjustments.get(k, 0.0) + v for k, v in contextual.items()
+        }}
+        # Re-clamp after merge
+        merged_adjustments = {
+            k: max(-_MAX_WEIGHT_ADJUSTMENT, min(_MAX_WEIGHT_ADJUSTMENT, v))
+            for k, v in merged_adjustments.items()
+        }
         effective_weights = (
-            _apply_weight_adjustments(_SCORE_WEIGHTS, adjustments)
-            if adjustments
+            _apply_weight_adjustments(_SCORE_WEIGHTS, merged_adjustments)
+            if merged_adjustments
             else _SCORE_WEIGHTS
         )
-        feedback_applied = bool(adjustments)
+        feedback_applied = bool(merged_adjustments)
 
         for idx, formats in enumerate(candidate_formats):
             variant_id, breakdown = score_profiles[idx]

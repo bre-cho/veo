@@ -5,6 +5,7 @@ from typing import Any
 
 from app.schemas.scoring import CandidateScore
 from app.schemas.motion_clone import MotionCloneRequest, MotionCloneResponse
+from app.services.creative_feedback import build_unified_feedback_boosts, score_weight_recalibration
 
 # ---------------------------------------------------------------------------
 # Scoring weights for motion clone candidates
@@ -86,32 +87,15 @@ def _candidate_total(mc: float, bp: float, cu: float, rs: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Feedback boost helper (Phase 2.2)
+# Feedback boost helper – delegate to unified creative_feedback module
 # ---------------------------------------------------------------------------
 _FEEDBACK_WIN_THRESHOLD = 3
 _FEEDBACK_BOOST_STEP = 0.05
 
 
 def _build_motion_feedback_boosts(learning_store: Any | None) -> dict[str, float]:
-    """Return per-style reuse_score boosts derived from learning store history."""
-    if learning_store is None:
-        return {}
-    try:
-        records = learning_store.all_records()
-    except Exception:
-        return {}
-
-    style_wins: dict[str, int] = {}
-    for rec in records:
-        tf = str(rec.get("template_family") or "")
-        if rec.get("conversion_score", 0) >= 0.7:
-            style_wins[tf] = style_wins.get(tf, 0) + 1
-
-    boosts: dict[str, float] = {}
-    for style, wins in style_wins.items():
-        if wins >= _FEEDBACK_WIN_THRESHOLD:
-            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
-    return boosts
+    """Return per-style reuse_score boosts via unified feedback module."""
+    return build_unified_feedback_boosts(learning_store)
 
 
 class MotionCloneEngine:
@@ -190,8 +174,19 @@ class MotionCloneEngine:
 
         clip_goal: str | None = req.beat_profile.get("clip_goal") if req.beat_profile else None
 
-        # Feedback boosts per style_key (Phase 2.2)
+        # Feedback boosts per style_key (unified module)
         feedback_boosts = _build_motion_feedback_boosts(learning_store)
+        # Weight recalibration from context (market / goal)
+        weight_factors = score_weight_recalibration(
+            learning_store,
+            _SCORE_WEIGHTS,
+            platform=None,
+            market_code=req.market_code,
+        )
+        effective_weights = {k: _SCORE_WEIGHTS[k] * weight_factors[k] for k in _SCORE_WEIGHTS}
+        total_w = sum(effective_weights.values())
+        if total_w > 0:
+            effective_weights = {k: v / total_w for k, v in effective_weights.items()}
         feedback_applied = bool(feedback_boosts)
 
         candidates: list[CandidateScore] = []
@@ -203,7 +198,13 @@ class MotionCloneEngine:
             # Apply feedback boost to reuse_score
             fb_boost = feedback_boosts.get(style_key, 0.0)
             rs_boosted = round(min(0.99, rs + fb_boost), 3)
-            total = _candidate_total(mc, bp, cu, rs_boosted)
+            total = round(
+                (mc * effective_weights["motion_consistency"])
+                + (bp * effective_weights["brand_persona_fit"])
+                + (cu * effective_weights["clip_usability"])
+                + (rs_boosted * effective_weights["reuse_score"]),
+                3,
+            )
             candidates.append(
                 CandidateScore(
                     candidate_id=cid,

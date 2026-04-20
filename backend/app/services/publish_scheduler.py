@@ -7,11 +7,15 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.publish_job import PublishJob
+from app.services.learning_engine import PerformanceLearningEngine
 from app.services.publish_providers import (
     ConfigurationError,
     HttpPublishProvider,
+    MetaPublishProvider,
     PublishProviderBase,
     SimulatedPublishProvider,
+    TikTokPublishProvider,
+    YouTubePublishProvider,
 )
 
 # ---------------------------------------------------------------------------
@@ -33,13 +37,33 @@ __all__ = [
 ]
 
 
+_PLATFORM_PROVIDER_MAP: dict[str, type[PublishProviderBase]] = {
+    "youtube": YouTubePublishProvider,
+    "shorts": YouTubePublishProvider,
+    "tiktok": TikTokPublishProvider,
+    "reels": MetaPublishProvider,
+    "instagram": MetaPublishProvider,
+    "meta": MetaPublishProvider,
+    "facebook": MetaPublishProvider,
+}
+
+
 def _is_simulated() -> bool:
     return _PUBLISH_MODE != PUBLISH_MODE_REAL
 
 
-def _get_provider() -> PublishProviderBase:
+def _get_provider(platform: str | None = None) -> PublishProviderBase:
     if _is_simulated():
         return SimulatedPublishProvider()
+    # Route to a platform-specific adapter when one exists; fall back to generic HTTP.
+    if platform:
+        provider_cls = _PLATFORM_PROVIDER_MAP.get(platform.lower())
+        if provider_cls is not None:
+            try:
+                return provider_cls()
+            except ConfigurationError:
+                # Platform adapter is not configured; fall back to generic HTTP.
+                pass
     return HttpPublishProvider()
 
 
@@ -103,7 +127,7 @@ class PublishScheduler:
 
     def run_job(self, db: Session, job: PublishJob) -> PublishJob:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        provider = _get_provider()
+        provider = _get_provider(platform=job.platform)
         try:
             job.status = "preparing"
             job.preparing_at = now
@@ -118,6 +142,7 @@ class PublishScheduler:
             response = provider.execute(job)
             job.status = "published"
             job.published_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            job.signal_status = "pending"
             job.provider_response = {
                 "mode": job.publish_mode or _PUBLISH_MODE,
                 "raw": response,
@@ -132,7 +157,7 @@ class PublishScheduler:
             # Write-back to PerformanceLearningEngine so creative engines can
             # adapt future scoring using real publish outcomes.
             if (job.publish_mode or _PUBLISH_MODE) == PUBLISH_MODE_REAL:
-                self._record_publish_outcome(job)
+                self._record_publish_outcome(job, db=db)
 
             return job
         except Exception as exc:
@@ -157,20 +182,25 @@ class PublishScheduler:
         return query.limit(limit).all()
 
     @staticmethod
-    def _record_publish_outcome(job: PublishJob) -> None:
-        """Write publish outcome to PerformanceLearningEngine for feedback loop."""
-        try:
-            from app.services.learning_engine import PerformanceLearningEngine
+    def _record_publish_outcome(job: PublishJob, db: "Session | None" = None) -> None:
+        """Write a neutral baseline record to PerformanceLearningEngine on publish.
 
+        Uses a neutral conversion_score=0.5 instead of optimistic 1.0 so the
+        signal doesn't inflate scores before real metrics arrive.  The job's
+        ``signal_status`` is set to ``'pending'``, signalling that a real
+        measurement should be ingested later via
+        ``POST /api/v1/publish/jobs/{job_id}/signal``.
+        """
+        try:
             payload: dict[str, Any] = job.payload or {}
             metadata: dict[str, Any] = payload.get("metadata") or {}
-            engine = PerformanceLearningEngine()
+            engine = PerformanceLearningEngine(db=db)
             engine.record(
                 video_id=job.id,
                 hook_pattern=str(payload.get("hook_pattern") or payload.get("format") or "unknown"),
                 cta_pattern=str(payload.get("cta_mode") or "unknown"),
                 template_family=str(payload.get("content_goal") or "engagement"),
-                conversion_score=1.0,  # baseline; real signal comes via /api/v1/performance/signal
+                conversion_score=0.5,  # neutral baseline; updated when real signal arrives
                 platform=str(job.platform) if job.platform else None,
                 market_code=str(metadata.get("market_code")) if metadata.get("market_code") else None,
             )
