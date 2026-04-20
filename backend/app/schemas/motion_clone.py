@@ -16,6 +16,7 @@ class MotionCloneRequest(BaseModel):
 
 
 class MotionCloneResponse(BaseModel):
+    run_id: str | None = None
     motion_plan: dict[str, Any] = Field(default_factory=dict)
     beat_sync_map: list[dict[str, Any]] = Field(default_factory=list)
     animation_guidance_payload: dict[str, Any] = Field(default_factory=dict)

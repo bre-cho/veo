@@ -15,6 +15,9 @@ class ChannelPlanRequest(BaseModel):
     days: int = Field(default=7, ge=1, le=30)
     posts_per_day: int = Field(default=1, ge=1, le=5)
     formats: list[str] | None = None
+    project_id: str | None = None
+    avatar_id: str | None = None
+    product_id: str | None = None
 
 
 class ChannelPlanItem(BaseModel):

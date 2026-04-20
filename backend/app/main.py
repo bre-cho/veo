@@ -50,6 +50,7 @@ from app.api.channel import router as channel_router
 from app.api.lookbook import router as lookbook_router
 from app.api.motion_clone import router as motion_clone_router
 from app.api.patterns import router as patterns_router
+from app.api.creative_runs import router as creative_runs_router
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -126,6 +127,7 @@ app.include_router(channel_router)
 app.include_router(lookbook_router)
 app.include_router(motion_clone_router)
 app.include_router(patterns_router)
+app.include_router(creative_runs_router)
 
 
 @app.get("/", tags=["root"])

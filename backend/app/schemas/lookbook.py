@@ -16,6 +16,7 @@ class LookbookRequest(BaseModel):
 
 
 class LookbookResponse(BaseModel):
+    run_id: str | None = None
     lookbook_id: str
     outfit_sequences: list[dict[str, Any]] = Field(default_factory=list)
     scene_pack: list[dict[str, Any]] = Field(default_factory=list)
