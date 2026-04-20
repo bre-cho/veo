@@ -64,9 +64,12 @@ run_runtime_gate() {
 # ── dispatch ──────────────────────────────────────────────────────────────
 case "$MODE" in
   --local|--ci)
-    # Inside container or local dev without Docker
+    # Inside container or local dev without Docker.
+    # NOTE: only backend tests are run here. Frontend build and E2E discovery
+    # are skipped intentionally (no Node environment required). Use the full
+    # gate (no flags) or scripts/verify_runtime.sh for a complete staging check.
     run_backend_tests
-    ok "LOCAL GO/NO-GO: PASSED"
+    ok "LOCAL GO/NO-GO: PASSED (backend only – run without flags for full gate)"
     ;;
   *)
     # Full gate: runtime stack + backend + frontend + e2e discovery

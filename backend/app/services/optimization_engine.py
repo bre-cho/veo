@@ -244,7 +244,7 @@ class OptimizationEngine:
         dominant = max(gaps, key=lambda k: gaps[k])
         dominant_pct = round(gaps[dominant] * 100)
         rationale_map = {
-            "hook_cta_boost": f"Prioritise hook+CTA gains (dominant gap: {dominant} at {dominant_pct}%).",
+            "hook_cta_boost": f"Prioritize hook+CTA gains (dominant gap: {dominant} at {dominant_pct}%).",
             "clarity_trust_balance": f"Reduce ambiguity and increase trust before conversion push (dominant gap: {dominant} at {dominant_pct}%).",
             "aggressive_conversion_push": f"Push hard CTA framing and urgency (dominant gap: {dominant} at {dominant_pct}%).",
         }

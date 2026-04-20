@@ -135,9 +135,9 @@ class TrendImageEngine:
             visual_strength = _visual_hook_score(style_label, req.content_goal)
 
             # Style variation: use a hash of (concept_id, style_label) for
-            # deterministic tiny jitter so multiple concepts of the same style
-            # don't all get identical scores, without relying on idx.
-            jitter = (hash(style_label + concept_id) % 100) / 1000.0  # ±0.05
+            # deterministic jitter in range [0, +0.099] so multiple concepts
+            # of the same style don't all get identical scores, without relying on idx.
+            jitter = (hash(style_label + concept_id) % 100) / 1000.0  # [0, 0.099]
             relevance = round(min(0.99, max(0.50, relevance + jitter * 0.5)), 3)
             trend_fit = round(min(0.99, max(0.50, trend_fit + jitter * 0.3)), 3)
             market_fit = round(min(0.99, max(0.50, market_fit + jitter * 0.2)), 3)
