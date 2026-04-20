@@ -362,7 +362,10 @@ class ChannelEngine:
 
         # Derive adaptive weight adjustments from learning store when available.
         # Global adjustments are derived first; contextual (platform/market/goal)
-        # adjustments are merged on top to give platform-specific signal priority.
+        # adjustments are then ADDITIVELY merged so both signals compound.
+        # Contextual signal is derived from a narrower, more relevant slice of
+        # history, so the two sets reinforce each other rather than one cancelling
+        # the other.
         adjustments = _derive_adaptive_weight_adjustments(learning_store)
         contextual = _derive_contextual_weight_adjustments(
             learning_store,
@@ -370,10 +373,12 @@ class ChannelEngine:
             goal=req.goal,
             market_code=req.market_code,
         )
-        # Merge: contextual values override global for the same key
-        merged_adjustments = {**adjustments, **{
-            k: adjustments.get(k, 0.0) + v for k, v in contextual.items()
-        }}
+        # Additive merge: contextual adjustments are summed onto global adjustments
+        # (both pulled from non-overlapping signal slices).
+        merged_adjustments = {
+            k: adjustments.get(k, 0.0) + contextual.get(k, 0.0)
+            for k in set(list(adjustments) + list(contextual))
+        }
         # Re-clamp after merge
         merged_adjustments = {
             k: max(-_MAX_WEIGHT_ADJUSTMENT, min(_MAX_WEIGHT_ADJUSTMENT, v))

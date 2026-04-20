@@ -99,7 +99,10 @@ def build_unified_feedback_boosts(
         # Determine context multiplier
         rec_platform = str(rec.get("platform") or "").lower()
         rec_market = str(rec.get("market_code") or "").lower()
-        rec_goal = str(rec.get("template_family") or "").lower()  # goal stored in template_family
+        # Use the hook_pattern as a secondary goal signal; template_family encodes style,
+        # not goal, so we check hook_pattern + template_family together.
+        rec_hook = str(rec.get("hook_pattern") or "").lower()
+        rec_family = str(rec.get("template_family") or "").lower()
 
         context_dims_matched = 0
         context_dims_requested = 0
@@ -115,7 +118,7 @@ def build_unified_feedback_boosts(
                 context_dims_matched += 1
 
         if goal_key and context_dims_requested > 0:
-            if goal_key in rec_goal:
+            if goal_key in rec_hook or goal_key in rec_family:
                 context_dims_matched += 1
 
         if context_dims_requested == 0:
