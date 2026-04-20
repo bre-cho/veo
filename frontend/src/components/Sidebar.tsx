@@ -30,6 +30,26 @@ const navItems: NavItem[] = [
     href: "/settings",
     description: "Manage Google AI accounts, account rotation, and AI engine config",
   },
+  {
+    label: "Avatar Builder",
+    href: "/avatar-builder",
+    description: "Create and publish avatar identities and DNA profiles",
+  },
+  {
+    label: "Marketplace",
+    href: "/marketplace",
+    description: "Browse, discover, and use avatar templates for production",
+  },
+  {
+    label: "Analytics",
+    href: "/analytics",
+    description: "Marketplace performance, trending avatars, and creator insights",
+  },
+  {
+    label: "Wallet",
+    href: "/wallet",
+    description: "Creator earnings, payout history, and request payouts",
+  },
 ];
 
 export default function Sidebar() {
@@ -106,6 +126,19 @@ export default function Sidebar() {
           <p>3. Validate</p>
           <p>4. Prepare render plan</p>
           <p>5. Track render jobs</p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <p className="text-xs uppercase tracking-wide text-white/40">
+          Avatar Workflow
+        </p>
+        <div className="mt-3 space-y-2 text-sm text-white/65">
+          <p>1. Build avatar DNA</p>
+          <p>2. Choose template fit</p>
+          <p>3. Launch render</p>
+          <p>4. Track performance</p>
+          <p>5. Earn &amp; payout</p>
         </div>
       </div>
     </aside>
