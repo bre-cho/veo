@@ -27,7 +27,9 @@ class ContentGoalClassifier:
         scores: dict[str, int] = {}
         for goal, keywords in _GOAL_KEYWORDS.items():
             scores[goal] = sum(1 for kw in keywords if kw in brief_lower)
-        total = sum(scores.values()) or 1
+        total = sum(scores.values())
         best = max(scores, key=lambda g: scores[g])
-        confidence = round(scores[best] / total, 3) if total > 0 else 0.5
-        return best if scores[best] > 0 else "brand_awareness", confidence
+        if total == 0:
+            return "brand_awareness", 0.5
+        confidence = round(scores[best] / total, 3)
+        return best, confidence

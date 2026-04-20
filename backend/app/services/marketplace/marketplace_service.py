@@ -43,10 +43,10 @@ class MarketplaceService:
                 "is_featured": avatar.is_featured,
                 "marketplace_item": {
                     "id": item.id,
-                    "price_usd": float(item.price_usd) if item and item.price_usd else None,
-                    "is_free": item.is_free if item else True,
-                    "download_count": item.download_count if item else 0,
-                    "rating_avg": float(item.rating_avg) if item and item.rating_avg else None,
+                    "price_usd": float(item.price_usd) if item.price_usd else None,
+                    "is_free": item.is_free,
+                    "download_count": item.download_count,
+                    "rating_avg": float(item.rating_avg) if item.rating_avg else None,
                 } if item else None,
             })
         return results
