@@ -8,6 +8,12 @@ from app.repositories.localization_repo import LocalizationRepo
 
 
 class ExecutionBridgeService:
+    PROJECT_SCENE_CONVERSION_MAX_DURATION_SEC = 25.0
+    PROJECT_SCENE_CONVERSION_BONUS_SEC = 0.5
+    RENDER_SCENE_CONVERSION_MIN_DURATION_SEC = 3
+    RENDER_SCENE_CONVERSION_MAX_DURATION_SEC = 60
+    RENDER_SCENE_CONVERSION_BONUS_SEC = 1
+
     def __init__(self) -> None:
         self._avatar_repo = AvatarRepo()
         self._localization_repo = LocalizationRepo()
@@ -104,13 +110,16 @@ class ExecutionBridgeService:
         if "prompt_text" in updated and updated.get("prompt_text"):
             updated["prompt_text"] = self._prepend_context_prompt(str(updated["prompt_text"]), ctx)
 
-        if (ctx.get("content_goal") or "").lower() == "conversion":
+        if self._is_conversion_goal(ctx):
             title = str(updated.get("title") or "").strip()
             if title and "offer" not in title.lower():
                 updated["title"] = f"{title} — Offer clarity"
             try:
                 duration = float(updated.get("target_duration_sec"))
-                updated["target_duration_sec"] = min(25.0, round(duration + 0.5, 1))
+                updated["target_duration_sec"] = min(
+                    self.PROJECT_SCENE_CONVERSION_MAX_DURATION_SEC,
+                    round(duration + self.PROJECT_SCENE_CONVERSION_BONUS_SEC, 1),
+                )
             except (TypeError, ValueError):
                 pass
 
@@ -136,13 +145,19 @@ class ExecutionBridgeService:
         if updated.get("prompt_text"):
             updated["prompt_text"] = self._prepend_context_prompt(str(updated["prompt_text"]), ctx)
 
-        if (ctx.get("content_goal") or "").lower() == "conversion":
+        if self._is_conversion_goal(ctx):
             for duration_key in ("resolved_duration_seconds", "provider_target_duration_sec", "duration_seconds"):
                 value = updated.get(duration_key)
                 if value is None:
                     continue
                 try:
-                    updated[duration_key] = min(60, max(3, int(value) + 1))
+                    updated[duration_key] = min(
+                        self.RENDER_SCENE_CONVERSION_MAX_DURATION_SEC,
+                        max(
+                            self.RENDER_SCENE_CONVERSION_MIN_DURATION_SEC,
+                            int(value) + self.RENDER_SCENE_CONVERSION_BONUS_SEC,
+                        ),
+                    )
                 except (TypeError, ValueError):
                     continue
 
@@ -183,7 +198,11 @@ class ExecutionBridgeService:
         prompt = (prompt or "").strip()
         parts: list[str] = []
 
-        avatar_name = ((ctx.get("avatar") or {}).get("name") if isinstance(ctx.get("avatar"), dict) else None) or ctx.get("avatar_id")
+        avatar_name: str | None = None
+        avatar = ctx.get("avatar")
+        if isinstance(avatar, dict):
+            avatar_name = avatar.get("name")
+        avatar_name = avatar_name or ctx.get("avatar_id")
         if avatar_name:
             parts.append(f"Avatar framing: {avatar_name}.")
 
@@ -201,7 +220,7 @@ class ExecutionBridgeService:
         content_goal = (ctx.get("content_goal") or "").strip()
         if content_goal:
             if content_goal.lower() == "conversion":
-                parts.append("Goal: conversion content with clear offer clarity.")
+                parts.append("Goal: conversion content with offer clarity.")
             else:
                 parts.append(f"Goal: {content_goal}.")
 
@@ -231,3 +250,6 @@ class ExecutionBridgeService:
             "conversion_mode": ctx.get("conversion_mode"),
             "template_family": ctx.get("template_family"),
         }
+
+    def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
+        return str(ctx.get("content_goal") or "").strip().lower() == "conversion"

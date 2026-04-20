@@ -38,9 +38,9 @@ def plan_provider_scenes(
     planned: list[dict[str, Any]] = []
 
     for scene in scenes:
-        scene = _execution_bridge.apply_to_project_scene(scene, execution_context or {})
-        text = (scene.get("script_text") or "").strip()
-        title = (scene.get("title") or "Scene").strip()
+        bridged_scene = _execution_bridge.apply_to_project_scene(scene, execution_context or {})
+        text = (bridged_scene.get("script_text") or "").strip()
+        title = (bridged_scene.get("title") or "Scene").strip()
 
         if not text:
             continue
@@ -49,7 +49,7 @@ def plan_provider_scenes(
 
         if estimated <= caps.max_scene_duration_sec:
             planned.append({
-                **scene,
+                **bridged_scene,
                 "provider": provider,
                 "provider_mode": caps.recommended_mode,
                 "provider_target_duration_sec": min(
@@ -63,7 +63,7 @@ def plan_provider_scenes(
         chunks = split_text_into_chunks(text, chunk_count)
 
         for idx, chunk in enumerate(chunks, start=1):
-            planned.append({
+            chunk_scene = {
                 "scene_index": len(planned) + 1,
                 "title": f"{title} — Part {idx}",
                 "script_text": chunk,
@@ -74,7 +74,8 @@ def plan_provider_scenes(
                     max(estimate_duration_from_text(chunk), 3.0),
                     caps.max_scene_duration_sec,
                 ),
-                "source_scene_index": scene.get("scene_index"),
-            })
+                "source_scene_index": bridged_scene.get("scene_index"),
+            }
+            planned.append(_execution_bridge.apply_to_project_scene(chunk_scene, execution_context or {}))
 
     return planned

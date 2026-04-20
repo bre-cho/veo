@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from sqlalchemy.orm import Session
 from app.services.project_workspace_service import load_project, save_project
 from app.services.provider_scene_planner import plan_provider_scenes
@@ -9,6 +10,7 @@ from app.services.render_events import build_project_render_event_summary
 from app.services.template_feedback_loop import maybe_enqueue_template_extraction
 
 PROJECT_RENDER_BLOCKING_STATUSES = {"render_queued", "rendering"}
+_log = logging.getLogger(__name__)
 _execution_bridge = ExecutionBridgeService()
 
 def can_render_project(project: dict) -> tuple[bool, list[str]]:
@@ -53,7 +55,10 @@ def trigger_project_render(db: Session, project_id: str) -> dict:
             execution_context=bridge_ctx,
         )
     except ValueError:
-        pass
+        _log.warning(
+            "Provider scene planning skipped due to unsupported provider: %s",
+            project.get("provider","veo"),
+        )
     job = create_render_job_with_scenes(db, project_id=project_id, provider=project.get("provider","veo"), aspect_ratio=project.get("format","9:16"), style_preset=project.get("style_preset"), subtitle_mode="burn", planned_scenes=planned_scenes)
     enqueue_render_dispatch(job.id)
     project["status"]="render_queued"; project["render_job_id"]=job.id; project.setdefault("is_template_source", True); project.setdefault("template_extracted", False)

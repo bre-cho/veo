@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import render_execution as render_execution_api
@@ -34,7 +35,7 @@ def test_preview_payload_applies_execution_context() -> None:
     assert "Goal: conversion content" in payload["scenes"][0]["visual_prompt"]
 
 
-def test_project_render_runtime_bridges_scene_prompts(monkeypatch) -> None:
+def test_project_render_runtime_bridges_scene_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
     saved: dict[str, object] = {}
 
@@ -63,6 +64,7 @@ def test_project_render_runtime_bridges_scene_prompts(monkeypatch) -> None:
     monkeypatch.setattr("app.services.project_render_runtime.enqueue_render_dispatch", lambda _job_id: {"task_id": "t-1"})
 
     def _fake_create_render_job_with_scenes(*args, **kwargs):
+        captured["kwargs"] = kwargs
         captured["planned_scenes"] = kwargs["planned_scenes"]
         return SimpleNamespace(id="job-1")
 
@@ -75,12 +77,14 @@ def test_project_render_runtime_bridges_scene_prompts(monkeypatch) -> None:
 
     assert result["render_job_id"] == "job-1"
     planned = captured["planned_scenes"][0]
+    assert captured["kwargs"]["provider"] == "veo_3_1"
+    assert captured["kwargs"]["aspect_ratio"] == "9:16"
     assert "Goal: conversion content" in planned["prompt_text"]
     assert planned["metadata"]["cta_bias"] == "hard_sell"
     assert saved["project"]["render_job_id"] == "job-1"
 
 
-def test_render_job_route_transforms_scene_payload_by_context(monkeypatch) -> None:
+def test_render_job_route_transforms_scene_payload_by_context(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
     client = TestClient(app)
 
