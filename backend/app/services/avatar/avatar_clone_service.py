@@ -5,12 +5,21 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.repositories.avatar_repo import AvatarRepo
+from app.services.avatar.avatar_identity_service import AvatarIdentityService
 
 _repo = AvatarRepo()
+_identity_svc = AvatarIdentityService()
 
 
 class AvatarCloneService:
-    def clone(self, db: Session, source_avatar_id: str, new_name: str | None = None, owner_user_id: str | None = None) -> dict:
+    def clone(
+        self,
+        db: Session,
+        source_avatar_id: str,
+        new_name: str | None = None,
+        owner_user_id: str | None = None,
+        validate_consistency: bool = True,
+    ) -> dict:
         source = _repo.get_avatar(db, source_avatar_id)
         if not source:
             return {"ok": False, "error": "source_avatar_not_found"}
@@ -59,4 +68,33 @@ class AvatarCloneService:
             }
             _repo.upsert_motion(db, clone.id, motion_data)
 
-        return {"ok": True, "clone_id": clone.id, "source_id": source_avatar_id}
+        # Consistency check: compare clone's identity against source identity vector
+        consistency: dict = {}
+        if validate_consistency and visual:
+            clone_visual = _repo.get_visual(db, clone.id)
+            if clone_visual:
+                output_traits = {
+                    k: getattr(clone_visual, k)
+                    for k in [
+                        "skin_tone", "eye_color", "age_range", "gender_expression",
+                        "hair_style", "hair_color", "outfit_code", "background_code",
+                    ]
+                }
+                if motion:
+                    clone_motion = _repo.get_motion(db, clone.id)
+                    if clone_motion:
+                        output_traits.update({
+                            k: getattr(clone_motion, k)
+                            for k in ["motion_style", "gesture_set", "lipsync_mode"]
+                        })
+                consistency = _identity_svc.score_consistency(db, source_avatar_id, output_traits)
+
+        result = {"ok": True, "clone_id": clone.id, "source_id": source_avatar_id}
+        if consistency:
+            result["consistency"] = consistency
+            if consistency.get("should_reject"):
+                result["consistency_warning"] = (
+                    "Clone exhibits significant drift from source identity. "
+                    "Review drift_flags before publishing."
+                )
+        return result

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import random
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,41 +12,82 @@ from app.schemas.channel import ChannelPlanItem, ChannelPlanRequest, ChannelPlan
 from app.schemas.scoring import CandidateScore
 
 # ---------------------------------------------------------------------------
-# Title angle pool – grouped by goal so angles are contextually relevant
+# Angle pattern library – richer pool grouped by goal + pattern type
 # ---------------------------------------------------------------------------
+_ANGLE_PATTERN_LIBRARY: dict[str, dict[str, list[str]]] = {
+    "awareness": {
+        "curiosity": [
+            "The truth about {niche} you need to know",
+            "Why everyone is talking about {niche} right now",
+            "What no one tells you about {niche}",
+            "Surprising facts about {niche}",
+        ],
+        "story": [
+            "The story behind {niche}",
+            "{niche} trends that are changing the game",
+            "How {niche} changed everything",
+        ],
+        "stat": [
+            "Why 9 out of 10 {niche} users switch after 30 days",
+            "The {niche} myth that is costing you time",
+        ],
+    },
+    "engagement": {
+        "personal": [
+            "My honest {niche} experience",
+            "I tried {niche} for 7 days – here's what happened",
+            "What actually happened when I tested {niche}",
+        ],
+        "interactive": [
+            "Would you try this {niche} hack?",
+            "Reacting to {niche} myths",
+            "Asking strangers about {niche}",
+        ],
+        "debate": [
+            "Hot take: {niche} is overrated (or is it?)",
+            "Unpopular opinion: {niche} needs this",
+            "The {niche} debate no one is having",
+        ],
+    },
+    "conversion": {
+        "transformation": [
+            "The {niche} product that changed my routine",
+            "Why I switched to this {niche} solution",
+            "{niche}: before vs after using this",
+        ],
+        "urgency": [
+            "Stop wasting money on {niche} – do this instead",
+            "Get your {niche} results in half the time",
+            "The only {niche} guide you'll ever need",
+        ],
+        "proof": [
+            "{niche} results after 30 days of consistent use",
+            "Real {niche} before and after – no filter",
+            "How I finally solved {niche} for good",
+        ],
+    },
+    "retention": {
+        "series": [
+            "Part 2: My {niche} journey continues",
+            "Update: 30 days of {niche}",
+            "The {niche} series – episode {day}",
+        ],
+        "qa": [
+            "You asked, I answer: {niche} Q&A",
+            "Deep dive into {niche}",
+            "{niche} FAQ – answering your top questions",
+        ],
+        "milestone": [
+            "What I learned from 1 year of {niche}",
+            "Month 3 of {niche}: honest reflections",
+        ],
+    },
+}
+
+# Flat pools keyed by goal for backward-compatible access
 _GOAL_ANGLES: dict[str, list[str]] = {
-    "awareness": [
-        "The truth about {niche} you need to know",
-        "Why everyone is talking about {niche} right now",
-        "{niche} trends that are changing the game",
-        "What no one tells you about {niche}",
-        "The story behind {niche}",
-        "Surprising facts about {niche}",
-    ],
-    "engagement": [
-        "My honest {niche} experience",
-        "Would you try this {niche} hack?",
-        "Reacting to {niche} myths",
-        "I tried {niche} for 7 days – here's what happened",
-        "Hot take: {niche} is overrated (or is it?)",
-        "Asking strangers about {niche}",
-    ],
-    "conversion": [
-        "The {niche} product that changed my routine",
-        "Why I switched to this {niche} solution",
-        "{niche}: before vs after using this",
-        "Stop wasting money on {niche} – do this instead",
-        "Get your {niche} results in half the time",
-        "The only {niche} guide you'll ever need",
-    ],
-    "retention": [
-        "Part 2: My {niche} journey continues",
-        "Update: 30 days of {niche}",
-        "You asked, I answer: {niche} Q&A",
-        "Deep dive into {niche}",
-        "What I learned from 1 year of {niche}",
-        "The {niche} series – episode {day}",
-    ],
+    goal: [t for patterns in patterns_dict.values() for t in patterns]
+    for goal, patterns_dict in _ANGLE_PATTERN_LIBRARY.items()
 }
 
 _DEFAULT_ANGLES = _GOAL_ANGLES["engagement"]
@@ -108,6 +150,10 @@ _ADAPTIVE_MIN_RECORDS = 5
 # specific platform/market/goal context (contextual specialisation).
 _CONTEXT_WIN_BOOST = 0.04
 _CONTEXT_WIN_THRESHOLD = 2  # minimum wins to apply contextual boost
+
+# Novelty scoring: penalise angles that were used in recent history.
+_NOVELTY_DECAY_WINDOW = 30  # recent angle count considered for dedup
+_NOVELTY_PENALTY = 0.25     # fraction of pool to avoid from head of recent history
 
 
 def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]:
@@ -238,9 +284,11 @@ def _compute_score_profile(req: ChannelPlanRequest) -> list[tuple[str, dict[str,
 class TitleAngleGenerator:
     """Generates non-repeating, context-aware title angles for a content plan.
 
-    Selects from a goal-specific pool seeded by (niche, day, post_idx) so
-    each post gets a deterministically different angle within the same run,
-    ensuring no two posts in the same day share the same angle text.
+    Supports:
+    - Pattern library with multiple angle types per goal
+    - Novelty scoring: avoids recently used angles via history injection
+    - Non-deterministic selection within a session via seeded randomness,
+      while still being reproducible when the same seed is given
     """
 
     def generate(
@@ -250,14 +298,81 @@ class TitleAngleGenerator:
         day: int,
         post_idx: int,
         market_code: str | None = None,
+        recent_angles: list[str] | None = None,
+        platform: str | None = None,
     ) -> str:
         goal_key = (goal or "engagement").lower()
-        pool = _GOAL_ANGLES.get(goal_key, _DEFAULT_ANGLES)
-        # Stable, deterministic index: mix day + post_idx + niche + market using md5
-        seed_str = f"{niche}:{day}:{post_idx}:{market_code or ''}"
-        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % len(pool)
-        angle_template = pool[seed]
+        pool = self._build_pool(goal_key, niche, platform)
+
+        # Anti-duplicate: build set of recently-used formatted angles
+        recent_window = recent_angles[-_NOVELTY_DECAY_WINDOW:] if recent_angles else []
+        avoided = set(recent_window)
+
+        # Build candidate pool excluding angles whose formatted version was recently used
+        candidates = [
+            t for t in pool
+            if t.format(niche=niche.title(), day=day) not in avoided
+        ]
+        if not candidates:
+            # Full fallback: at minimum, exclude the immediately preceding angle so
+            # consecutive posts on the same day never produce identical angles
+            last_used = recent_window[-1] if recent_window else None
+            if last_used:
+                candidates = [
+                    t for t in pool
+                    if t.format(niche=niche.title(), day=day) != last_used
+                ]
+            if not candidates:
+                candidates = pool  # absolute fallback
+
+        # Seed mixes niche + day + post + market for deterministic variety across days
+        seed_str = f"{niche}:{goal_key}:{day}:{post_idx}:{market_code or ''}"
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
+        rng = random.Random(seed)
+        angle_template = rng.choice(candidates)
         return angle_template.format(niche=niche.title(), day=day)
+
+    def compute_novelty_score(
+        self,
+        angle: str,
+        recent_angles: list[str],
+    ) -> float:
+        """Return a novelty score in [0, 1] for an angle given recent history.
+
+        1.0 = completely novel, 0.0 = exact duplicate of a very recent angle.
+        The more recently an angle was used, the lower its novelty score.
+        """
+        if not recent_angles:
+            return 1.0
+        window = recent_angles[-_NOVELTY_DECAY_WINDOW:]
+        if angle in window:
+            # Higher forward-index in window = used more recently = lower novelty
+            last_idx = len(window) - 1 - window[::-1].index(angle)
+            recency = last_idx / max(len(window), 1)
+            # Invert: very recent (recency→1) → score→0.1; older (recency→0) → score→0.6
+            return round(0.1 + (1.0 - recency) * 0.5, 3)
+        return 1.0
+
+    @staticmethod
+    def _build_pool(goal_key: str, niche: str, platform: str | None) -> list[str]:
+        """Build an angle pool from the library, with platform-specific additions."""
+        pool = list(_GOAL_ANGLES.get(goal_key, _DEFAULT_ANGLES))
+        # TikTok/Reels: add short punchy patterns from engagement + awareness
+        if platform and platform.lower() in ("tiktok", "reels", "shorts"):
+            extra: list[str] = []
+            for pt in ("curiosity", "personal", "interactive"):
+                extra.extend(
+                    _ANGLE_PATTERN_LIBRARY.get(goal_key, {}).get(pt, [])
+                    + _ANGLE_PATTERN_LIBRARY.get("engagement", {}).get(pt, [])
+                )
+            pool.extend(t for t in extra if t not in pool)
+        # YouTube: add series and milestone patterns for retention-style content
+        elif platform and platform.lower() == "youtube":
+            pool.extend(
+                t for t in _GOAL_ANGLES.get("retention", [])
+                if t not in pool
+            )
+        return pool
 
 
 class ChannelEngine:
@@ -270,8 +385,13 @@ class ChannelEngine:
         self,
         req: ChannelPlanRequest,
         learning_store: Any | None = None,
+        angle_history: list[str] | None = None,
     ) -> ChannelPlanResponse:
-        candidates_with_plans = self._build_candidates(req, learning_store=learning_store)
+        candidates_with_plans = self._build_candidates(
+            req,
+            learning_store=learning_store,
+            angle_history=angle_history,
+        )
         winner = max(candidates_with_plans, key=lambda item: item["score"].score_total)
         winner_score: CandidateScore = winner["score"]
         series_plan: list[ChannelPlanItem] = winner["plan"]
@@ -300,6 +420,7 @@ class ChannelEngine:
         parent_plan_id: str | None = None,
         retry_count: int = 0,
         learning_store: Any | None = None,
+        angle_history: list[str] | None = None,
     ) -> ChannelPlanResponse:
         plan = ChannelPlan(
             channel_name=req.channel_name,
@@ -325,7 +446,11 @@ class ChannelEngine:
         db.commit()
 
         try:
-            response = self.generate_plan(req, learning_store=learning_store)
+            response = self.generate_plan(
+                req,
+                learning_store=learning_store,
+                angle_history=angle_history,
+            )
             response.plan_id = plan.id
             plan.status = "completed"
             plan.completed_at = self._now()
@@ -351,6 +476,7 @@ class ChannelEngine:
         self,
         req: ChannelPlanRequest,
         learning_store: Any | None = None,
+        angle_history: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
         candidate_formats = [
@@ -393,7 +519,7 @@ class ChannelEngine:
 
         for idx, formats in enumerate(candidate_formats):
             variant_id, breakdown = score_profiles[idx]
-            plan_items = self._build_plan_items(req, formats)
+            plan_items = self._build_plan_items(req, formats, angle_history=angle_history)
             total = round(
                 sum(breakdown[k] * effective_weights[k] for k in effective_weights),
                 3,
@@ -412,8 +538,16 @@ class ChannelEngine:
             )
         return candidates
 
-    def _build_plan_items(self, req: ChannelPlanRequest, formats: list[str]) -> list[ChannelPlanItem]:
+    def _build_plan_items(
+        self,
+        req: ChannelPlanRequest,
+        formats: list[str],
+        angle_history: list[str] | None = None,
+    ) -> list[ChannelPlanItem]:
         series_plan: list[ChannelPlanItem] = []
+        used_angles: list[str] = list(angle_history or [])
+        platform = getattr(req, "platform", None)
+
         for day in range(1, req.days + 1):
             for post_idx in range(req.posts_per_day):
                 fmt = formats[(day + post_idx - 1) % len(formats)]
@@ -423,7 +557,12 @@ class ChannelEngine:
                     day=day,
                     post_idx=post_idx,
                     market_code=req.market_code,
+                    recent_angles=used_angles,
+                    platform=platform,
                 )
+                novelty = self._angle_generator.compute_novelty_score(title_angle, used_angles)
+                used_angles.append(title_angle)
+
                 series_plan.append(
                     ChannelPlanItem(
                         day_index=day,
@@ -432,7 +571,11 @@ class ChannelEngine:
                         content_goal=req.goal or "engagement",
                         cta_mode="soft" if (req.goal or "").lower() != "conversion" else "direct",
                         asset_type="video" if fmt in {"short", "talking_head"} else "image",
-                        metadata={"channel_name": req.channel_name, "market_code": req.market_code},
+                        metadata={
+                            "channel_name": req.channel_name,
+                            "market_code": req.market_code,
+                            "novelty_score": novelty,
+                        },
                     )
                 )
         return series_plan

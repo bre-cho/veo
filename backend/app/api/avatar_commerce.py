@@ -154,12 +154,29 @@ def generate_review_video(req: GenerateReviewVideoRequest):
 
 @router.post("/generate-review-variants")
 def generate_review_variants(payload: dict):
-    result = _review_engine.generate_review_variants(product_payload=payload, variant_count=payload.get("count", 5))
+    from app.services.commerce.review_variant_engine import ReviewVariantEngine
+    result = _review_engine.generate_review_variants(
+        product_payload=payload,
+        variant_count=payload.get("count", 5),
+        platform=payload.get("platform"),
+    )
     return {
         "variants": result["variants"],
         "winner": result["winner"],
         "normalized_product_profile": result["normalized_product_profile"],
+        "run_id": result.get("run_id"),
     }
+
+
+@router.get("/variant-history")
+def variant_history(product_name: str | None = None, platform: str | None = None, limit: int = 20):
+    from app.services.commerce.review_variant_engine import ReviewVariantEngine
+    records = ReviewVariantEngine.get_history(
+        product_name=product_name,
+        platform=platform,
+        limit=limit,
+    )
+    return {"records": records, "count": len(records)}
 
 
 @router.post("/select-review-winner")
