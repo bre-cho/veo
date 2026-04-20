@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -106,8 +107,9 @@ class TitleAngleGenerator:
     ) -> str:
         goal_key = (goal or "engagement").lower()
         pool = _GOAL_ANGLES.get(goal_key, _DEFAULT_ANGLES)
-        # Deterministic but distributed: mix day + post_idx + niche hash
-        seed = hash(f"{niche}:{day}:{post_idx}:{market_code or ''}") % len(pool)
+        # Stable, deterministic index: mix day + post_idx + niche + market using md5
+        seed_str = f"{niche}:{day}:{post_idx}:{market_code or ''}"
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % len(pool)
         angle_template = pool[seed]
         return angle_template.format(niche=niche.title(), day=day)
 

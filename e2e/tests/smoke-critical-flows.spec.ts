@@ -60,8 +60,10 @@ test("smoke: channel plan generate and publish queue @smoke", async ({ request }
   expect(plan.series_plan.length).toBeGreaterThan(0);
 
   // Title angles should not be generic "Fitness angle day 1 post 1" templates
+  // and must contain the niche name (confirming goal-aware angle generation)
   const firstAngle: string = plan.series_plan[0].title_angle;
   expect(firstAngle).not.toMatch(/angle day \d+ post \d+$/i);
+  expect(firstAngle.toLowerCase()).toContain("fitness");
 
   const queueResp = await request.post(`${BACKEND}/api/v1/channel/build-publish-queue`, {
     data: plan,
