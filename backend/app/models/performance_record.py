@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+
 from app.db.base import Base
 
 
@@ -41,6 +42,12 @@ class PerformanceRecord(Base):
     click_through_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     platform: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     market_code: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Phase 1.1: persona / product-category / funnel dimensions
+    persona_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    product_category: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    funnel_stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Phase 1.2: campaign-level attribution
+    campaign_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False, default=_now
     )

@@ -386,11 +386,13 @@ class ChannelEngine:
         req: ChannelPlanRequest,
         learning_store: Any | None = None,
         angle_history: list[str] | None = None,
+        objectives: dict[str, float] | None = None,
     ) -> ChannelPlanResponse:
         candidates_with_plans = self._build_candidates(
             req,
             learning_store=learning_store,
             angle_history=angle_history,
+            objectives=objectives,
         )
         winner = max(candidates_with_plans, key=lambda item: item["score"].score_total)
         winner_score: CandidateScore = winner["score"]
@@ -477,6 +479,7 @@ class ChannelEngine:
         req: ChannelPlanRequest,
         learning_store: Any | None = None,
         angle_history: list[str] | None = None,
+        objectives: dict[str, float] | None = None,
     ) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
         candidate_formats = [
@@ -517,13 +520,38 @@ class ChannelEngine:
         )
         feedback_applied = bool(merged_adjustments)
 
+        # Build MultiObjectiveScorer when objectives dict is supplied
+        multi_scorer = None
+        if objectives:
+            try:
+                from app.services.commerce.multi_objective_scorer import MultiObjectiveScorer
+                multi_scorer = MultiObjectiveScorer(objectives)
+            except Exception:
+                pass
+
         for idx, formats in enumerate(candidate_formats):
             variant_id, breakdown = score_profiles[idx]
             plan_items = self._build_plan_items(req, formats, angle_history=angle_history)
-            total = round(
+            base_total = round(
                 sum(breakdown[k] * effective_weights[k] for k in effective_weights),
                 3,
             )
+            # When multi-objective scorer is provided, blend it with the base score
+            if multi_scorer is not None and learning_store is not None:
+                try:
+                    records = learning_store.all_records()
+                    if records:
+                        obj_scores = [multi_scorer.score(r) for r in records]
+                        avg_obj = sum(obj_scores) / len(obj_scores)
+                        # 50/50 blend of base score and objective score
+                        total = round((base_total + avg_obj) / 2.0, 3)
+                    else:
+                        total = base_total
+                except Exception:
+                    total = base_total
+            else:
+                total = base_total
+
             candidates.append(
                 {
                     "plan": plan_items,
@@ -532,7 +560,11 @@ class ChannelEngine:
                         score_total=total,
                         score_breakdown=breakdown,
                         rationale=f"Variant {variant_id} selected from audience/platform/product/repeatability/conversion matrix.",
-                        metadata={"variant_index": idx + 1, "feedback_applied": feedback_applied},
+                        metadata={
+                            "variant_index": idx + 1,
+                            "feedback_applied": feedback_applied,
+                            "multi_objective": objectives is not None,
+                        },
                     ),
                 }
             )

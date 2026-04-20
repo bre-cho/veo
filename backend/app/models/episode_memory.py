@@ -22,6 +22,11 @@ class EpisodeMemory(Base):
     records which threads were closed in this episode.  The StoryboardEngine
     reads the most recent row when generating the next episode so open loops
     can be auto-injected as resolution beats.
+
+    Phase 4.3 additions:
+    - ``winning_scene_sequence``: JSON ordered list of (scene_goal, pacing_weight) pairs
+    - ``series_arc``: JSON {episode_number, arc_position, cliffhanger_hook}
+    - ``character_callbacks``: JSON references to avatar appearances in previous episodes
     """
 
     __tablename__ = "episode_memories"
@@ -41,3 +46,10 @@ class EpisodeMemory(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False, default=_now, index=True
     )
+    # Phase 4.3: winning scene sequence for template beat_map baseline
+    winning_scene_sequence: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    # Phase 4.3: series arc metadata
+    series_arc: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    # Phase 4.3: references to avatar appearances in previous episodes
+    character_callbacks: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+

@@ -154,6 +154,12 @@ class RecordPerformanceRequest(BaseModel):
     conversion_score: float = Field(..., ge=0.0, le=1.0)
     view_count: int = 0
     click_through_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Phase 1.1 — persona / product-category / funnel dimensions
+    persona_id: Optional[str] = None
+    product_category: Optional[str] = None
+    funnel_stage: Optional[str] = None
+    # Phase 1.2 — campaign attribution
+    campaign_id: Optional[str] = None
 
 
 class FeedbackSummaryResponse(BaseModel):

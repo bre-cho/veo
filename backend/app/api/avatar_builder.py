@@ -172,3 +172,24 @@ def verify_render(
     )
     return result
 
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.2: On-demand canonical reference refresh
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{avatar_id}/canonical/refresh", response_model=dict)
+def force_canonical_refresh(
+    avatar_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Force an immediate canonical reference frame refresh for an avatar.
+
+    Phase 2.2: On-demand refresh endpoint.  Useful after a high-quality render
+    completes or when drift has been detected.
+    """
+    from app.services.avatar.canonical_reference_scheduler import force_refresh_avatar_canonical
+
+    result = force_refresh_avatar_canonical(db, avatar_id)
+    return result

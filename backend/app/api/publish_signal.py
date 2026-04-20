@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -119,4 +120,65 @@ def _update_variant_outcome(
         db.commit()
     except Exception:
         logger.exception("Failed to update VariantRunRecord outcome for run_id=%s", run_id)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.4: Portfolio budget status endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/portfolio/budget-status", response_model=dict)
+def portfolio_budget_status(db: Session = Depends(get_db)) -> dict:
+    """Return portfolio-level budget/slot status across all active campaigns.
+
+    Phase 3.4: Aggregates remaining slot counts per campaign per platform.
+    """
+    from app.models.publish_job import PublishJob
+    from app.services.publish_providers.campaign_budget_policy import (
+        CampaignBudgetPolicy,
+        _CAMPAIGN_DAILY_LIMIT,
+        _PLATFORM_DAILY_LIMIT,
+        _today_utc,
+    )
+    from datetime import datetime, timedelta
+
+    policy = CampaignBudgetPolicy()
+    today_start = _today_utc()
+
+    # Get all distinct campaign_ids from recent jobs
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=1)
+        recent_jobs = (
+            db.query(PublishJob.campaign_id, PublishJob.platform)
+            .filter(
+                PublishJob.campaign_id.isnot(None),
+                PublishJob.created_at >= cutoff,
+            )
+            .distinct()
+            .all()
+        )
+    except Exception:
+        recent_jobs = []
+
+    campaign_platform_pairs = list({(j.campaign_id, j.platform) for j in recent_jobs if j.campaign_id})
+
+    status: dict[str, Any] = {}
+    for campaign_id, platform in campaign_platform_pairs:
+        used = policy._count_today(db, today_start, channel_plan_id=campaign_id, platform=platform)
+        campaign_remaining = max(0, _CAMPAIGN_DAILY_LIMIT - used)
+        platform_remaining = max(0, _PLATFORM_DAILY_LIMIT - used)
+        key = f"{campaign_id}::{platform}"
+        status[key] = {
+            "campaign_id": campaign_id,
+            "platform": platform,
+            "used_today": used,
+            "campaign_daily_limit": _CAMPAIGN_DAILY_LIMIT,
+            "platform_daily_limit": _PLATFORM_DAILY_LIMIT,
+            "campaign_slots_remaining": campaign_remaining,
+            "platform_slots_remaining": platform_remaining,
+        }
+
+    return {"portfolio_budget_status": status, "total_campaigns": len(status)}
 

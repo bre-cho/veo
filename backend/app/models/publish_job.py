@@ -38,6 +38,8 @@ class PublishJob(Base):
     # Preflight validation status: null (not run) | "ok" | "error"
     preflight_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     preflight_errors: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    # Phase 3.1: per-platform final state metadata (monetization, review status, etc.)
+    provider_metadata: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     preparing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     publishing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

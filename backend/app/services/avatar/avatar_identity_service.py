@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Optional
 
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.autovis import AvatarDna, AvatarMotionDna, AvatarVisualDna, AvatarVoiceDna
 from app.repositories.avatar_repo import AvatarRepo
 
+logger = logging.getLogger(__name__)
 _repo = AvatarRepo()
 
 # ---------------------------------------------------------------------------
@@ -350,7 +352,30 @@ class AvatarIdentityService:
 
         # Identity gate: raise when below threshold
         if consistency_score < IDENTITY_GATE_THRESHOLD:
+            # Phase 2.2: record failure for drift-triggered refresh
+            try:
+                from app.services.avatar.canonical_reference_scheduler import (
+                    record_verification_failure,
+                    record_verification_success,
+                )
+                if consistency_score < _TEMPORAL_CONTINUITY_THRESHOLD:
+                    fail_count = record_verification_failure(avatar_id)
+                    logger.debug(
+                        "verify_render_output: drift failure count=%d avatar=%s",
+                        fail_count, avatar_id,
+                    )
+                else:
+                    record_verification_success(avatar_id)
+            except Exception:
+                pass
             raise IdentityDriftException(avatar_id, consistency_score)
+        else:
+            # Reset failure count on success
+            try:
+                from app.services.avatar.canonical_reference_scheduler import record_verification_success
+                record_verification_success(avatar_id)
+            except Exception:
+                pass
 
         action = "accept" if consistency_score >= _RENDER_CONSISTENCY_THRESHOLD else "identity_review"
         effective_frame_count = frame_count or len(frame_results) or len(frame_embeddings or [])
@@ -563,3 +588,81 @@ class CanonicalReferenceRefresher:
             return existing or row  # type: ignore[return-value]
         except Exception:
             return None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.3: Temporal Identity Continuity Tracker
+# ---------------------------------------------------------------------------
+
+
+class TemporalIdentityTracker:
+    """Track identity continuity across a sequence of render clips.
+
+    ``track_sequence()`` computes pairwise cosine similarities between
+    consecutive render embeddings and identifies weak links (pairs below
+    _TEMPORAL_CONTINUITY_THRESHOLD).
+    """
+
+    def track_sequence(
+        self,
+        render_urls: list[str],
+        avatar_id: str,
+    ) -> dict[str, Any]:
+        """Compute inter-clip identity continuity for a sequence of renders.
+
+        Args:
+            render_urls: Ordered list of render URL strings.
+            avatar_id: The avatar's identifier (used for logging).
+
+        Returns:
+            Dict with:
+            - ``continuity_score``: mean pairwise cosine similarity (0–1)
+            - ``weak_links``: list of (url_a, url_b, similarity) pairs
+              where similarity < _TEMPORAL_CONTINUITY_THRESHOLD
+            - ``pair_scores``: all pairwise similarity values
+        """
+        from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
+
+        if len(render_urls) < 2:
+            return {
+                "continuity_score": 1.0,
+                "weak_links": [],
+                "pair_scores": [],
+                "avatar_id": avatar_id,
+            }
+
+        extractor = MediaEmbeddingExtractor()
+        embeddings: list[list[float]] = []
+        for url in render_urls:
+            try:
+                emb = extractor.extract(url, n_frames=4)
+                embeddings.append(emb)
+            except Exception as exc:
+                logger.debug("TemporalIdentityTracker: extraction failed url=%s: %s", url, exc)
+                embeddings.append([0.0] * 128)
+
+        pair_scores: list[dict[str, Any]] = []
+        similarities: list[float] = []
+        weak_links: list[dict[str, Any]] = []
+
+        for i in range(len(embeddings) - 1):
+            sim = _cosine_similarity(embeddings[i], embeddings[i + 1])
+            similarities.append(sim)
+            pair = {
+                "url_a": render_urls[i],
+                "url_b": render_urls[i + 1],
+                "similarity": sim,
+            }
+            pair_scores.append(pair)
+            if sim < _TEMPORAL_CONTINUITY_THRESHOLD:
+                weak_links.append(pair)
+
+        continuity_score = round(
+            sum(similarities) / len(similarities) if similarities else 1.0, 4
+        )
+        return {
+            "continuity_score": continuity_score,
+            "weak_links": weak_links,
+            "pair_scores": pair_scores,
+            "avatar_id": avatar_id,
+        }
