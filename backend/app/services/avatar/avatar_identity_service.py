@@ -312,17 +312,19 @@ class AvatarIdentityService:
             scores = [r["cosine_similarity"] for r in frame_results]
             consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
         elif render_url:
-            # Extract real per-frame embeddings from the output video/image
+            # Extract embeddings from the actual output video/image using
+            # MediaEmbeddingExtractor.  extract(url, n_frames=N) samples N
+            # evenly-spaced frames and returns their mean embedding as a single
+            # list[float].  We pass this single vector to lock_frame_sequence
+            # which compares it against the canonical reference frame.
             extraction_method = "media_extractor"
             try:
                 extractor = MediaEmbeddingExtractor()
-                # Sample individual frame embeddings so we can score each one
-                extracted: list[list[float]] = []
-                for i in range(self._VERIFY_N_FRAMES):
-                    frame_source = f"{render_url}:frame:{i}"
-                    emb = extractor.extract(frame_source, n_frames=1)
-                    extracted.append(emb)
-                frame_results = self.lock_frame_sequence(db, avatar_id, extracted)
+                mean_embedding: list[float] = extractor.extract(
+                    render_url, n_frames=self._VERIFY_N_FRAMES
+                )
+                # Wrap in a list so lock_frame_sequence receives list[list[float]]
+                frame_results = self.lock_frame_sequence(db, avatar_id, [mean_embedding])
                 scores = [r["cosine_similarity"] for r in frame_results]
                 consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
             except Exception:

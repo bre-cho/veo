@@ -931,7 +931,6 @@ def _derive_all_scene_pacing_boosts(
     return capped
 
 
-
 class OutcomeInformedShotSelector:
     """Select biased shot types based on winning scenes history.
 

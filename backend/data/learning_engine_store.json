@@ -14,7 +14,7 @@
     "experiment_id": null,
     "variant_id": null,
     "performance_metrics": {},
-    "recorded_at": 1776697196.557008
+    "recorded_at": 1776697427.0331156
   },
   {
     "video_id": "test-job-signal-001",
@@ -31,7 +31,7 @@
     "experiment_id": null,
     "variant_id": null,
     "performance_metrics": {},
-    "recorded_at": 1776697200.791934
+    "recorded_at": 1776697431.3069596
   },
   {
     "video_id": "test-job-platform-001",
@@ -48,6 +48,6 @@
     "experiment_id": null,
     "variant_id": null,
     "performance_metrics": {},
-    "recorded_at": 1776697200.8173237
+    "recorded_at": 1776697431.3366356
   }
 ]
