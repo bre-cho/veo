@@ -18,8 +18,8 @@ class MarketplaceRepo:
         creator_id: str,
         user_id: str,
         display_name: str,
-        bio: str | None,
-        market_code: str | None,
+        bio: Optional[str],
+        market_code: Optional[str],
     ) -> CreatorProfile:
         row = self.get_creator_profile(db, creator_id) or CreatorProfile(creator_id=creator_id, user_id=user_id)
         row.user_id = user_id
