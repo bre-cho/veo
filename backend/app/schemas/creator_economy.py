@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 class CreatorCreate(BaseModel):
     creator_id: str
-    display_name: Optional[str] = None
+    display_name: str
     bio: Optional[str] = None
     market_code: Optional[str] = None
 
@@ -30,7 +30,6 @@ class CreatorEarningsResponse(BaseModel):
 
 
 class PayoutRequestIn(BaseModel):
-    creator_id: str
     amount_usd: Decimal
     payout_method: Optional[str] = None
 

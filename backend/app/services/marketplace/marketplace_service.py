@@ -34,12 +34,18 @@ class MarketplaceService:
         results = []
         for avatar in avatars:
             item = _mp_repo.get_item_by_avatar(db, avatar.id)
+            if avatar.moderation_status != "approved":
+                continue
+            if not item or not item.is_active:
+                continue
             results.append({
                 "id": avatar.id,
                 "name": avatar.name,
                 "role_id": avatar.role_id,
                 "niche_code": avatar.niche_code,
                 "market_code": avatar.market_code,
+                "is_published": avatar.is_published,
+                "moderation_status": avatar.moderation_status,
                 "is_featured": avatar.is_featured,
                 "marketplace_item": {
                     "id": item.id,
