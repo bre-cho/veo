@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class ChannelPlanRequest(BaseModel):
+    channel_name: str | None = None
+    niche: str
+    market_code: str | None = None
+    goal: str | None = None
+    days: int = Field(default=7, ge=1, le=30)
+    posts_per_day: int = Field(default=1, ge=1, le=5)
+    formats: list[str] | None = None
+
+
+class ChannelPlanItem(BaseModel):
+    day_index: int
+    format: str
+    title_angle: str
+    content_goal: str
+    cta_mode: str | None = None
+    asset_type: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChannelPlanResponse(BaseModel):
+    series_plan: list[ChannelPlanItem] = Field(default_factory=list)
+    publish_queue_count: int
+    calendar_summary: dict[str, Any] = Field(default_factory=dict)

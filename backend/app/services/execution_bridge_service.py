@@ -27,6 +27,9 @@ class ExecutionBridgeService:
         market_code: str | None = None,
         content_goal: str | None = None,
         conversion_mode: str | None = None,
+        storyboard: dict[str, Any] | None = None,
+        optimization_response: dict[str, Any] | None = None,
+        winner_patterns: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -69,6 +72,9 @@ class ExecutionBridgeService:
             "avatar": avatar,
             "market": market,
             "template_family": template_family,
+            "storyboard": storyboard,
+            "optimization_response": optimization_response,
+            "winner_patterns": winner_patterns or [],
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -78,6 +84,9 @@ class ExecutionBridgeService:
             market_code=project.get("market_code"),
             content_goal=project.get("content_goal"),
             conversion_mode=project.get("conversion_mode"),
+            storyboard=project.get("storyboard"),
+            optimization_response=project.get("optimization_response"),
+            winner_patterns=project.get("winner_patterns"),
         )
 
     def apply_to_preview_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +97,9 @@ class ExecutionBridgeService:
             "content_goal": updated.get("content_goal"),
             "conversion_mode": updated.get("conversion_mode"),
             "template_family": updated.get("template_family"),
+            "storyboard": updated.get("storyboard"),
+            "optimization_response": updated.get("optimization_response"),
+            "winner_patterns": updated.get("winner_patterns") or [],
         }
         scenes = updated.get("scenes") or []
         updated["scenes"] = [self.apply_to_project_scene(scene, context) for scene in scenes]
@@ -98,6 +110,7 @@ class ExecutionBridgeService:
         metadata = dict(updated.get("metadata") or {})
         metadata["execution_context"] = self._compact_context(ctx)
         self._apply_conversion_metadata(metadata, ctx)
+        self._apply_storyboard_and_optimization(updated, metadata, ctx)
 
         base_visual_prompt = (
             updated.get("visual_prompt")
@@ -132,6 +145,7 @@ class ExecutionBridgeService:
         metadata = dict(updated.get("metadata") or {})
         metadata["execution_context"] = self._compact_context(ctx)
         self._apply_conversion_metadata(metadata, ctx)
+        self._apply_storyboard_and_optimization(updated, metadata, ctx)
 
         base_prompt = (
             updated.get("resolved_prompt_text")
@@ -250,7 +264,64 @@ class ExecutionBridgeService:
             "content_goal": ctx.get("content_goal"),
             "conversion_mode": ctx.get("conversion_mode"),
             "template_family": ctx.get("template_family"),
+            "has_storyboard": bool(ctx.get("storyboard")),
+            "has_optimization_response": bool(ctx.get("optimization_response")),
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
         return str(ctx.get("content_goal") or "").strip().lower() == "conversion"
+
+    def _apply_storyboard_and_optimization(
+        self,
+        updated: dict[str, Any],
+        metadata: dict[str, Any],
+        ctx: dict[str, Any],
+    ) -> None:
+        try:
+            scene_index = int(updated.get("scene_index") or 0)
+        except (TypeError, ValueError):
+            scene_index = 0
+        storyboard = ctx.get("storyboard") or {}
+        storyboard_scenes = storyboard.get("scenes") if isinstance(storyboard, dict) else None
+        if isinstance(storyboard_scenes, list) and scene_index > 0:
+            matched = next(
+                (
+                    s
+                    for s in storyboard_scenes
+                    if int(s.get("scene_index", 0)) == scene_index
+                ),
+                None,
+            )
+            if matched:
+                if matched.get("scene_goal"):
+                    metadata["scene_goal"] = matched.get("scene_goal")
+                if matched.get("shot_hint"):
+                    metadata["shot_hint"] = matched.get("shot_hint")
+                    updated.setdefault("shot_hint", matched.get("shot_hint"))
+                if matched.get("pacing_weight") is not None:
+                    metadata["pacing_weight"] = matched.get("pacing_weight")
+                if matched.get("cta_flag"):
+                    metadata["cta_bias"] = ctx.get("conversion_mode") or "default"
+
+        optimization = ctx.get("optimization_response") or {}
+        rewrites = optimization.get("rewrite_suggestions") if isinstance(optimization, dict) else None
+        if isinstance(rewrites, list) and scene_index > 0:
+            matched_rewrite = next(
+                (
+                    r
+                    for r in rewrites
+                    if int(r.get("target_scene_index", 0)) == scene_index
+                ),
+                None,
+            )
+            if matched_rewrite:
+                metadata["optimization_type"] = matched_rewrite.get("type")
+                replacement = matched_rewrite.get("replacement_text")
+                if replacement:
+                    updated["script_text"] = replacement
+
+        winner_patterns = ctx.get("winner_patterns") or []
+        if winner_patterns:
+            top_pattern = winner_patterns[0]
+            if isinstance(top_pattern, dict):
+                metadata["trust_bias"] = top_pattern.get("score")

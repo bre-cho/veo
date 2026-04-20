@@ -2,23 +2,25 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.schemas.storyboard import (
-    StoryboardGenerateRequest,
-    StoryboardGenerateResponse,
-    SceneBeatOut,
-)
+from app.schemas.storyboard import StoryboardRequest, StoryboardResponse
 from app.services.storyboard_engine import StoryboardEngine
 
 router = APIRouter(prefix="/api/v1/storyboard", tags=["storyboard"])
 
-_storyboard_engine = StoryboardEngine()
+_engine = StoryboardEngine()
 
 
-@router.post("/generate", response_model=StoryboardGenerateResponse)
-def generate_storyboard(req: StoryboardGenerateRequest):
-    """Convert a raw script into a structured storyboard of scene beats."""
-    beats = _storyboard_engine.parse_script(req.script, max_scenes=req.max_scenes)
-    return StoryboardGenerateResponse(
-        scene_count=len(beats),
-        scenes=[SceneBeatOut(**b.to_dict()) for b in beats],
+@router.post("/generate", response_model=StoryboardResponse)
+def generate_storyboard(req: StoryboardRequest) -> StoryboardResponse:
+    text = req.script_text or (req.preview_payload or {}).get("script_text") or ""
+    return _engine.generate_from_script(
+        script_text=text,
+        conversion_mode=req.conversion_mode,
+        content_goal=req.content_goal,
+        preview_payload=req.preview_payload,
     )
+
+
+@router.post("/from-preview", response_model=StoryboardResponse)
+def storyboard_from_preview(preview_payload: dict) -> StoryboardResponse:
+    return _engine.generate_from_preview(preview_payload)

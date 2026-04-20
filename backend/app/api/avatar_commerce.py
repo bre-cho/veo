@@ -22,6 +22,7 @@ from app.schemas.review_video import (
     GenerateReviewVideoResponse,
     ReviewVideoSceneOut,
 )
+from app.schemas.product_ingestion import ProductIngestionRequest, NormalizedProductProfile
 from app.schemas.storyboard import (
     AnalyticsActionItem,
     AnalyticsActionRequest,
@@ -52,6 +53,7 @@ from app.services.commerce.extended_review_engine import (
 from app.services.commerce.hook_engine import HookEngine
 from app.services.commerce.product_to_template_router import ProductToTemplateRouter
 from app.services.commerce.review_engine import ConversionScoreService, ReviewVideoEngine
+from app.services.commerce.product_ingestion_service import ProductIngestionService
 from app.services.commerce.template_recommendation_service import TemplateRecommendationService
 from app.services.learning_engine import PerformanceLearningEngine
 from app.services.template_intelligence import TemplateIntelligenceService
@@ -73,6 +75,7 @@ _template_intel_svc = TemplateIntelligenceService()
 _combo_recommender = AvatarTemplateComboRecommender()
 _analytics_action_svc = AnalyticsActionService()
 _learning_engine = PerformanceLearningEngine()
+_product_ingestion_service = ProductIngestionService()
 
 
 @router.post("/recommend-avatar", response_model=CommerceRecommendAvatarResponse)
@@ -150,6 +153,28 @@ def generate_review_video(req: GenerateReviewVideoRequest):
         conversion_score_result=ConversionScoreResult(**score_result),
         preview_payload=preview_payload,
     )
+
+
+@router.post("/ingest-product", response_model=NormalizedProductProfile)
+def ingest_product(req: ProductIngestionRequest):
+    return _product_ingestion_service.ingest(req)
+
+
+@router.post("/generate-review-variants")
+def generate_review_variants(payload: dict):
+    result = _review_engine.generate_review_variants(product_payload=payload, variant_count=payload.get("count", 5))
+    return {
+        "variants": result["variants"],
+        "winner": result["winner"],
+        "normalized_product_profile": result["normalized_product_profile"],
+    }
+
+
+@router.post("/select-review-winner")
+def select_review_winner(payload: dict):
+    variants = payload.get("variants") or []
+    winner = _review_engine.select_review_winner(variants)
+    return {"winner": winner}
 
 
 @router.post("/generate-cta", response_model=GenerateCTAResponse)

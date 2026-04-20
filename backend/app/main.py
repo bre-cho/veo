@@ -43,6 +43,12 @@ from app.api.avatar_localization import router as avatar_localization_router
 from app.api.avatar_meta import router as avatar_meta_router
 from app.api.avatar_analytics import router as avatar_analytics_router
 from app.api.storyboard import router as storyboard_router
+from app.api.optimization import router as optimization_router
+from app.api.trend_image import router as trend_image_router
+from app.api.channel import router as channel_router
+from app.api.lookbook import router as lookbook_router
+from app.api.motion_clone import router as motion_clone_router
+from app.api.patterns import router as patterns_router
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -112,6 +118,12 @@ app.include_router(avatar_localization_router)
 app.include_router(avatar_meta_router)
 app.include_router(avatar_analytics_router)
 app.include_router(storyboard_router)
+app.include_router(optimization_router)
+app.include_router(trend_image_router)
+app.include_router(channel_router)
+app.include_router(lookbook_router)
+app.include_router(motion_clone_router)
+app.include_router(patterns_router)
 
 
 @app.get("/", tags=["root"])
