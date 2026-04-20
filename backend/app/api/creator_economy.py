@@ -75,9 +75,13 @@ def top_creators(limit: int = 10, db: Session = Depends(get_db)):
 
 @router.get("/creators/{creator_id}")
 def get_creator(creator_id: str, db: Session = Depends(get_db)):
+    profile = _mp_repo.get_creator_profile(db, creator_id)
     ranking = _mp_repo.get_creator_ranking(db, creator_id)
     return {
         "creator_id": creator_id,
+        "display_name": profile.display_name if profile else None,
+        "bio": profile.bio if profile else None,
+        "market_code": profile.market_code if profile else None,
         "rank_score": float(ranking.rank_score) if ranking else 0.0,
         "total_earnings_usd": float(ranking.total_earnings_usd) if ranking else 0.0,
         "avatar_count": ranking.avatar_count if ranking else 0,
