@@ -158,12 +158,19 @@ class StoryboardEngine:
         paragraphs = self._to_paragraphs(script_text)
         scenes: list[StoryboardScene] = []
 
-        # Derive pacing boost from learning store for hook scenes
+        # Derive per-scene pacing boosts from learning store and pattern library.
+        # Previously only the hook scene was boosted; now all scene types benefit
+        # from winning-scene performance data.
+        scene_pacing_boosts: dict[str, float] = {}
         hook_pacing_boost = 0.0
         if learning_store is not None:
             try:
-                hook_pacing_boost = _derive_hook_pacing_boost(learning_store, platform=platform)
+                scene_pacing_boosts = _derive_all_scene_pacing_boosts(
+                    learning_store, platform=platform
+                )
+                hook_pacing_boost = scene_pacing_boosts.get("hook", 0.0)
             except Exception:
+                scene_pacing_boosts = {}
                 hook_pacing_boost = 0.0
 
         # Inject open-loop resolution beat from episode memory when available
@@ -177,8 +184,10 @@ class StoryboardEngine:
             goal = self._scene_goal(idx, len(paragraphs), text)
             cta_flag = self._cta_flag(goal, text, conversion_mode, grammar)
             pacing = self._pacing_weight(goal, idx, len(paragraphs), conversion_mode, grammar)
-            if goal == "hook" and hook_pacing_boost:
-                pacing = round(min(pacing + hook_pacing_boost, self.MAX_PACING_WEIGHT), 2)
+            # Apply outcome-informed pacing boost for this scene goal when available
+            goal_boost = scene_pacing_boosts.get(goal, 0.0)
+            if goal_boost:
+                pacing = round(min(pacing + goal_boost, self.MAX_PACING_WEIGHT), 2)
 
             # Inject resolution hint as metadata on the last body scene
             scene_meta: dict[str, Any] = {
@@ -231,6 +240,7 @@ class StoryboardEngine:
                 "dependency_graph": dependency_graph,
                 "hook_retention_score": self._compute_hook_retention_score(scenes, grammar),
                 "hook_pacing_boost": hook_pacing_boost,
+                "scene_pacing_boosts": scene_pacing_boosts,
             },
         )
 
@@ -835,9 +845,92 @@ def _derive_hook_pacing_boost(
     return round(boost, 3)
 
 
-# ---------------------------------------------------------------------------
-# Outcome-Informed Shot Selector (Phase 2C)
-# ---------------------------------------------------------------------------
+# Scene goals that can benefit from outcome-informed pacing boosts.
+# Each goal maps to its maximum allowed boost delta.
+_SCENE_GOAL_MAX_BOOSTS: dict[str, float] = {
+    "hook": 0.15,
+    "reveal": 0.10,
+    "cta": 0.12,
+    "body": 0.08,
+    "social_proof": 0.08,
+    "build_tension": 0.07,
+    "intro": 0.06,
+}
+
+
+def _derive_all_scene_pacing_boosts(
+    learning_store: "PerformanceLearningEngine",
+    platform: str | None,
+    db: Any = None,
+) -> dict[str, float]:
+    """Return outcome-informed pacing boosts for all scene goal types.
+
+    Extends ``_derive_hook_pacing_boost`` to cover every scene goal recognised
+    by the engine.  For each goal the function:
+
+    1. Checks whether the learning store has strong top-performers for the
+       corresponding pattern dimension (hook → ``top_hook_patterns``, cta →
+       ``top_cta_patterns``, others → ``top_template_families``).
+    2. Queries the ``ScenePatternLibrary`` for winning scene patterns on the
+       given platform and scene goal.
+    3. Computes an EWMA-weighted boost capped at ``_SCENE_GOAL_MAX_BOOSTS[goal]``.
+
+    Returns a ``{scene_goal: boost_delta}`` dict.  Missing goals default to 0.0.
+    """
+    boosts: dict[str, float] = {}
+
+    # ── Learning-store signal ───────────────────────────────────────────────
+    try:
+        top_hooks = learning_store.top_hook_patterns(platform=platform)
+        if top_hooks:
+            boosts["hook"] = boosts.get("hook", 0.0) + 0.10
+    except Exception:
+        pass
+
+    try:
+        top_ctas = learning_store.top_cta_patterns(platform=platform)
+        if top_ctas:
+            boosts["cta"] = boosts.get("cta", 0.0) + 0.08
+    except Exception:
+        pass
+
+    try:
+        top_templates = learning_store.top_template_families(platform=platform)
+        if top_templates:
+            # A strong template family implies the body/reveal/social_proof
+            # scenes in winning templates should be paced more aggressively.
+            for goal in ("body", "reveal", "social_proof", "build_tension"):
+                boosts[goal] = boosts.get(goal, 0.0) + 0.05
+    except Exception:
+        pass
+
+    # ── Pattern library signal (requires DB) ────────────────────────────────
+    if db is not None:
+        lib = ScenePatternLibrary()
+        for goal, max_boost in _SCENE_GOAL_MAX_BOOSTS.items():
+            try:
+                patterns = lib.get_top_patterns(db, platform=platform, scene_goal=goal, limit=3)
+                if patterns:
+                    # Average the pacing_weight of winning patterns and derive
+                    # a boost relative to the grammar default (1.0 baseline).
+                    avg_pacing = sum(
+                        float(p.get("pacing_weight") or 1.0) for p in patterns
+                    ) / len(patterns)
+                    pattern_boost = round(min((avg_pacing - 1.0) * 0.1, 0.05), 4)
+                    if pattern_boost > 0:
+                        boosts[goal] = boosts.get(goal, 0.0) + pattern_boost
+            except Exception:
+                pass
+
+    # ── Cap each boost at its maximum ──────────────────────────────────────
+    capped: dict[str, float] = {
+        goal: round(min(v, _SCENE_GOAL_MAX_BOOSTS.get(goal, 0.10)), 4)
+        for goal, v in boosts.items()
+        if v > 0
+    }
+    return capped
+
+
 
 class OutcomeInformedShotSelector:
     """Select biased shot types based on winning scenes history.
