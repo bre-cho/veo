@@ -357,17 +357,20 @@ class TestWinningSceneGraphStore:
         assert len(graphs) == 1
         assert graphs[0]["conversion_score"] == 0.85
 
-    def test_below_threshold_not_stored(self):
-        from app.services.storyboard.winning_scene_graph_store import WinningSceneGraphStore, _IN_MEMORY_STORE
+    def test_below_threshold_not_stored(self, tmp_path):
+        from app.services.storyboard.winning_scene_graph_store import WinningSceneGraphStore
 
         store = WinningSceneGraphStore()
-        initial_count = len(_IN_MEMORY_STORE)
+        initial_graphs = store.get_top_graphs(platform="low-score-platform")
         persisted = store.record_winning_graph(
             storyboard_id="sb-low",
-            platform="tiktok",
+            platform="low-score-platform",
             conversion_score=0.50,
         )
         assert persisted is False
+        # Verify graph was not added
+        after_graphs = store.get_top_graphs(platform="low-score-platform")
+        assert len(after_graphs) == len(initial_graphs)
 
     def test_sorted_by_conversion_score_desc(self):
         from app.services.storyboard.winning_scene_graph_store import WinningSceneGraphStore

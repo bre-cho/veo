@@ -915,6 +915,14 @@ _SCENE_GOAL_MAX_BOOSTS: dict[str, float] = {
     "intro": 0.06,
 }
 
+# Boost applied to a goal when its winning pacing bucket is identified via
+# outcome analysis (Phase 4.1). This small boost nudges towards the empirically
+# optimal pacing range without overriding the grammar-derived baseline.
+_PACING_BUCKET_BOOST = 0.08
+
+# Minimum conversion mean required for a pacing bucket to be considered "winning".
+_PACING_WINNING_MEAN_THRESHOLD = 0.5
+
 
 def _derive_all_scene_pacing_boosts(
     learning_store: "PerformanceLearningEngine",
@@ -970,9 +978,9 @@ def _derive_all_scene_pacing_boosts(
                         if mean > best_mean:
                             best_mean = mean
                             best_bucket = bk
-                if best_bucket is not None and best_mean > 0.5:
-                    # Boost this goal's pacing slightly
-                    boosts[goal] = boosts.get(goal, 0.0) + 0.08
+                if best_bucket is not None and best_mean > _PACING_WINNING_MEAN_THRESHOLD:
+                    # Boost this goal's pacing slightly toward optimal bucket
+                    boosts[goal] = boosts.get(goal, 0.0) + _PACING_BUCKET_BOOST
     except Exception:
         pass
 

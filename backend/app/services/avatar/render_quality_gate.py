@@ -23,6 +23,11 @@ _FACE_COVERAGE_THRESHOLD = 0.3
 _MOTION_BLUR_THRESHOLD = 0.5  # above this → too much blur
 _AUDIO_SYNC_THRESHOLD = 0.7
 
+# Heuristic bias added to center-region brightness during face coverage estimation.
+# This small positive offset accounts for typical face brightness being slightly above
+# the mean and helps avoid under-estimating coverage in well-lit renders.
+_FACE_COVERAGE_BIAS = 0.1
+
 
 @dataclass
 class QualityReport:
@@ -172,7 +177,7 @@ class RenderQualityAnalyzer:
             overall_mean = sum(pixels) / n
             center_mean = sum(center_pixels) / len(center_pixels) if center_pixels else overall_mean
             # Face proxy: face tends to be brighter than background
-            coverage = min(1.0, max(0.0, center_mean / 255.0 + 0.1))
+            coverage = min(1.0, max(0.0, center_mean / 255.0 + _FACE_COVERAGE_BIAS))
             return round(coverage, 4)
         except Exception:
             return 0.5
