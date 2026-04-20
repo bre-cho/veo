@@ -301,20 +301,25 @@ class PublishReconciler:
     """Reconciles stale published jobs that have never received a real signal.
 
     Jobs that are ``published`` but whose ``signal_status`` is still ``pending``
-    after ``max_age_hours`` are considered stale.  The reconciler flags them so
-    operators can investigate or re-ingest missing signals.
+    after ``max_age_hours`` are considered stale.  The reconciler now calls
+    ``ProviderFinalStateSyncer`` to fetch the current terminal state from each
+    platform before falling back to marking the job as ``stale``.
     """
 
     def reconcile(self, db: Session, max_age_hours: int = 24) -> list[str]:
         """Return IDs of stale jobs (signal_status='pending', older than max_age_hours).
 
-        The reconciler marks each stale job's ``signal_status`` as ``'stale'``
-        so dashboards can surface them.  It does **not** attempt to re-fetch
-        from the platform API (that would require platform credentials and is
-        out of scope for the core scheduler library).
+        For each stale job:
+        - Calls ``ProviderFinalStateSyncer.fetch_final_state()``
+        - If confirmed published → marks job ``completed`` with ``signal_status='received'``
+        - If confirmed failed → triggers ``PlatformRecoveryWorkflow``
+        - Otherwise → marks ``signal_status='stale'``
 
         Returns a list of affected job IDs.
         """
+        from app.services.publish_providers.provider_final_state_syncer import ProviderFinalStateSyncer
+        from app.services.publish_providers.platform_recovery_workflow import PlatformRecoveryWorkflow
+
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=max_age_hours)
         stale_jobs: list[PublishJob] = (
             db.query(PublishJob)
@@ -326,19 +331,48 @@ class PublishReconciler:
             .all()
         )
         affected: list[str] = []
+        syncer = ProviderFinalStateSyncer()
+        recovery = PlatformRecoveryWorkflow()
+
         for job in stale_jobs:
-            job.signal_status = "stale"
-            db.add(job)
+            platform = str(job.platform or "")
+            try:
+                state = syncer.fetch_final_state(job.id, platform)
+                terminal = state.get("terminal_status", "unknown")
+            except Exception:
+                terminal = "unknown"
+
+            if terminal == "published":
+                job.status = "completed"
+                job.signal_status = "received"
+                db.add(job)
+                logger.info("Reconciler: auto-closed confirmed published job id=%s", job.id)
+            elif terminal == "failed":
+                job.signal_status = "stale"
+                db.add(job)
+                try:
+                    recovery.recover(db, job)
+                except Exception:
+                    pass
+                logger.warning(
+                    "Reconciler: confirmed failed job id=%s — recovery triggered", job.id
+                )
+            else:
+                job.signal_status = "stale"
+                db.add(job)
+                logger.warning(
+                    "Stale publish job detected: id=%s platform=%s published_at=%s",
+                    job.id,
+                    job.platform,
+                    job.published_at,
+                )
+
             affected.append(job.id)
-            logger.warning(
-                "Stale publish job detected: id=%s platform=%s published_at=%s",
-                job.id,
-                job.platform,
-                job.published_at,
-            )
+
         if affected:
             db.commit()
         return affected
+
 
 
 # ---------------------------------------------------------------------------

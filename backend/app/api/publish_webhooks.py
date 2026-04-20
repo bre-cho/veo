@@ -47,6 +47,9 @@ class WebhookPayload(BaseModel):
     conversion_score: float = Field(default=0.5, ge=0.0, le=1.0)
     platform: str | None = Field(default=None)
     market_code: str | None = Field(default=None)
+    # Platform initial metrics (Phase 3B)
+    views_initial: int = Field(default=0, ge=0)
+    likes_initial: int = Field(default=0, ge=0)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -128,11 +131,17 @@ def receive_webhook(
                 cta_pattern=str(job_payload.get("cta_mode") or "unknown"),
                 template_family=str(job_payload.get("content_goal") or "engagement"),
                 conversion_score=payload.conversion_score,
-                view_count=payload.view_count,
+                view_count=payload.view_count or payload.views_initial,
                 click_through_rate=payload.click_through_rate,
                 platform=effective_platform,
                 market_code=effective_market,
             )
+            # Store initial platform metrics in provider_response
+            job.provider_response = {
+                **(job.provider_response or {}),
+                "views_initial": payload.views_initial,
+                "likes_initial": payload.likes_initial,
+            }
         except Exception:
             logger.exception("Failed to update learning engine from webhook job_id=%s", payload.job_id)
 

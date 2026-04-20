@@ -20,6 +20,8 @@ RENDER_JOB_STATES = {
     "failed",
     "queue_error",
     "identity_review",  # Avatar identity check failed post-render; pending reject/requeue
+    "identity_gate_failed",  # Render failed IDENTITY_GATE_THRESHOLD; queued for re-render
+    "re_render_queued",  # Re-render triggered after identity gate failure
 }
 
 RENDER_SCENE_STATES = {
@@ -42,7 +44,9 @@ RENDER_JOB_TRANSITIONS: dict[str, set[str]] = {
     "merging": {"burning_subtitles", "completed", "failed", "identity_review"},
     "burning_subtitles": {"completed", "failed", "identity_review"},
     "queue_error": {"failed"},
-    "identity_review": {"queued", "failed"},  # requeue or reject
+    "identity_review": {"queued", "failed", "identity_gate_failed"},  # gate failure path added
+    "identity_gate_failed": {"re_render_queued", "failed"},  # re-render or hard fail
+    "re_render_queued": {"queued", "failed"},  # fed back into the render pipeline
     "completed": set(),
     "failed": set(),
 }

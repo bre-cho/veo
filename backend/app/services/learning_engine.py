@@ -584,10 +584,13 @@ class PerformanceLearningEngine:
         limit: int = 5,
         platform: str | None = None,
         market_code: str | None = None,
+        product_id: str | None = None,
+        persona_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return top hook patterns by time-weighted conversion score."""
         return self._top_patterns(
-            "hook_pattern", limit=limit, platform=platform, market_code=market_code
+            "hook_pattern", limit=limit, platform=platform, market_code=market_code,
+            product_id=product_id, persona_id=persona_id,
         )
 
     def top_cta_patterns(
@@ -596,10 +599,13 @@ class PerformanceLearningEngine:
         limit: int = 5,
         platform: str | None = None,
         market_code: str | None = None,
+        product_id: str | None = None,
+        persona_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return top CTA patterns by time-weighted conversion score."""
         return self._top_patterns(
-            "cta_pattern", limit=limit, platform=platform, market_code=market_code
+            "cta_pattern", limit=limit, platform=platform, market_code=market_code,
+            product_id=product_id, persona_id=persona_id,
         )
 
     def top_template_families(
@@ -619,9 +625,14 @@ class PerformanceLearningEngine:
         *,
         platform: str | None = None,
         market_code: str | None = None,
+        product_id: str | None = None,
+        persona_id: str | None = None,
     ) -> dict[str, Any]:
         """Return an aggregated summary for the recommendation engine."""
-        filtered = self._filter_records(platform=platform, market_code=market_code)
+        filtered = self._filter_records(
+            platform=platform, market_code=market_code,
+            product_id=product_id, persona_id=persona_id,
+        )
         if not filtered:
             return {
                 "total_records": 0,
@@ -635,10 +646,12 @@ class PerformanceLearningEngine:
         return {
             "total_records": len(filtered),
             "top_hook_patterns": self.top_hook_patterns(
-                limit=3, platform=platform, market_code=market_code
+                limit=3, platform=platform, market_code=market_code,
+                product_id=product_id, persona_id=persona_id,
             ),
             "top_cta_patterns": self.top_cta_patterns(
-                limit=3, platform=platform, market_code=market_code
+                limit=3, platform=platform, market_code=market_code,
+                product_id=product_id, persona_id=persona_id,
             ),
             "top_template_families": self.top_template_families(
                 limit=3, platform=platform, market_code=market_code
@@ -784,13 +797,22 @@ class PerformanceLearningEngine:
         *,
         platform: str | None,
         market_code: str | None,
+        product_id: str | None = None,
+        persona_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return records matching the optional platform/market_code filters."""
+        """Return records matching the optional filters.
+
+        persona_id maps to avatar_id in stored records.
+        """
         records = self._records
         if platform:
             records = [r for r in records if r.get("platform") == platform]
         if market_code:
             records = [r for r in records if r.get("market_code") == market_code]
+        if product_id:
+            records = [r for r in records if r.get("product_id") == product_id]
+        if persona_id:
+            records = [r for r in records if r.get("avatar_id") == persona_id]
         return records
 
     def _top_patterns(
@@ -800,13 +822,20 @@ class PerformanceLearningEngine:
         limit: int,
         platform: str | None = None,
         market_code: str | None = None,
+        product_id: str | None = None,
+        persona_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Aggregate patterns using time-weighted conversion scores.
 
         Each record's contribution is weighted by exponential decay so recent
         records have more influence than older ones (half-life = 90 days).
         """
-        records = self._filter_records(platform=platform, market_code=market_code)
+        records = self._filter_records(
+            platform=platform,
+            market_code=market_code,
+            product_id=product_id,
+            persona_id=persona_id,
+        )
         # aggregated: pattern -> list of (score, weight) tuples
         aggregated: dict[str, list[tuple[float, float]]] = {}
         for rec in records:
