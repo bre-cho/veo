@@ -92,7 +92,10 @@ class HttpPublishProvider(PublishProviderBase):
             if attempt < max_retries:
                 self._sleep(backoff_base * (2 ** attempt))
 
-        raise last_exc  # type: ignore[misc]
+        if last_exc is not None:
+            raise last_exc
+        # This line is unreachable in practice but guards against unforeseen control flow.
+        raise RuntimeError("HttpPublishProvider.execute() exhausted retries without capturing an exception")
 
     def _do_request(self, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
         """Execute the HTTP request and return the decoded JSON body."""

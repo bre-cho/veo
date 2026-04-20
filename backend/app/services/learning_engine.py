@@ -32,8 +32,12 @@ _HALF_LIFE_DAYS = 90.0
 
 
 def _time_weight(recorded_at: float) -> float:
-    """Exponential decay weight based on record age (half-life = 90 days)."""
-    age_seconds = time.time() - recorded_at
+    """Exponential decay weight based on record age (half-life = 90 days).
+
+    Returns a value in (0, 1].  Future timestamps (``recorded_at > now``) are
+    treated as if they were recorded right now, capping the weight at 1.0.
+    """
+    age_seconds = max(0.0, time.time() - recorded_at)
     age_days = age_seconds / 86400.0
     return math.pow(0.5, age_days / _HALF_LIFE_DAYS)
 
@@ -250,7 +254,13 @@ class PerformanceLearningEngine:
         return results[:limit]
 
     def _db_upsert(self, rec: dict[str, Any]) -> None:
-        """Upsert a record into the performance_records DB table."""
+        """Upsert a record into the performance_records DB table.
+
+        This method issues its own ``db.commit()`` so the write is durable
+        immediately, independent of any outer transaction.  This is intentional:
+        the learning-engine write-back is a side-effect that must not be rolled
+        back if the caller's transaction is aborted later.
+        """
         try:
             from datetime import datetime, timezone
 

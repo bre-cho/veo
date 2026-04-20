@@ -83,14 +83,34 @@ _SCORE_WEIGHTS = {
 
 # Maximum absolute adjustment any single weight can receive from learning data.
 _MAX_WEIGHT_ADJUSTMENT = 0.05
+# Per-weight floor/ceiling after adjustment to prevent any dimension collapsing.
+_WEIGHT_MIN = 0.05
+_WEIGHT_MAX = 0.50
+
+# Thresholds for interpreting avg_conversion_score from the learning store.
+_HIGH_CONVERSION_THRESHOLD = 0.75
+_LOW_CONVERSION_THRESHOLD = 0.45
+
+# Adjustment magnitudes applied when thresholds are crossed.
+_CONVERSION_HIGH_BOOST = 0.03     # boost conversion_potential when performing well
+_AUDIENCE_HIGH_PENALTY = -0.01    # minor rebalance away from audience_fit
+_AUDIENCE_LOW_BOOST = 0.02        # diversify to audience reach when conversion is low
+_PLATFORM_LOW_BOOST = 0.02        # diversify to platform reach when conversion is low
+_CONVERSION_LOW_PENALTY = -0.02   # reduce conversion weight when avg score is poor
+_REPEATABILITY_STABLE_HOOK = 0.02 # boost repeatability when a hook pattern is stable
+
+# Minimum hook-pattern sample count considered "stable".
+_STABLE_HOOK_MIN_SAMPLES = 3
+# Minimum number of records required before any adaptive adjustment is made.
+_ADAPTIVE_MIN_RECORDS = 5
 
 
 def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]:
     """Return bounded additive adjustments to ``_SCORE_WEIGHTS`` from learning feedback.
 
-    Requires at least 5 records before producing any adjustment so that a
-    single outlier never biases the weight profile.  Adjustments are clamped
-    to ``±_MAX_WEIGHT_ADJUSTMENT`` so the base weights always dominate.
+    Requires at least ``_ADAPTIVE_MIN_RECORDS`` records before producing any
+    adjustment so that a single outlier never biases the weight profile.
+    All adjustments are clamped to ``±_MAX_WEIGHT_ADJUSTMENT``.
     """
     if learning_store is None:
         return {}
@@ -99,28 +119,30 @@ def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]
     except Exception:
         return {}
 
-    if summary.get("total_records", 0) < 5:
+    if summary.get("total_records", 0) < _ADAPTIVE_MIN_RECORDS:
         return {}
 
     avg_score: float = summary.get("avg_conversion_score", 0.0)
     adjustments: dict[str, float] = {}
 
-    if avg_score >= 0.75:
+    if avg_score >= _HIGH_CONVERSION_THRESHOLD:
         # High conversion performance observed – nudge toward conversion metrics
-        adjustments["conversion_potential"] = 0.03
-        adjustments["audience_fit"] = -0.01
-    elif avg_score < 0.45:
+        adjustments["conversion_potential"] = _CONVERSION_HIGH_BOOST
+        adjustments["audience_fit"] = _AUDIENCE_HIGH_PENALTY
+    elif avg_score < _LOW_CONVERSION_THRESHOLD:
         # Low conversion – diversify toward audience and platform reach
-        adjustments["audience_fit"] = 0.02
-        adjustments["platform_fit"] = 0.02
-        adjustments["conversion_potential"] = -0.02
+        adjustments["audience_fit"] = _AUDIENCE_LOW_BOOST
+        adjustments["platform_fit"] = _PLATFORM_LOW_BOOST
+        adjustments["conversion_potential"] = _CONVERSION_LOW_PENALTY
 
     top_hooks = summary.get("top_hook_patterns", [])
-    if top_hooks and top_hooks[0].get("sample_count", 0) >= 3:
+    if top_hooks and top_hooks[0].get("sample_count", 0) >= _STABLE_HOOK_MIN_SAMPLES:
         # Stable hook patterns signal repeatable content formats
-        adjustments["repeatability"] = adjustments.get("repeatability", 0.0) + 0.02
+        adjustments["repeatability"] = (
+            adjustments.get("repeatability", 0.0) + _REPEATABILITY_STABLE_HOOK
+        )
 
-    # Clamp all adjustments
+    # Clamp all adjustments to ±_MAX_WEIGHT_ADJUSTMENT
     return {
         k: max(-_MAX_WEIGHT_ADJUSTMENT, min(_MAX_WEIGHT_ADJUSTMENT, v))
         for k, v in adjustments.items()
@@ -132,8 +154,8 @@ def _apply_weight_adjustments(
 ) -> dict[str, float]:
     """Return a normalised weight dict with adjustments applied."""
     adjusted = {k: base[k] + adjustments.get(k, 0.0) for k in base}
-    # Clamp each weight to [0.05, 0.50] so none collapses or dominates
-    adjusted = {k: max(0.05, min(0.50, v)) for k, v in adjusted.items()}
+    # Clamp each weight so none collapses or dominates
+    adjusted = {k: max(_WEIGHT_MIN, min(_WEIGHT_MAX, v)) for k, v in adjusted.items()}
     # Re-normalise so weights still sum to 1.0
     total = sum(adjusted.values())
     if total > 0:

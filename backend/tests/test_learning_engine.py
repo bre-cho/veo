@@ -1,8 +1,6 @@
 """Unit tests for the enhanced PerformanceLearningEngine (B-layer)."""
 from __future__ import annotations
 
-import os
-import tempfile
 import time
 
 import pytest
@@ -227,8 +225,8 @@ def test_feedback_summary_platform_filter(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_db_upsert_persists_record(db_session) -> None:
-    eng = PerformanceLearningEngine(store_path="/tmp/test_learning_db.json", db=db_session)
+def test_db_upsert_persists_record(db_session, tmp_path) -> None:
+    eng = PerformanceLearningEngine(store_path=str(tmp_path / "store_db.json"), db=db_session)
     eng.record(
         video_id="db-test-v1",
         hook_pattern="hook-db",
@@ -248,8 +246,8 @@ def test_db_upsert_persists_record(db_session) -> None:
     assert row.market_code == "VN"
 
 
-def test_db_upsert_overwrites_existing(db_session) -> None:
-    eng = PerformanceLearningEngine(store_path="/tmp/test_learning_db2.json", db=db_session)
+def test_db_upsert_overwrites_existing(db_session, tmp_path) -> None:
+    eng = PerformanceLearningEngine(store_path=str(tmp_path / "store_db2.json"), db=db_session)
     for score in (0.5, 0.9):
         eng.record(
             video_id="db-test-v2",

@@ -10,6 +10,8 @@ from app.db.base import Base
 
 
 def _now() -> datetime:
+    # Strips timezone info to match the rest of the codebase's convention of
+    # storing UTC datetimes as timezone-naive values in the DB.
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
@@ -20,6 +22,9 @@ class PerformanceRecord(Base):
     ``platform`` and ``market_code`` columns for platform/locale filtering
     and stores ``recorded_at`` as a real ``DateTime`` column to enable
     time-decay queries.
+
+    All timestamps are stored as timezone-naive UTC datetimes to be consistent
+    with the rest of the codebase (``DateTime(timezone=False)``).
     """
 
     __tablename__ = "performance_records"
@@ -37,11 +42,11 @@ class PerformanceRecord(Base):
     platform: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     market_code: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     recorded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now
+        DateTime(timezone=False), nullable=False, default=_now
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now, index=True
+        DateTime(timezone=False), nullable=False, default=_now, index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now, onupdate=_now
+        DateTime(timezone=False), nullable=False, default=_now, onupdate=_now
     )
