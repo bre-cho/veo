@@ -27,6 +27,7 @@ class TrendImageConcept(BaseModel):
 
 
 class TrendImageResponse(BaseModel):
+    run_id: str | None = None
     concepts: list[TrendImageConcept] = Field(default_factory=list)
     recommended_winner_id: str | None = None
     candidates: list[CandidateScore] = Field(default_factory=list)

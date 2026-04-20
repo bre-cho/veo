@@ -102,6 +102,7 @@ __all__ = [
     "OptimizationRun",
     "ChannelPlan",
     "PublishJob",
+    "CreativeEngineRun",
 ]
 
 from app.models.worker_concurrency_override import WorkerConcurrencyOverride
@@ -198,3 +199,4 @@ from app.models.pattern_memory import PatternMemory
 from app.models.optimization_run import OptimizationRun
 from app.models.channel_plan import ChannelPlan
 from app.models.publish_job import PublishJob
+from app.models.creative_engine_run import CreativeEngineRun

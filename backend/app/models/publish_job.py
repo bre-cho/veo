@@ -20,6 +20,7 @@ class PublishJob(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     channel_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    publish_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="SIMULATED", index=True)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
     request_payload: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)

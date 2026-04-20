@@ -97,6 +97,9 @@ def retry_publish_job(job_id: str, db: Session = Depends(get_db)):
 def _serialize_plan(plan: ChannelPlan) -> dict:
     return {
         "id": plan.id,
+        "project_id": plan.project_id,
+        "avatar_id": plan.avatar_id,
+        "product_id": plan.product_id,
         "status": plan.status,
         "channel_name": plan.channel_name,
         "niche": plan.niche,
@@ -121,6 +124,7 @@ def _serialize_publish_job(job) -> dict:
         "id": job.id,
         "channel_plan_id": job.channel_plan_id,
         "platform": job.platform,
+        "publish_mode": getattr(job, "publish_mode", "SIMULATED"),
         "status": job.status,
         "retry_count": job.retry_count,
         "parent_job_id": job.parent_job_id,

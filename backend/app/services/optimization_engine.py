@@ -9,6 +9,52 @@ from app.models.optimization_run import OptimizationRun
 from app.schemas.optimization import OptimizationInput, OptimizationResponse, OptimizationSuggestion
 from app.schemas.scoring import CandidateScore
 
+# ---------------------------------------------------------------------------
+# Scoring weights – centralised here so QA can audit what drives winner selection
+# ---------------------------------------------------------------------------
+_CANDIDATE_WEIGHTS: dict[str, dict[str, float]] = {
+    "hook_cta_boost": {
+        "hook_impact": 0.40,
+        "cta_impact": 0.35,
+        "clarity_impact": 0.15,
+        "trust_impact": 0.10,
+    },
+    "clarity_trust_balance": {
+        "hook_impact": 0.20,
+        "cta_impact": 0.20,
+        "clarity_impact": 0.35,
+        "trust_impact": 0.25,
+    },
+    "aggressive_conversion_push": {
+        "hook_impact": 0.30,
+        "cta_impact": 0.50,
+        "clarity_impact": 0.10,
+        "trust_impact": 0.10,
+    },
+}
+
+# Score multipliers per candidate (kept separately from weights for clarity)
+_CANDIDATE_MULTIPLIERS: dict[str, dict[str, float]] = {
+    "hook_cta_boost": {
+        "hook_impact": 1.0,
+        "cta_impact": 1.0,
+        "clarity_impact": 1.0,
+        "trust_impact": 1.0,
+    },
+    "clarity_trust_balance": {
+        "hook_impact": 0.7,
+        "cta_impact": 0.7,
+        "clarity_impact": 1.1,
+        "trust_impact": 1.05,
+    },
+    "aggressive_conversion_push": {
+        "hook_impact": 0.9,
+        "cta_impact": 1.15,
+        "clarity_impact": 0.6,
+        "trust_impact": 0.6,
+    },
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -71,7 +117,11 @@ class OptimizationEngine:
             run.status = "completed"
             run.completed_at = _now()
             run.output_payload = result.model_dump()
-            run.score_summary = winner.model_dump() if winner else None
+            run.score_summary = {
+                "winner": winner.model_dump() if winner else None,
+                "weights_used": _CANDIDATE_WEIGHTS,
+                "winner_rationale": result.winner_rationale,
+            }
             run.output = {
                 "rewrite_suggestions": [s.model_dump() for s in result.rewrite_suggestions],
                 "winner_candidate_id": result.winner_candidate_id,
@@ -94,26 +144,54 @@ class OptimizationEngine:
     ) -> dict[str, Any]:
         if isinstance(optimization, dict):
             optimization = OptimizationResponse(**optimization)
+
+        # Build updated payload without mutating the original
         updated = {**preview_payload}
         scenes = [dict(scene) for scene in (updated.get("scenes") or [])]
+
+        applied_patches: list[dict[str, Any]] = []
 
         for suggestion in optimization.rewrite_suggestions:
             idx = suggestion.target_scene_index
             if idx and 1 <= idx <= len(scenes) and suggestion.replacement_text:
                 scene = scenes[idx - 1]
+                previous_text = scene.get("script_text")
                 scene["script_text"] = suggestion.replacement_text
                 meta = dict(scene.get("metadata") or {})
                 meta.setdefault("optimization_applied", []).append(suggestion.type)
                 scene["metadata"] = meta
+                applied_patches.append({
+                    "scene_index": idx,
+                    "suggestion_type": suggestion.type,
+                    "previous_text": previous_text,
+                    "replacement_text": suggestion.replacement_text,
+                })
 
         if optimization.new_hook_variant and scenes:
+            previous_hook = scenes[0].get("script_text")
             scenes[0]["script_text"] = optimization.new_hook_variant
+            applied_patches.append({
+                "scene_index": 1,
+                "suggestion_type": "hook_variant",
+                "previous_text": previous_hook,
+                "replacement_text": optimization.new_hook_variant,
+            })
 
         if optimization.new_cta_variant and scenes:
+            previous_cta = scenes[-1].get("script_text")
             scenes[-1]["script_text"] = optimization.new_cta_variant
+            applied_patches.append({
+                "scene_index": len(scenes),
+                "suggestion_type": "cta_variant",
+                "previous_text": previous_cta,
+                "replacement_text": optimization.new_cta_variant,
+            })
 
         updated["scenes"] = scenes
         updated["optimization_response"] = optimization.model_dump()
+        # Version metadata so downstream can track what was applied
+        updated["optimization_patch_version"] = (updated.get("optimization_patch_version") or 0) + 1
+        updated["optimization_patches"] = applied_patches
         return updated
 
     @staticmethod
@@ -128,46 +206,49 @@ class OptimizationEngine:
         cta_gap = 1.0 - self._metric(metrics, "cta_quality")
         clarity_gap = 1.0 - self._metric(metrics, "clarity")
         trust_gap = 1.0 - self._metric(metrics, "trust")
+        gaps = {
+            "hook_impact": hook_gap,
+            "cta_impact": cta_gap,
+            "clarity_impact": clarity_gap,
+            "trust_impact": trust_gap,
+        }
 
-        raw = [
-            CandidateScore(
-                candidate_id="hook_cta_boost",
-                score_total=round((hook_gap * 0.4) + (cta_gap * 0.35) + (clarity_gap * 0.15) + (trust_gap * 0.1), 3),
-                score_breakdown={
-                    "hook_impact": round(hook_gap, 3),
-                    "cta_impact": round(cta_gap, 3),
-                    "clarity_impact": round(clarity_gap, 3),
-                    "trust_impact": round(trust_gap, 3),
-                },
-                rationale="Prioritize stronger hook + CTA gains to recover conversion drop-off.",
-            ),
-            CandidateScore(
-                candidate_id="clarity_trust_balance",
-                score_total=round((hook_gap * 0.2) + (cta_gap * 0.2) + (clarity_gap * 0.35) + (trust_gap * 0.25), 3),
-                score_breakdown={
-                    "hook_impact": round(hook_gap * 0.7, 3),
-                    "cta_impact": round(cta_gap * 0.7, 3),
-                    "clarity_impact": round(clarity_gap * 1.1, 3),
-                    "trust_impact": round(trust_gap * 1.05, 3),
-                },
-                rationale="Reduce ambiguity and increase trust before aggressive conversion pushes.",
-            ),
-            CandidateScore(
-                candidate_id="aggressive_conversion_push",
-                score_total=round((hook_gap * 0.3) + (cta_gap * 0.5) + (clarity_gap * 0.1) + (trust_gap * 0.1), 3),
-                score_breakdown={
-                    "hook_impact": round(hook_gap * 0.9, 3),
-                    "cta_impact": round(cta_gap * 1.15, 3),
-                    "clarity_impact": round(clarity_gap * 0.6, 3),
-                    "trust_impact": round(trust_gap * 0.6, 3),
-                },
-                rationale="Push hard CTA framing and urgency for direct conversion scenarios.",
-            ),
-        ]
+        raw: list[CandidateScore] = []
+        for candidate_id, weights in _CANDIDATE_WEIGHTS.items():
+            multipliers = _CANDIDATE_MULTIPLIERS[candidate_id]
+            breakdown = {
+                dim: round(gaps[dim] * multipliers[dim], 3)
+                for dim in weights
+            }
+            total = round(sum(breakdown[dim] * weights[dim] for dim in weights), 3)
+            raw.append(
+                CandidateScore(
+                    candidate_id=candidate_id,
+                    score_total=total,
+                    score_breakdown=breakdown,
+                    rationale=self._build_rationale(candidate_id, gaps),
+                    metadata={
+                        "weights_used": weights,
+                        "gaps": {k: round(v, 3) for k, v in gaps.items()},
+                    },
+                )
+            )
+
         winner_id = max(raw, key=lambda c: c.score_total).candidate_id
         for candidate in raw:
             candidate.winner_flag = candidate.candidate_id == winner_id
         return raw
+
+    @staticmethod
+    def _build_rationale(candidate_id: str, gaps: dict[str, float]) -> str:
+        dominant = max(gaps, key=lambda k: gaps[k])
+        dominant_pct = round(gaps[dominant] * 100)
+        rationale_map = {
+            "hook_cta_boost": f"Prioritize hook+CTA gains (dominant gap: {dominant} at {dominant_pct}%).",
+            "clarity_trust_balance": f"Reduce ambiguity and increase trust before conversion push (dominant gap: {dominant} at {dominant_pct}%).",
+            "aggressive_conversion_push": f"Push hard CTA framing and urgency (dominant gap: {dominant} at {dominant_pct}%).",
+        }
+        return rationale_map.get(candidate_id, "Scored by gap analysis.")
 
     def _candidate_to_suggestions(
         self,
@@ -220,3 +301,8 @@ class OptimizationEngine:
                 )
             )
         return suggestions
+
+    @staticmethod
+    def candidate_weights() -> dict[str, Any]:
+        """Expose scoring weights for audit / QA inspection."""
+        return {k: dict(v) for k, v in _CANDIDATE_WEIGHTS.items()}
