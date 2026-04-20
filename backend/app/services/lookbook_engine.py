@@ -77,10 +77,41 @@ def _style_coherence_score(style_preset: str, target_platform: str | None) -> fl
     return round(base, 3)
 
 
+# ---------------------------------------------------------------------------
+# Feedback boost helper (Phase 2.2)
+# ---------------------------------------------------------------------------
+_FEEDBACK_WIN_THRESHOLD = 3
+_FEEDBACK_BOOST_STEP = 0.05
+
+
+def _build_lookbook_feedback_boosts(learning_store: Any | None) -> dict[str, float]:
+    """Return per-style campaign_fit boosts derived from learning store history."""
+    if learning_store is None:
+        return {}
+    try:
+        records = learning_store.all_records()
+    except Exception:
+        return {}
+
+    style_wins: dict[str, int] = {}
+    for rec in records:
+        tf = str(rec.get("template_family") or "")
+        if rec.get("conversion_score", 0) >= 0.7:
+            style_wins[tf] = style_wins.get(tf, 0) + 1
+
+    boosts: dict[str, float] = {}
+    for style, wins in style_wins.items():
+        if wins >= _FEEDBACK_WIN_THRESHOLD:
+            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
+    return boosts
+
+
 class LookbookEngine:
-    def generate(self, req: LookbookRequest, db=None) -> LookbookResponse:
+    def generate(self, req: LookbookRequest, db=None, learning_store=None) -> LookbookResponse:
         """Generate lookbook. If ``db`` (SQLAlchemy Session) is provided the
-        run is persisted in ``creative_engine_runs``."""
+        run is persisted in ``creative_engine_runs``.
+        If ``learning_store`` (PerformanceLearningEngine) is provided, historical
+        winner patterns influence style scoring."""
         run_record = None
         if db is not None:
             from app.models.creative_engine_run import CreativeEngineRun
@@ -95,7 +126,7 @@ class LookbookEngine:
             db.refresh(run_record)
 
         try:
-            result = self._generate_internal(req)
+            result = self._generate_internal(req, learning_store=learning_store)
             if run_record is not None:
                 run_record.status = "completed"
                 run_record.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -115,8 +146,13 @@ class LookbookEngine:
                 db.commit()
             raise
 
-    def _generate_internal(self, req: LookbookRequest) -> LookbookResponse:
+    def _generate_internal(self, req: LookbookRequest, learning_store=None) -> LookbookResponse:
         candidate_styles = [req.style_preset or "clean-commerce", "editorial", "ugc-dynamic"]
+
+        # Build style boosts from learning store (Phase 2.2)
+        feedback_boosts = _build_lookbook_feedback_boosts(learning_store)
+        feedback_applied = bool(feedback_boosts)
+
         candidate_payloads: list[tuple[list[dict[str, Any]], list[dict[str, Any]], CandidateScore]] = []
 
         for style in candidate_styles:
@@ -128,10 +164,14 @@ class LookbookEngine:
             campaign_fit = _campaign_fit_score(style, req.target_platform)
             localization_fit = _localization_fit_score(req.market_code)
 
+            # Apply feedback boost to campaign_fit if available
+            fb_boost = feedback_boosts.get(style, 0.0)
+            effective_campaign_fit = round(min(0.99, campaign_fit + fb_boost), 3)
+
             total = round(
                 (coherence * _SCORE_WEIGHTS["style_coherence"])
                 + (compatibility * _SCORE_WEIGHTS["product_compatibility"])
-                + (campaign_fit * _SCORE_WEIGHTS["campaign_fit"])
+                + (effective_campaign_fit * _SCORE_WEIGHTS["campaign_fit"])
                 + (localization_fit * _SCORE_WEIGHTS["localization_fit"]),
                 3,
             )
@@ -145,7 +185,7 @@ class LookbookEngine:
                         score_breakdown={
                             "style_coherence": coherence,
                             "product_compatibility": compatibility,
-                            "campaign_fit": campaign_fit,
+                            "campaign_fit": effective_campaign_fit,
                             "localization_fit": localization_fit,
                         },
                         rationale=(
@@ -154,7 +194,7 @@ class LookbookEngine:
                             f"product compatibility ({len(req.products)} items), "
                             f"campaign goal fit, and locale ({req.market_code or 'unset'})."
                         ),
-                        metadata={"style": style},
+                        metadata={"style": style, "feedback_applied": feedback_applied},
                     ),
                 )
             )

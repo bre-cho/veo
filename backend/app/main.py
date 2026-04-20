@@ -4,53 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.health import router as health_router
-from app.api.project_from_preview import router as project_from_preview_router
-from app.api.project_workspace import router as project_workspace_router
-from app.api.provider_callbacks import router as provider_callbacks_router
-from app.api.provider_payload_preview import router as provider_payload_preview_router
-from app.api.render_execution import router as render_execution_router
-from app.api.render_job_status import router as render_job_status_router
-from app.api.script_regeneration_routes import router as script_regeneration_router
-from app.api.script_upload_preview import router as script_upload_preview_router
-from app.api.script_validation import router as script_validation_router
-from app.api.storage import router as storage_router
-from app.api.render_dashboard import router as render_dashboard_router
-from app.api.render_job_health import router as render_job_health_router
-from app.api.render_events import router as render_events_router
-from app.api.orchestration_timeline import router as orchestration_timeline_router
-from app.api.decision_engine import router as decision_engine_router
-from app.api.control_plane import router as control_plane_router
-from app.api.autopilot import router as autopilot_router
-from app.api.observability import router as observability_router
-from app.api.audio import router as audio_router
-from app.api.strategy import router as strategy_router
-from app.api.production import router as production_router
-from app.api.templates import router as templates_router
-from app.api.template_runtime import router as template_runtime_router
-from app.api.veo_workspace import router as veo_workspace_router
-from app.api.template_extraction import router as template_extraction_router
-from app.api.template_governance_scheduling import router as template_governance_scheduling_router
-from app.api.google_accounts import router as google_accounts_router
-from app.api.ai_engine import router as ai_engine_router
-from app.api.rag_chat import router as rag_chat_router
-from app.api.ml_recommendation import router as ml_recommendation_router
-from app.api.avatar_builder import router as avatar_builder_router
-from app.api.avatar_commerce import router as avatar_commerce_router
-from app.api.product_ingestion import router as product_ingestion_router
-from app.api.avatar_marketplace import router as avatar_marketplace_router
-from app.api.creator_economy import router as creator_economy_router
-from app.api.avatar_localization import router as avatar_localization_router
-from app.api.avatar_meta import router as avatar_meta_router
-from app.api.avatar_analytics import router as avatar_analytics_router
-from app.api.storyboard import router as storyboard_router
-from app.api.optimization import router as optimization_router
-from app.api.trend_image import router as trend_image_router
-from app.api.channel import router as channel_router
-from app.api.lookbook import router as lookbook_router
-from app.api.motion_clone import router as motion_clone_router
-from app.api.patterns import router as patterns_router
-from app.api.creative_runs import router as creative_runs_router
+from app.api._registry import register_all_routers
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -81,53 +35,7 @@ _storage_dir = PROJECT_STORAGE_DIR.parent
 _storage_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=str(_storage_dir)), name="storage")
 
-app.include_router(health_router)
-app.include_router(script_upload_preview_router)
-app.include_router(script_validation_router)
-app.include_router(script_regeneration_router)
-app.include_router(project_from_preview_router)
-app.include_router(project_workspace_router)
-app.include_router(provider_payload_preview_router)
-app.include_router(render_execution_router)
-app.include_router(render_job_status_router)
-app.include_router(provider_callbacks_router)
-app.include_router(storage_router)
-app.include_router(render_dashboard_router)
-app.include_router(render_job_health_router)
-app.include_router(render_events_router)
-app.include_router(orchestration_timeline_router)
-app.include_router(decision_engine_router)
-app.include_router(control_plane_router)
-app.include_router(autopilot_router)
-app.include_router(observability_router)
-app.include_router(audio_router)
-app.include_router(strategy_router)
-app.include_router(production_router)
-app.include_router(templates_router)
-app.include_router(template_runtime_router)
-app.include_router(veo_workspace_router)
-app.include_router(template_extraction_router)
-app.include_router(template_governance_scheduling_router)
-app.include_router(google_accounts_router)
-app.include_router(ai_engine_router)
-app.include_router(rag_chat_router)
-app.include_router(ml_recommendation_router)
-app.include_router(avatar_builder_router)
-app.include_router(avatar_commerce_router)
-app.include_router(product_ingestion_router)
-app.include_router(avatar_marketplace_router)
-app.include_router(creator_economy_router)
-app.include_router(avatar_localization_router)
-app.include_router(avatar_meta_router)
-app.include_router(avatar_analytics_router)
-app.include_router(storyboard_router)
-app.include_router(optimization_router)
-app.include_router(trend_image_router)
-app.include_router(channel_router)
-app.include_router(lookbook_router)
-app.include_router(motion_clone_router)
-app.include_router(patterns_router)
-app.include_router(creative_runs_router)
+register_all_routers(app)
 
 
 @app.get("/", tags=["root"])

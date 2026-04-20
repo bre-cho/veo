@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from app.schemas.scoring import CandidateScore
 from app.schemas.motion_clone import MotionCloneRequest, MotionCloneResponse
@@ -84,10 +85,41 @@ def _candidate_total(mc: float, bp: float, cu: float, rs: float) -> float:
     )
 
 
+# ---------------------------------------------------------------------------
+# Feedback boost helper (Phase 2.2)
+# ---------------------------------------------------------------------------
+_FEEDBACK_WIN_THRESHOLD = 3
+_FEEDBACK_BOOST_STEP = 0.05
+
+
+def _build_motion_feedback_boosts(learning_store: Any | None) -> dict[str, float]:
+    """Return per-style reuse_score boosts derived from learning store history."""
+    if learning_store is None:
+        return {}
+    try:
+        records = learning_store.all_records()
+    except Exception:
+        return {}
+
+    style_wins: dict[str, int] = {}
+    for rec in records:
+        tf = str(rec.get("template_family") or "")
+        if rec.get("conversion_score", 0) >= 0.7:
+            style_wins[tf] = style_wins.get(tf, 0) + 1
+
+    boosts: dict[str, float] = {}
+    for style, wins in style_wins.items():
+        if wins >= _FEEDBACK_WIN_THRESHOLD:
+            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
+    return boosts
+
+
 class MotionCloneEngine:
-    def plan(self, req: MotionCloneRequest, db=None) -> MotionCloneResponse:
+    def plan(self, req: MotionCloneRequest, db=None, learning_store=None) -> MotionCloneResponse:
         """Plan motion clone. If ``db`` (SQLAlchemy Session) is provided the
-        run is persisted in ``creative_engine_runs``."""
+        run is persisted in ``creative_engine_runs``.
+        If ``learning_store`` (PerformanceLearningEngine) is provided, historical
+        winner patterns influence candidate scoring."""
         run_record = None
         if db is not None:
             from app.models.creative_engine_run import CreativeEngineRun
@@ -102,7 +134,7 @@ class MotionCloneEngine:
             db.refresh(run_record)
 
         try:
-            result = self._plan_internal(req)
+            result = self._plan_internal(req, learning_store=learning_store)
             if run_record is not None:
                 run_record.status = "completed"
                 run_record.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -122,7 +154,7 @@ class MotionCloneEngine:
                 db.commit()
             raise
 
-    def _plan_internal(self, req: MotionCloneRequest) -> MotionCloneResponse:
+    def _plan_internal(self, req: MotionCloneRequest, learning_store=None) -> MotionCloneResponse:
         source = req.reference_video_url or req.reference_motion_text or "reference"
         beat_profile = req.beat_profile or {"bpm": 96, "intensity": "medium"}
         bpm: int = int(beat_profile.get("bpm", 96))
@@ -158,13 +190,20 @@ class MotionCloneEngine:
 
         clip_goal: str | None = req.beat_profile.get("clip_goal") if req.beat_profile else None
 
+        # Feedback boosts per style_key (Phase 2.2)
+        feedback_boosts = _build_motion_feedback_boosts(learning_store)
+        feedback_applied = bool(feedback_boosts)
+
         candidates: list[CandidateScore] = []
         for cid, style_key in styles:
             mc = _motion_consistency(intensity, style_key)
             bp = _brand_persona_fit(req.market_code, req.avatar_id, style_key)
             cu = _clip_usability(clip_goal, style_key)
             rs = _reuse_score(bpm, intensity, style_key)
-            total = _candidate_total(mc, bp, cu, rs)
+            # Apply feedback boost to reuse_score
+            fb_boost = feedback_boosts.get(style_key, 0.0)
+            rs_boosted = round(min(0.99, rs + fb_boost), 3)
+            total = _candidate_total(mc, bp, cu, rs_boosted)
             candidates.append(
                 CandidateScore(
                     candidate_id=cid,
@@ -173,13 +212,14 @@ class MotionCloneEngine:
                         "motion_consistency": mc,
                         "brand_persona_fit": bp,
                         "clip_usability": cu,
-                        "reuse_score": rs,
+                        "reuse_score": rs_boosted,
                     },
                     rationale=(
                         f"Scored from intensity='{intensity}', bpm={bpm}, "
                         f"avatar={req.avatar_id or 'unset'}, market={req.market_code or 'unset'}, "
                         f"clip_goal={clip_goal or 'default'}."
                     ),
+                    metadata={"feedback_applied": feedback_applied},
                 )
             )
 

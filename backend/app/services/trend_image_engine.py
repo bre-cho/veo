@@ -79,12 +79,53 @@ def _relevance_score(topic: str, niche: str | None, content_goal: str | None) ->
     return min(0.96, base + goal_boost)
 
 
+# ---------------------------------------------------------------------------
+# Feedback boost helpers (Phase 2.2)
+# ---------------------------------------------------------------------------
+_FEEDBACK_WIN_THRESHOLD = 3  # minimum consecutive wins before applying boost
+_FEEDBACK_BOOST_STEP = 0.05  # trend_fit boost per winning streak
+
+
+def _build_feedback_boosts(learning_store: Any | None, niche: str | None) -> dict[str, float]:
+    """Return per-style trend_fit boosts derived from learning store history.
+
+    If a style has been the top template_family for the given niche at least
+    ``_FEEDBACK_WIN_THRESHOLD`` times, it receives a positive boost; losing
+    styles receive a small penalty.
+    """
+    if learning_store is None:
+        return {}
+    try:
+        records = learning_store.all_records()
+    except Exception:
+        return {}
+
+    niche_key = (niche or "").lower()
+    style_wins: dict[str, int] = {}
+    for rec in records:
+        # template_family maps to style in trend-image context
+        tf = str(rec.get("template_family") or "")
+        rec_niche = str(rec.get("hook_pattern") or "")  # hook_pattern stores format/style
+        if niche_key and niche_key not in rec_niche.lower() and niche_key not in tf.lower():
+            continue
+        if rec.get("conversion_score", 0) >= 0.7:
+            style_wins[tf] = style_wins.get(tf, 0) + 1
+
+    boosts: dict[str, float] = {}
+    for style, wins in style_wins.items():
+        if wins >= _FEEDBACK_WIN_THRESHOLD:
+            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
+    return boosts
+
+
 class TrendImageEngine:
     DEFAULT_STYLES = ("editorial", "ugc", "cinematic", "minimal")
 
-    def generate(self, req: TrendImageRequest, db=None) -> TrendImageResponse:
+    def generate(self, req: TrendImageRequest, db=None, learning_store=None) -> TrendImageResponse:
         """Generate trend image concepts. If ``db`` (SQLAlchemy Session) is
-        provided the run is persisted in ``creative_engine_runs``."""
+        provided the run is persisted in ``creative_engine_runs``.
+        If ``learning_store`` (PerformanceLearningEngine) is provided, historical
+        winner patterns are applied to scoring weights (feedback-aware mode)."""
         run_record = None
         if db is not None:
             from app.models.creative_engine_run import CreativeEngineRun
@@ -99,7 +140,7 @@ class TrendImageEngine:
             db.refresh(run_record)
 
         try:
-            result = self._generate_internal(req)
+            result = self._generate_internal(req, learning_store=learning_store)
             if run_record is not None:
                 run_record.status = "completed"
                 run_record.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -119,10 +160,14 @@ class TrendImageEngine:
                 db.commit()
             raise
 
-    def _generate_internal(self, req: TrendImageRequest) -> TrendImageResponse:
+    def _generate_internal(self, req: TrendImageRequest, learning_store=None) -> TrendImageResponse:
         concepts: list[TrendImageConcept] = []
         candidates: list[CandidateScore] = []
         style = req.style_preset
+
+        # Build per-style feedback boosts from learning store (Phase 2.2)
+        feedback_boosts = _build_feedback_boosts(learning_store, niche=req.niche)
+        feedback_applied = bool(feedback_boosts)
 
         for idx in range(req.count):
             style_label = style or self.DEFAULT_STYLES[idx % len(self.DEFAULT_STYLES)]
@@ -139,7 +184,9 @@ class TrendImageEngine:
             # of the same style don't all get identical scores, without relying on idx.
             jitter = (hash(style_label + concept_id) % 100) / 1000.0  # [0, 0.099]
             relevance = round(min(0.99, max(0.50, relevance + jitter * 0.5)), 3)
-            trend_fit = round(min(0.99, max(0.50, trend_fit + jitter * 0.3)), 3)
+            # Apply feedback boost to trend_fit if learning data is available
+            boost = feedback_boosts.get(style_label, 0.0)
+            trend_fit = round(min(0.99, max(0.50, trend_fit + jitter * 0.3 + boost)), 3)
             market_fit = round(min(0.99, max(0.50, market_fit + jitter * 0.2)), 3)
             visual_strength = round(min(0.99, max(0.50, visual_strength + jitter * 0.4)), 3)
 
@@ -181,7 +228,7 @@ class TrendImageEngine:
                         f"visual hook ({style_label}), "
                         f"campaign goal ({req.content_goal or 'engagement'})."
                     ),
-                    metadata={"style_label": style_label},
+                    metadata={"style_label": style_label, "feedback_applied": feedback_applied},
                 )
             )
 

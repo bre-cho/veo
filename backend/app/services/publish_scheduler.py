@@ -7,6 +7,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.publish_job import PublishJob
+from app.services.publish_providers import (
+    ConfigurationError,
+    HttpPublishProvider,
+    PublishProviderBase,
+    SimulatedPublishProvider,
+)
 
 # ---------------------------------------------------------------------------
 # Publish mode configuration
@@ -18,51 +24,23 @@ PUBLISH_MODE_REAL = "REAL"
 
 _PUBLISH_MODE: str = os.getenv("PUBLISH_MODE", PUBLISH_MODE_SIMULATED).upper()
 
+# Re-export for backwards compatibility
+__all__ = [
+    "PublishProviderBase",
+    "SimulatedPublishProvider",
+    "ConfigurationError",
+    "PublishScheduler",
+]
+
 
 def _is_simulated() -> bool:
     return _PUBLISH_MODE != PUBLISH_MODE_REAL
 
 
-class PublishProviderBase:
-    """Abstraction layer for publish providers.
-
-    Override `execute(job)` to call a real provider.  Returns a dict with
-    at minimum `{"ok": bool, ...}`.
-    """
-
-    def execute(self, job: PublishJob) -> dict[str, Any]:
-        raise NotImplementedError
-
-
-class SimulatedPublishProvider(PublishProviderBase):
-    """Returns a clearly-marked simulated response so QA can identify it in DB."""
-
-    def execute(self, job: PublishJob) -> dict[str, Any]:
-        return {
-            "ok": True,
-            "mode": PUBLISH_MODE_SIMULATED,
-            "provider_publish_id": f"sim-{job.id[:8]}",
-            "note": "This is a SIMULATED publish – no real provider was called.",
-        }
-
-
-class RealPublishProvider(PublishProviderBase):
-    """Placeholder for the real publish provider integration.
-
-    Replace the body of `execute()` with actual provider SDK / HTTP call.
-    """
-
-    def execute(self, job: PublishJob) -> dict[str, Any]:  # pragma: no cover – real provider not wired yet
-        raise NotImplementedError(
-            "Real publish provider is not yet implemented. "
-            "Set PUBLISH_MODE=SIMULATED or wire up the provider."
-        )
-
-
 def _get_provider() -> PublishProviderBase:
     if _is_simulated():
         return SimulatedPublishProvider()
-    return RealPublishProvider()
+    return HttpPublishProvider()
 
 
 class PublishScheduler:
@@ -150,6 +128,12 @@ class PublishScheduler:
             db.add(job)
             db.commit()
             db.refresh(job)
+
+            # Write-back to PerformanceLearningEngine so creative engines can
+            # adapt future scoring using real publish outcomes.
+            if (job.publish_mode or _PUBLISH_MODE) == PUBLISH_MODE_REAL:
+                self._record_publish_outcome(job)
+
             return job
         except Exception as exc:
             job.status = "failed"
@@ -171,6 +155,24 @@ class PublishScheduler:
         if status:
             query = query.filter(PublishJob.status == status)
         return query.limit(limit).all()
+
+    @staticmethod
+    def _record_publish_outcome(job: PublishJob) -> None:
+        """Write publish outcome to PerformanceLearningEngine for feedback loop."""
+        try:
+            from app.services.learning_engine import PerformanceLearningEngine
+
+            payload: dict[str, Any] = job.payload or {}
+            engine = PerformanceLearningEngine()
+            engine.record(
+                video_id=job.id,
+                hook_pattern=str(payload.get("hook_pattern") or payload.get("format") or "unknown"),
+                cta_pattern=str(payload.get("cta_mode") or "unknown"),
+                template_family=str(payload.get("content_goal") or "engagement"),
+                conversion_score=1.0,  # baseline; real signal comes via /api/v1/performance/signal
+            )
+        except Exception:
+            pass  # Non-fatal – learning write-back must never block publish flow
 
     def retry_failed_job(self, db: Session, job_id: str) -> PublishJob | None:
         previous = self.get_job(db, job_id)

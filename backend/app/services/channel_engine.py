@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,9 +10,115 @@ from app.models.channel_plan import ChannelPlan
 from app.schemas.channel import ChannelPlanItem, ChannelPlanRequest, ChannelPlanResponse
 from app.schemas.scoring import CandidateScore
 
+# ---------------------------------------------------------------------------
+# Title angle pool – grouped by goal so angles are contextually relevant
+# ---------------------------------------------------------------------------
+_GOAL_ANGLES: dict[str, list[str]] = {
+    "awareness": [
+        "The truth about {niche} you need to know",
+        "Why everyone is talking about {niche} right now",
+        "{niche} trends that are changing the game",
+        "What no one tells you about {niche}",
+        "The story behind {niche}",
+        "Surprising facts about {niche}",
+    ],
+    "engagement": [
+        "My honest {niche} experience",
+        "Would you try this {niche} hack?",
+        "Reacting to {niche} myths",
+        "I tried {niche} for 7 days – here's what happened",
+        "Hot take: {niche} is overrated (or is it?)",
+        "Asking strangers about {niche}",
+    ],
+    "conversion": [
+        "The {niche} product that changed my routine",
+        "Why I switched to this {niche} solution",
+        "{niche}: before vs after using this",
+        "Stop wasting money on {niche} – do this instead",
+        "Get your {niche} results in half the time",
+        "The only {niche} guide you'll ever need",
+    ],
+    "retention": [
+        "Part 2: My {niche} journey continues",
+        "Update: 30 days of {niche}",
+        "You asked, I answer: {niche} Q&A",
+        "Deep dive into {niche}",
+        "What I learned from 1 year of {niche}",
+        "The {niche} series – episode {day}",
+    ],
+}
+
+_DEFAULT_ANGLES = _GOAL_ANGLES["engagement"]
+
+# ---------------------------------------------------------------------------
+# Score profile weights – computed from request context instead of hardcoded
+# ---------------------------------------------------------------------------
+_PROFILE_NAMES = ("balanced", "platform_heavy", "conversion_push")
+
+_GOAL_PROFILE_WEIGHTS: dict[str, dict[str, dict[str, float]]] = {
+    "conversion": {
+        "balanced":         {"audience_fit": 0.78, "platform_fit": 0.76, "product_fit": 0.80, "repeatability": 0.72, "conversion_potential": 0.88},
+        "platform_heavy":   {"audience_fit": 0.74, "platform_fit": 0.88, "product_fit": 0.76, "repeatability": 0.80, "conversion_potential": 0.82},
+        "conversion_push":  {"audience_fit": 0.72, "platform_fit": 0.72, "product_fit": 0.78, "repeatability": 0.70, "conversion_potential": 0.95},
+    },
+    "awareness": {
+        "balanced":         {"audience_fit": 0.86, "platform_fit": 0.82, "product_fit": 0.74, "repeatability": 0.76, "conversion_potential": 0.68},
+        "platform_heavy":   {"audience_fit": 0.80, "platform_fit": 0.90, "product_fit": 0.70, "repeatability": 0.82, "conversion_potential": 0.64},
+        "conversion_push":  {"audience_fit": 0.78, "platform_fit": 0.74, "product_fit": 0.76, "repeatability": 0.68, "conversion_potential": 0.80},
+    },
+    "engagement": {
+        "balanced":         {"audience_fit": 0.84, "platform_fit": 0.80, "product_fit": 0.78, "repeatability": 0.80, "conversion_potential": 0.74},
+        "platform_heavy":   {"audience_fit": 0.78, "platform_fit": 0.90, "product_fit": 0.74, "repeatability": 0.84, "conversion_potential": 0.72},
+        "conversion_push":  {"audience_fit": 0.74, "platform_fit": 0.76, "product_fit": 0.77, "repeatability": 0.70, "conversion_potential": 0.86},
+    },
+}
+
+_SCORE_WEIGHTS = {
+    "audience_fit": 0.22,
+    "platform_fit": 0.20,
+    "product_fit": 0.20,
+    "repeatability": 0.18,
+    "conversion_potential": 0.20,
+}
+
+
+def _compute_score_profile(req: ChannelPlanRequest) -> list[tuple[str, dict[str, float]]]:
+    """Derive the three score profiles from the request goal, avoiding hardcoded index."""
+    goal_key = (req.goal or "engagement").lower()
+    profiles = _GOAL_PROFILE_WEIGHTS.get(goal_key, _GOAL_PROFILE_WEIGHTS["engagement"])
+    return [(name, profiles[name]) for name in _PROFILE_NAMES]
+
+
+class TitleAngleGenerator:
+    """Generates non-repeating, context-aware title angles for a content plan.
+
+    Selects from a goal-specific pool seeded by (niche, day, post_idx) so
+    each post gets a deterministically different angle within the same run,
+    ensuring no two posts in the same day share the same angle text.
+    """
+
+    def generate(
+        self,
+        niche: str,
+        goal: str | None,
+        day: int,
+        post_idx: int,
+        market_code: str | None = None,
+    ) -> str:
+        goal_key = (goal or "engagement").lower()
+        pool = _GOAL_ANGLES.get(goal_key, _DEFAULT_ANGLES)
+        # Stable, deterministic index: mix day + post_idx + niche + market using md5
+        seed_str = f"{niche}:{day}:{post_idx}:{market_code or ''}"
+        seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % len(pool)
+        angle_template = pool[seed]
+        return angle_template.format(niche=niche.title(), day=day)
+
 
 class ChannelEngine:
     DEFAULT_FORMATS = ("short", "carousel", "talking_head")
+
+    def __init__(self) -> None:
+        self._angle_generator = TitleAngleGenerator()
 
     def generate_plan(self, req: ChannelPlanRequest) -> ChannelPlanResponse:
         candidates_with_plans = self._build_candidates(req)
@@ -96,21 +203,13 @@ class ChannelEngine:
             list(reversed(req.formats or self.DEFAULT_FORMATS)),
             [self.DEFAULT_FORMATS[0], self.DEFAULT_FORMATS[0], self.DEFAULT_FORMATS[-1]],
         ]
-        score_profiles = [
-            ("balanced", {"audience_fit": 0.82, "platform_fit": 0.8, "product_fit": 0.79, "repeatability": 0.78, "conversion_potential": 0.76}),
-            ("platform_heavy", {"audience_fit": 0.78, "platform_fit": 0.88, "product_fit": 0.74, "repeatability": 0.82, "conversion_potential": 0.75}),
-            ("conversion_push", {"audience_fit": 0.74, "platform_fit": 0.76, "product_fit": 0.77, "repeatability": 0.71, "conversion_potential": 0.88}),
-        ]
+        score_profiles = _compute_score_profile(req)
 
         for idx, formats in enumerate(candidate_formats):
             variant_id, breakdown = score_profiles[idx]
             plan_items = self._build_plan_items(req, formats)
             total = round(
-                (breakdown["audience_fit"] * 0.22)
-                + (breakdown["platform_fit"] * 0.2)
-                + (breakdown["product_fit"] * 0.2)
-                + (breakdown["repeatability"] * 0.18)
-                + (breakdown["conversion_potential"] * 0.2),
+                sum(breakdown[k] * _SCORE_WEIGHTS[k] for k in _SCORE_WEIGHTS),
                 3,
             )
             candidates.append(
@@ -132,11 +231,18 @@ class ChannelEngine:
         for day in range(1, req.days + 1):
             for post_idx in range(req.posts_per_day):
                 fmt = formats[(day + post_idx - 1) % len(formats)]
+                title_angle = self._angle_generator.generate(
+                    niche=req.niche,
+                    goal=req.goal,
+                    day=day,
+                    post_idx=post_idx,
+                    market_code=req.market_code,
+                )
                 series_plan.append(
                     ChannelPlanItem(
                         day_index=day,
                         format=fmt,
-                        title_angle=f"{req.niche.title()} angle day {day} post {post_idx + 1}",
+                        title_angle=title_angle,
                         content_goal=req.goal or "engagement",
                         cta_mode="soft" if (req.goal or "").lower() != "conversion" else "direct",
                         asset_type="video" if fmt in {"short", "talking_head"} else "image",
