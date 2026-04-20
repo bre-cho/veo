@@ -163,6 +163,7 @@ class PublishScheduler:
             from app.services.learning_engine import PerformanceLearningEngine
 
             payload: dict[str, Any] = job.payload or {}
+            metadata: dict[str, Any] = payload.get("metadata") or {}
             engine = PerformanceLearningEngine()
             engine.record(
                 video_id=job.id,
@@ -170,6 +171,8 @@ class PublishScheduler:
                 cta_pattern=str(payload.get("cta_mode") or "unknown"),
                 template_family=str(payload.get("content_goal") or "engagement"),
                 conversion_score=1.0,  # baseline; real signal comes via /api/v1/performance/signal
+                platform=str(job.platform) if job.platform else None,
+                market_code=str(metadata.get("market_code")) if metadata.get("market_code") else None,
             )
         except Exception:
             pass  # Non-fatal – learning write-back must never block publish flow

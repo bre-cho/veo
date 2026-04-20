@@ -81,6 +81,87 @@ _SCORE_WEIGHTS = {
     "conversion_potential": 0.20,
 }
 
+# Maximum absolute adjustment any single weight can receive from learning data.
+_MAX_WEIGHT_ADJUSTMENT = 0.05
+# Per-weight floor/ceiling after adjustment to prevent any dimension collapsing.
+_WEIGHT_MIN = 0.05
+_WEIGHT_MAX = 0.50
+
+# Thresholds for interpreting avg_conversion_score from the learning store.
+_HIGH_CONVERSION_THRESHOLD = 0.75
+_LOW_CONVERSION_THRESHOLD = 0.45
+
+# Adjustment magnitudes applied when thresholds are crossed.
+_CONVERSION_HIGH_BOOST = 0.03     # boost conversion_potential when performing well
+_AUDIENCE_HIGH_PENALTY = -0.01    # minor rebalance away from audience_fit
+_AUDIENCE_LOW_BOOST = 0.02        # diversify to audience reach when conversion is low
+_PLATFORM_LOW_BOOST = 0.02        # diversify to platform reach when conversion is low
+_CONVERSION_LOW_PENALTY = -0.02   # reduce conversion weight when avg score is poor
+_REPEATABILITY_STABLE_HOOK = 0.02 # boost repeatability when a hook pattern is stable
+
+# Minimum hook-pattern sample count considered "stable".
+_STABLE_HOOK_MIN_SAMPLES = 3
+# Minimum number of records required before any adaptive adjustment is made.
+_ADAPTIVE_MIN_RECORDS = 5
+
+
+def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]:
+    """Return bounded additive adjustments to ``_SCORE_WEIGHTS`` from learning feedback.
+
+    Requires at least ``_ADAPTIVE_MIN_RECORDS`` records before producing any
+    adjustment so that a single outlier never biases the weight profile.
+    All adjustments are clamped to ``±_MAX_WEIGHT_ADJUSTMENT``.
+    """
+    if learning_store is None:
+        return {}
+    try:
+        summary = learning_store.feedback_summary()
+    except Exception:
+        return {}
+
+    if summary.get("total_records", 0) < _ADAPTIVE_MIN_RECORDS:
+        return {}
+
+    avg_score: float = summary.get("avg_conversion_score", 0.0)
+    adjustments: dict[str, float] = {}
+
+    if avg_score >= _HIGH_CONVERSION_THRESHOLD:
+        # High conversion performance observed – nudge toward conversion metrics
+        adjustments["conversion_potential"] = _CONVERSION_HIGH_BOOST
+        adjustments["audience_fit"] = _AUDIENCE_HIGH_PENALTY
+    elif avg_score < _LOW_CONVERSION_THRESHOLD:
+        # Low conversion – diversify toward audience and platform reach
+        adjustments["audience_fit"] = _AUDIENCE_LOW_BOOST
+        adjustments["platform_fit"] = _PLATFORM_LOW_BOOST
+        adjustments["conversion_potential"] = _CONVERSION_LOW_PENALTY
+
+    top_hooks = summary.get("top_hook_patterns", [])
+    if top_hooks and top_hooks[0].get("sample_count", 0) >= _STABLE_HOOK_MIN_SAMPLES:
+        # Stable hook patterns signal repeatable content formats
+        adjustments["repeatability"] = (
+            adjustments.get("repeatability", 0.0) + _REPEATABILITY_STABLE_HOOK
+        )
+
+    # Clamp all adjustments to ±_MAX_WEIGHT_ADJUSTMENT
+    return {
+        k: max(-_MAX_WEIGHT_ADJUSTMENT, min(_MAX_WEIGHT_ADJUSTMENT, v))
+        for k, v in adjustments.items()
+    }
+
+
+def _apply_weight_adjustments(
+    base: dict[str, float], adjustments: dict[str, float]
+) -> dict[str, float]:
+    """Return a normalised weight dict with adjustments applied."""
+    adjusted = {k: base[k] + adjustments.get(k, 0.0) for k in base}
+    # Clamp each weight so none collapses or dominates
+    adjusted = {k: max(_WEIGHT_MIN, min(_WEIGHT_MAX, v)) for k, v in adjusted.items()}
+    # Re-normalise so weights still sum to 1.0
+    total = sum(adjusted.values())
+    if total > 0:
+        adjusted = {k: round(v / total, 4) for k, v in adjusted.items()}
+    return adjusted
+
 
 def _compute_score_profile(req: ChannelPlanRequest) -> list[tuple[str, dict[str, float]]]:
     """Derive the three score profiles from the request goal, avoiding hardcoded index."""
@@ -120,8 +201,12 @@ class ChannelEngine:
     def __init__(self) -> None:
         self._angle_generator = TitleAngleGenerator()
 
-    def generate_plan(self, req: ChannelPlanRequest) -> ChannelPlanResponse:
-        candidates_with_plans = self._build_candidates(req)
+    def generate_plan(
+        self,
+        req: ChannelPlanRequest,
+        learning_store: Any | None = None,
+    ) -> ChannelPlanResponse:
+        candidates_with_plans = self._build_candidates(req, learning_store=learning_store)
         winner = max(candidates_with_plans, key=lambda item: item["score"].score_total)
         winner_score: CandidateScore = winner["score"]
         series_plan: list[ChannelPlanItem] = winner["plan"]
@@ -149,6 +234,7 @@ class ChannelEngine:
         req: ChannelPlanRequest,
         parent_plan_id: str | None = None,
         retry_count: int = 0,
+        learning_store: Any | None = None,
     ) -> ChannelPlanResponse:
         plan = ChannelPlan(
             channel_name=req.channel_name,
@@ -174,7 +260,7 @@ class ChannelEngine:
         db.commit()
 
         try:
-            response = self.generate_plan(req)
+            response = self.generate_plan(req, learning_store=learning_store)
             response.plan_id = plan.id
             plan.status = "completed"
             plan.completed_at = self._now()
@@ -196,7 +282,11 @@ class ChannelEngine:
             db.commit()
             raise
 
-    def _build_candidates(self, req: ChannelPlanRequest) -> list[dict[str, Any]]:
+    def _build_candidates(
+        self,
+        req: ChannelPlanRequest,
+        learning_store: Any | None = None,
+    ) -> list[dict[str, Any]]:
         candidates: list[dict[str, Any]] = []
         candidate_formats = [
             list(req.formats or self.DEFAULT_FORMATS),
@@ -205,11 +295,20 @@ class ChannelEngine:
         ]
         score_profiles = _compute_score_profile(req)
 
+        # Derive adaptive weight adjustments from learning store when available
+        adjustments = _derive_adaptive_weight_adjustments(learning_store)
+        effective_weights = (
+            _apply_weight_adjustments(_SCORE_WEIGHTS, adjustments)
+            if adjustments
+            else _SCORE_WEIGHTS
+        )
+        feedback_applied = bool(adjustments)
+
         for idx, formats in enumerate(candidate_formats):
             variant_id, breakdown = score_profiles[idx]
             plan_items = self._build_plan_items(req, formats)
             total = round(
-                sum(breakdown[k] * _SCORE_WEIGHTS[k] for k in _SCORE_WEIGHTS),
+                sum(breakdown[k] * effective_weights[k] for k in effective_weights),
                 3,
             )
             candidates.append(
@@ -220,7 +319,7 @@ class ChannelEngine:
                         score_total=total,
                         score_breakdown=breakdown,
                         rationale=f"Variant {variant_id} selected from audience/platform/product/repeatability/conversion matrix.",
-                        metadata={"variant_index": idx + 1},
+                        metadata={"variant_index": idx + 1, "feedback_applied": feedback_applied},
                     ),
                 }
             )
