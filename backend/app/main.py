@@ -37,6 +37,7 @@ from app.api.rag_chat import router as rag_chat_router
 from app.api.ml_recommendation import router as ml_recommendation_router
 from app.api.avatar_builder import router as avatar_builder_router
 from app.api.avatar_commerce import router as avatar_commerce_router
+from app.api.product_ingestion import router as product_ingestion_router
 from app.api.avatar_marketplace import router as avatar_marketplace_router
 from app.api.creator_economy import router as creator_economy_router
 from app.api.avatar_localization import router as avatar_localization_router
@@ -112,6 +113,7 @@ app.include_router(rag_chat_router)
 app.include_router(ml_recommendation_router)
 app.include_router(avatar_builder_router)
 app.include_router(avatar_commerce_router)
+app.include_router(product_ingestion_router)
 app.include_router(avatar_marketplace_router)
 app.include_router(creator_economy_router)
 app.include_router(avatar_localization_router)

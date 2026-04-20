@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.scoring import CandidateScore
+
 
 class TrendImageRequest(BaseModel):
     topic: str
@@ -27,3 +29,4 @@ class TrendImageConcept(BaseModel):
 class TrendImageResponse(BaseModel):
     concepts: list[TrendImageConcept] = Field(default_factory=list)
     recommended_winner_id: str | None = None
+    candidates: list[CandidateScore] = Field(default_factory=list)

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, JSON, String
+from sqlalchemy import DateTime, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -21,6 +21,25 @@ class PublishJob(Base):
     channel_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="scheduled", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    request_payload: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    provider_response: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    external_ids: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    error_log: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    retry_metadata: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    parent_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     payload: Mapped[Any] = mapped_column(JSON, nullable=False)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    preparing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    publishing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_now,
+        onupdate=_now,
+        index=True,
+    )

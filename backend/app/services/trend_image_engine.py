@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.schemas.scoring import CandidateScore
 from app.schemas.trend_image import TrendImageConcept, TrendImageRequest, TrendImageResponse
 
 
@@ -10,6 +11,7 @@ class TrendImageEngine:
 
     def generate(self, req: TrendImageRequest) -> TrendImageResponse:
         concepts: list[TrendImageConcept] = []
+        candidates: list[CandidateScore] = []
         style = req.style_preset
 
         for idx in range(req.count):
@@ -29,10 +31,34 @@ class TrendImageEngine:
                 )
             )
 
-        winner = max(concepts, key=lambda c: c.trend_score, default=None)
+            relevance = round(max(0.5, 0.88 - (idx * 0.04)), 3)
+            trend_fit = trend_score
+            market_fit = round(max(0.48, 0.84 - (idx * 0.05)), 3)
+            visual_strength = round(max(0.52, 0.9 - (idx * 0.05)), 3)
+            total = round((relevance * 0.28) + (trend_fit * 0.3) + (market_fit * 0.2) + (visual_strength * 0.22), 3)
+            candidates.append(
+                CandidateScore(
+                    candidate_id=concept_id,
+                    score_total=total,
+                    score_breakdown={
+                        "relevance": relevance,
+                        "trend_fit": trend_fit,
+                        "market_fit": market_fit,
+                        "visual_strength": visual_strength,
+                    },
+                    rationale="Ranked by relevance/trend/market/visual scoring matrix.",
+                    metadata={"style_label": style_label},
+                )
+            )
+
+        winner = max(candidates, key=lambda c: c.score_total, default=None)
+        if winner:
+            winner.winner_flag = True
+
         return TrendImageResponse(
             concepts=concepts,
-            recommended_winner_id=winner.concept_id if winner else None,
+            recommended_winner_id=winner.candidate_id if winner else None,
+            candidates=candidates,
         )
 
     @staticmethod
