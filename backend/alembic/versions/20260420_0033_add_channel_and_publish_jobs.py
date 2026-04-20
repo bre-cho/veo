@@ -30,6 +30,7 @@ def upgrade() -> None:
     op.create_index("ix_channel_plans_channel_name", "channel_plans", ["channel_name"])
     op.create_index("ix_channel_plans_niche", "channel_plans", ["niche"])
     op.create_index("ix_channel_plans_market_code", "channel_plans", ["market_code"])
+    op.create_index("ix_channel_plans_created_at", "channel_plans", ["created_at"])
 
     op.create_table(
         "publish_jobs",
@@ -46,15 +47,18 @@ def upgrade() -> None:
     op.create_index("ix_publish_jobs_platform", "publish_jobs", ["platform"])
     op.create_index("ix_publish_jobs_scheduled_for", "publish_jobs", ["scheduled_for"])
     op.create_index("ix_publish_jobs_status", "publish_jobs", ["status"])
+    op.create_index("ix_publish_jobs_created_at", "publish_jobs", ["created_at"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_publish_jobs_created_at", table_name="publish_jobs")
     op.drop_index("ix_publish_jobs_status", table_name="publish_jobs")
     op.drop_index("ix_publish_jobs_scheduled_for", table_name="publish_jobs")
     op.drop_index("ix_publish_jobs_platform", table_name="publish_jobs")
     op.drop_index("ix_publish_jobs_channel_plan_id", table_name="publish_jobs")
     op.drop_table("publish_jobs")
 
+    op.drop_index("ix_channel_plans_created_at", table_name="channel_plans")
     op.drop_index("ix_channel_plans_market_code", table_name="channel_plans")
     op.drop_index("ix_channel_plans_niche", table_name="channel_plans")
     op.drop_index("ix_channel_plans_channel_name", table_name="channel_plans")

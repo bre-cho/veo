@@ -32,6 +32,7 @@ def upgrade() -> None:
     op.create_index("ix_pattern_memories_market_code", "pattern_memories", ["market_code"])
     op.create_index("ix_pattern_memories_content_goal", "pattern_memories", ["content_goal"])
     op.create_index("ix_pattern_memories_source_id", "pattern_memories", ["source_id"])
+    op.create_index("ix_pattern_memories_created_at", "pattern_memories", ["created_at"])
 
     op.create_table(
         "optimization_runs",
@@ -45,13 +46,16 @@ def upgrade() -> None:
     )
     op.create_index("ix_optimization_runs_project_id", "optimization_runs", ["project_id"])
     op.create_index("ix_optimization_runs_render_job_id", "optimization_runs", ["render_job_id"])
+    op.create_index("ix_optimization_runs_created_at", "optimization_runs", ["created_at"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_optimization_runs_created_at", table_name="optimization_runs")
     op.drop_index("ix_optimization_runs_render_job_id", table_name="optimization_runs")
     op.drop_index("ix_optimization_runs_project_id", table_name="optimization_runs")
     op.drop_table("optimization_runs")
 
+    op.drop_index("ix_pattern_memories_created_at", table_name="pattern_memories")
     op.drop_index("ix_pattern_memories_source_id", table_name="pattern_memories")
     op.drop_index("ix_pattern_memories_content_goal", table_name="pattern_memories")
     op.drop_index("ix_pattern_memories_market_code", table_name="pattern_memories")

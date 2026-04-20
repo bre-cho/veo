@@ -8,6 +8,8 @@ from app.schemas.storyboard import StoryboardResponse, StoryboardScene
 
 
 class StoryboardEngine:
+    MIN_PACING_WEIGHT = 0.6
+    MAX_PACING_WEIGHT = 1.8
     _CTA_KEYWORDS = (
         "buy",
         "shop",
@@ -85,7 +87,7 @@ class StoryboardEngine:
         )
 
     # backward compatibility
-    def parse_script(self, script: str | list[str], *, max_scenes: int = 10):
+    def parse_script(self, script: str | list[str], *, max_scenes: int = 10) -> list[StoryboardScene]:
         text = script if isinstance(script, str) else "\n\n".join(script)
         resp = self.generate_from_script(script_text=text)
         return resp.scenes[:max_scenes]

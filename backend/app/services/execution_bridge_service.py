@@ -288,7 +288,7 @@ class ExecutionBridgeService:
                 (
                     s
                     for s in storyboard_scenes
-                    if int(s.get("scene_index", 0) or 0) == scene_index
+                    if int(s.get("scene_index", 0)) == scene_index
                 ),
                 None,
             )
@@ -310,7 +310,7 @@ class ExecutionBridgeService:
                 (
                     r
                     for r in rewrites
-                    if int(r.get("target_scene_index") or 0) == scene_index
+                    if int(r.get("target_scene_index", 0)) == scene_index
                 ),
                 None,
             )
