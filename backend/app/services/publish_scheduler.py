@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -17,6 +20,9 @@ from app.services.publish_providers import (
     TikTokPublishProvider,
     YouTubePublishProvider,
 )
+from app.services.publish_providers.preflight import PublishPreflightValidator
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Publish mode configuration
@@ -98,6 +104,28 @@ class PublishScheduler:
         publish_mode = _PUBLISH_MODE
         jobs: list[PublishJob] = []
         for item in queue:
+            # Build idempotency key to prevent duplicate publishes.
+            idem_key = _build_idempotency_key(
+                platform=item["platform"],
+                channel_plan_id=channel_plan_id,
+                payload=item["payload"],
+            )
+            # If a job with this key already exists and was published, skip.
+            existing = (
+                db.query(PublishJob)
+                .filter(PublishJob.idempotency_key == idem_key)
+                .first()
+            )
+            if existing is not None:
+                if existing.status == "published":
+                    logger.info(
+                        "Skipping duplicate publish job (idempotency_key=%s status=%s)",
+                        idem_key,
+                        existing.status,
+                    )
+                    jobs.append(existing)
+                    continue
+
             # Parse the actual scheduled_for from the queue entry so it is
             # persisted as a real datetime rather than staying NULL.
             scheduled_for_raw = item.get("scheduled_for")
@@ -117,6 +145,7 @@ class PublishScheduler:
                 request_payload=item,
                 payload=item["payload"],
                 retry_metadata={"retry_from_job_id": None, "previous_error": None},
+                idempotency_key=idem_key,
             )
             jobs.append(job)
             db.add(job)
@@ -127,7 +156,40 @@ class PublishScheduler:
 
     def run_job(self, db: Session, job: PublishJob) -> PublishJob:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # --- Preflight validation ---
+        validator = PublishPreflightValidator()
+        preflight_errors = validator.validate(job)
+        if preflight_errors:
+            job.preflight_status = "error"
+            job.preflight_errors = preflight_errors
+            job.status = "failed"
+            job.failed_at = now
+            job.error_log = {
+                "mode": job.publish_mode or _PUBLISH_MODE,
+                "error": "preflight_failed",
+                "preflight_errors": preflight_errors,
+            }
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            raise ValueError(f"Publish preflight failed: {preflight_errors}")
+        job.preflight_status = "ok"
+
         provider = _get_provider(platform=job.platform)
+
+        # --- Quota check ---
+        quota = provider.check_quota()
+        if not quota.get("ok", True):
+            logger.warning(
+                "Provider quota exhausted for platform=%s; job=%s will remain queued",
+                job.platform,
+                job.id,
+            )
+            db.add(job)
+            db.commit()
+            raise RuntimeError(f"Provider quota exhausted: {quota}")
+
         try:
             job.status = "preparing"
             job.preparing_at = now
@@ -233,3 +295,74 @@ class PublishScheduler:
         db.commit()
         db.refresh(retry_job)
         return retry_job
+
+
+class PublishReconciler:
+    """Reconciles stale published jobs that have never received a real signal.
+
+    Jobs that are ``published`` but whose ``signal_status`` is still ``pending``
+    after ``max_age_hours`` are considered stale.  The reconciler flags them so
+    operators can investigate or re-ingest missing signals.
+    """
+
+    def reconcile(self, db: Session, max_age_hours: int = 24) -> list[str]:
+        """Return IDs of stale jobs (signal_status='pending', older than max_age_hours).
+
+        The reconciler marks each stale job's ``signal_status`` as ``'stale'``
+        so dashboards can surface them.  It does **not** attempt to re-fetch
+        from the platform API (that would require platform credentials and is
+        out of scope for the core scheduler library).
+
+        Returns a list of affected job IDs.
+        """
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=max_age_hours)
+        stale_jobs: list[PublishJob] = (
+            db.query(PublishJob)
+            .filter(
+                PublishJob.status == "published",
+                PublishJob.signal_status == "pending",
+                PublishJob.published_at <= cutoff,
+            )
+            .all()
+        )
+        affected: list[str] = []
+        for job in stale_jobs:
+            job.signal_status = "stale"
+            db.add(job)
+            affected.append(job.id)
+            logger.warning(
+                "Stale publish job detected: id=%s platform=%s published_at=%s",
+                job.id,
+                job.platform,
+                job.published_at,
+            )
+        if affected:
+            db.commit()
+        return affected
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _build_idempotency_key(
+    platform: str,
+    channel_plan_id: str | None,
+    payload: dict[str, Any],
+) -> str:
+    """Compute a stable sha256 key for a publish job to prevent duplicates.
+
+    The key is derived from the platform, channel plan ID (if any), and the
+    JSON-serialised payload so two jobs with identical content produce the same
+    key regardless of insertion order.
+    """
+    canonical = json.dumps(
+        {
+            "platform": platform,
+            "channel_plan_id": channel_plan_id or "",
+            "payload": payload,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()[:64]

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Any
 
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
 from app.schemas.storyboard import StoryboardRequest, StoryboardResponse
-from app.services.storyboard_engine import StoryboardEngine
+from app.services.storyboard_engine import ContinuityPlanner, StoryboardEngine
 
 router = APIRouter(prefix="/api/v1/storyboard", tags=["storyboard"])
 
 _engine = StoryboardEngine()
+_continuity_planner = ContinuityPlanner()
 
 
 @router.post("/generate", response_model=StoryboardResponse)
@@ -24,3 +30,62 @@ def generate_storyboard(req: StoryboardRequest) -> StoryboardResponse:
 @router.post("/from-preview", response_model=StoryboardResponse)
 def storyboard_from_preview(preview_payload: dict) -> StoryboardResponse:
     return _engine.generate_from_preview(preview_payload)
+
+
+# ---------------------------------------------------------------------------
+# Continuity endpoint
+# ---------------------------------------------------------------------------
+
+class ContinuityRequest(BaseModel):
+    prev_storyboard: StoryboardResponse
+    next_script: str = Field(..., min_length=1)
+    series_id: str | None = None
+    episode_index: int | None = None
+    save_episode_memory: bool = False
+
+
+class ContinuityResponse(BaseModel):
+    continuity_hints: list[str]
+    storyboard: StoryboardResponse
+
+
+@router.post("/continuity", response_model=ContinuityResponse)
+def plan_continuity(req: ContinuityRequest, db: Session = Depends(get_db)) -> ContinuityResponse:
+    """Generate the next episode storyboard with continuity hints from the previous one."""
+    hints = _continuity_planner.plan_continuity(req.prev_storyboard, req.next_script)
+
+    episode_memory: dict[str, Any] | None = None
+    if req.series_id:
+        episode_memory = _continuity_planner.load_latest_episode(db, req.series_id)
+
+    new_storyboard = _engine.generate_from_script(
+        script_text=req.next_script,
+        episode_memory=episode_memory,
+    )
+
+    if req.save_episode_memory and req.series_id and req.episode_index is not None:
+        _continuity_planner.save_episode_memory(
+            db,
+            series_id=req.series_id,
+            episode_index=req.episode_index,
+            storyboard=new_storyboard,
+        )
+
+    return ContinuityResponse(continuity_hints=hints, storyboard=new_storyboard)
+
+
+# ---------------------------------------------------------------------------
+# Shot asset planner endpoint
+# ---------------------------------------------------------------------------
+
+class ShotAssetRequest(BaseModel):
+    storyboard: StoryboardResponse
+    avatar_id: str | None = None
+
+
+@router.post("/shot-assets")
+def plan_shot_assets(req: ShotAssetRequest) -> dict:
+    """Return a production asset checklist for each scene in the storyboard."""
+    checklist = StoryboardEngine.plan_shot_assets(req.storyboard.scenes, avatar_id=req.avatar_id)
+    return {"scene_count": len(checklist), "assets": checklist}
+

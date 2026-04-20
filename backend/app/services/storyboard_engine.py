@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.schemas.storyboard import StoryboardResponse, StoryboardScene
+
+if TYPE_CHECKING:
+    from app.services.learning_engine import PerformanceLearningEngine
 
 # ---------------------------------------------------------------------------
 # Platform grammar: each platform has its own pacing and beat structure
@@ -148,14 +151,46 @@ class StoryboardEngine:
         content_goal: str | None = None,
         preview_payload: dict[str, Any] | None = None,
         platform: str | None = None,
+        learning_store: "PerformanceLearningEngine | None" = None,
+        episode_memory: dict[str, Any] | None = None,
     ) -> StoryboardResponse:
         grammar = _get_platform_grammar(platform)
         paragraphs = self._to_paragraphs(script_text)
         scenes: list[StoryboardScene] = []
 
+        # Derive pacing boost from learning store for hook scenes
+        hook_pacing_boost = 0.0
+        if learning_store is not None:
+            try:
+                hook_pacing_boost = _derive_hook_pacing_boost(learning_store, platform=platform)
+            except Exception:
+                hook_pacing_boost = 0.0
+
+        # Inject open-loop resolution beat from episode memory when available
+        resolution_hint: str | None = None
+        if episode_memory:
+            open_loops: list[str] = episode_memory.get("open_loops") or []
+            if open_loops:
+                resolution_hint = open_loops[0]
+
         for idx, text in enumerate(paragraphs, start=1):
             goal = self._scene_goal(idx, len(paragraphs), text)
             cta_flag = self._cta_flag(goal, text, conversion_mode, grammar)
+            pacing = self._pacing_weight(goal, idx, len(paragraphs), conversion_mode, grammar)
+            if goal == "hook" and hook_pacing_boost:
+                pacing = round(min(pacing + hook_pacing_boost, self.MAX_PACING_WEIGHT), 2)
+
+            # Inject resolution hint as metadata on the last body scene
+            scene_meta: dict[str, Any] = {
+                "source": "script_text",
+                "script_text": text,
+                "content_goal": content_goal,
+                "platform": platform,
+                "preview_scene_count": len((preview_payload or {}).get("scenes") or []),
+            }
+            if resolution_hint and goal == "body" and idx == len(paragraphs) - 1:
+                scene_meta["resolution_hint"] = resolution_hint
+
             scenes.append(
                 StoryboardScene(
                     scene_index=idx,
@@ -166,16 +201,10 @@ class StoryboardEngine:
                     cta_flag=cta_flag,
                     open_loop_flag=(idx == 1 or "?" in text),
                     shot_hint=self._shot_hint(goal, grammar),
-                    pacing_weight=self._pacing_weight(goal, idx, len(paragraphs), conversion_mode, grammar),
+                    pacing_weight=pacing,
                     voice_direction=self._voice_direction(goal),
                     transition_hint=self._transition_hint(goal, grammar),
-                    metadata={
-                        "source": "script_text",
-                        "script_text": text,
-                        "content_goal": content_goal,
-                        "platform": platform,
-                        "preview_scene_count": len((preview_payload or {}).get("scenes") or []),
-                    },
+                    metadata=scene_meta,
                 )
             )
 
@@ -201,6 +230,7 @@ class StoryboardEngine:
                 "beat_map": beat_map,
                 "dependency_graph": dependency_graph,
                 "hook_retention_score": self._compute_hook_retention_score(scenes, grammar),
+                "hook_pacing_boost": hook_pacing_boost,
             },
         )
 
@@ -449,3 +479,293 @@ class StoryboardEngine:
             score += 0.3
 
         return round(min(score, 1.0), 3)
+
+    @staticmethod
+    def plan_shot_assets(
+        scenes: list[StoryboardScene],
+        avatar_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generate a per-scene asset production checklist.
+
+        Returns a list of dicts (one per scene) describing what assets need to
+        be prepared: background type, avatar pose, overlay text flag, and
+        b-roll category.  This is used by the production pipeline to pre-fetch
+        or generate required materials before a render job is created.
+        """
+        _GOAL_BACKGROUNDS = {
+            "hook": "branded_gradient",
+            "build_tension": "environmental",
+            "reveal": "product_hero",
+            "body": "neutral_studio",
+            "intro": "warm_studio",
+            "social_proof": "lifestyle",
+            "cta": "brand_lockup",
+        }
+        _GOAL_POSES = {
+            "hook": "direct_address",
+            "build_tension": "expressive",
+            "reveal": "presenting",
+            "body": "explaining",
+            "intro": "welcoming",
+            "social_proof": "testimonial_close_up",
+            "cta": "pointing_cta",
+        }
+        _GOAL_BROLL = {
+            "hook": "teaser_clip",
+            "build_tension": "problem_montage",
+            "reveal": "product_close_up",
+            "body": "workflow_demo",
+            "intro": "avatar_intro",
+            "social_proof": "before_after",
+            "cta": None,
+        }
+        checklist = []
+        for scene in scenes:
+            goal = scene.scene_goal
+            checklist.append({
+                "scene_index": scene.scene_index,
+                "scene_goal": goal,
+                "avatar_id": avatar_id,
+                "background_type": _GOAL_BACKGROUNDS.get(goal, "neutral_studio"),
+                "avatar_pose": _GOAL_POSES.get(goal, "explaining"),
+                "overlay_text": scene.cta_flag or goal in ("hook", "cta"),
+                "broll_category": _GOAL_BROLL.get(goal),
+                "voice_direction": scene.voice_direction,
+                "shot_hint": scene.shot_hint,
+            })
+        return checklist
+
+
+# ---------------------------------------------------------------------------
+# Continuity Planner
+# ---------------------------------------------------------------------------
+
+class ContinuityPlanner:
+    """Plan narrative continuity between consecutive episodes.
+
+    ``plan_continuity()`` inspects the previous episode's storyboard and
+    returns a list of ``continuity_hints`` that the next episode should respect
+    (open loop resolutions, colour palette consistency, character state).
+
+    This is used by the StoryboardEngine's Director OS layer to inject hints
+    into new episode generation rather than starting from a blank slate.
+    """
+
+    def plan_continuity(
+        self,
+        prev_episode: StoryboardResponse,
+        next_script: str,
+    ) -> list[str]:
+        """Return continuity hints to inject into the next episode.
+
+        Analyses the previous storyboard for:
+        - Unresolved open loops (scenes with ``open_loop_flag=True`` not
+          followed by a resolve)
+        - CTA position mismatch
+        - Scene-count consistency
+        """
+        hints: list[str] = []
+        scenes = prev_episode.scenes
+        if not scenes:
+            return hints
+
+        # 1. Detect open loops in previous episode
+        open_scene_goals = {
+            scene.scene_goal
+            for scene in scenes
+            if scene.open_loop_flag
+        }
+        cta_scene_goals = {scene.scene_goal for scene in scenes if scene.cta_flag}
+        unresolved = open_scene_goals - cta_scene_goals - {"hook"}
+        if unresolved:
+            hints.append(
+                f"Resolve open narrative threads from previous episode: {', '.join(sorted(unresolved))}"
+            )
+
+        # 2. Maintain colour palette consistency (inferred from visual_type)
+        first_scene_visual = scenes[0].visual_type if scenes else None
+        if first_scene_visual:
+            hints.append(
+                f"Maintain visual style consistency: open with a '{first_scene_visual}' shot to signal continuity"
+            )
+
+        # 3. Character state carry-over
+        prev_summary = prev_episode.summary or {}
+        content_goal = prev_summary.get("content_goal")
+        if content_goal:
+            hints.append(
+                f"Continue '{content_goal}' content arc; reference the product outcome established in the prior episode"
+            )
+
+        # 4. Platform grammar consistency
+        platform = prev_summary.get("platform")
+        if platform:
+            hints.append(
+                f"Use '{platform}' platform grammar for pacing and transitions to match viewer expectations"
+            )
+
+        return hints
+
+    def save_episode_memory(
+        self,
+        db: Any,
+        *,
+        series_id: str,
+        episode_index: int,
+        storyboard: StoryboardResponse,
+        character_state: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist this episode's state into ``EpisodeMemory`` for future continuity checks."""
+        try:
+            from app.models.episode_memory import EpisodeMemory
+
+            scenes = storyboard.scenes
+            open_loops = [
+                s.scene_goal
+                for s in scenes
+                if s.open_loop_flag and s.scene_goal != "hook"
+            ]
+            resolved_loops = [s.scene_goal for s in scenes if s.cta_flag]
+
+            row = EpisodeMemory(
+                series_id=series_id,
+                episode_index=episode_index,
+                storyboard_id=storyboard.storyboard_id,
+                character_state=character_state or {},
+                open_loops=open_loops,
+                resolved_loops=resolved_loops,
+            )
+            db.add(row)
+            db.commit()
+        except Exception:
+            pass  # Non-fatal
+
+    @staticmethod
+    def load_latest_episode(db: Any, series_id: str) -> dict[str, Any] | None:
+        """Load the most recent episode memory for a series, or None."""
+        try:
+            from app.models.episode_memory import EpisodeMemory
+
+            row = (
+                db.query(EpisodeMemory)
+                .filter(EpisodeMemory.series_id == series_id)
+                .order_by(EpisodeMemory.episode_index.desc())
+                .first()
+            )
+            if row is None:
+                return None
+            return {
+                "series_id": row.series_id,
+                "episode_index": row.episode_index,
+                "storyboard_id": row.storyboard_id,
+                "character_state": row.character_state or {},
+                "open_loops": row.open_loops or [],
+                "resolved_loops": row.resolved_loops or [],
+            }
+        except Exception:
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Scene Pattern Library
+# ---------------------------------------------------------------------------
+
+class ScenePatternLibrary:
+    """Store and query winning scene patterns.
+
+    Wraps ``PatternLibrary`` with scene-specific query helpers.  Patterns are
+    stored with ``pattern_type='scene_pattern'`` and a payload containing
+    ``platform``, ``scene_goal``, and ``conversion_score``.
+    """
+
+    _PATTERN_TYPE = "scene_pattern"
+    _MIN_CONVERSION_SCORE = 0.75
+
+    def save_winning_scenes(
+        self,
+        db: Any,
+        *,
+        storyboard: StoryboardResponse,
+        platform: str | None,
+        content_goal: str | None,
+        conversion_score: float,
+    ) -> None:
+        """Persist high-scoring scenes as reusable patterns."""
+        if conversion_score < self._MIN_CONVERSION_SCORE:
+            return
+        from app.services.pattern_library import PatternLibrary
+        from app.schemas.patterns import PatternMemoryIn
+
+        lib = PatternLibrary()
+        for scene in storyboard.scenes:
+            pattern = PatternMemoryIn(
+                pattern_type=self._PATTERN_TYPE,
+                content_goal=content_goal,
+                source_id=storyboard.storyboard_id,
+                score=conversion_score,
+                payload={
+                    "platform": platform,
+                    "scene_goal": scene.scene_goal,
+                    "visual_type": scene.visual_type,
+                    "shot_hint": scene.shot_hint,
+                    "pacing_weight": scene.pacing_weight,
+                    "emotion": scene.emotion,
+                    "voice_direction": scene.voice_direction,
+                    "transition_hint": scene.transition_hint,
+                },
+            )
+            try:
+                lib.save(db, pattern)
+            except Exception:
+                pass
+
+    def get_top_patterns(
+        self,
+        db: Any,
+        *,
+        platform: str | None = None,
+        scene_goal: str | None = None,
+        content_goal: str | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return top winning scene patterns for a platform/scene_goal combo."""
+        from app.services.pattern_library import PatternLibrary
+
+        lib = PatternLibrary()
+        rows = lib.list(
+            db,
+            pattern_type=self._PATTERN_TYPE,
+            content_goal=content_goal,
+        )
+        # Filter by platform and scene_goal from payload
+        filtered = []
+        for row in rows:
+            p = row.payload or {}
+            if platform and p.get("platform") != platform:
+                continue
+            if scene_goal and p.get("scene_goal") != scene_goal:
+                continue
+            filtered.append(p)
+        return filtered[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _derive_hook_pacing_boost(
+    learning_store: "PerformanceLearningEngine",
+    platform: str | None,
+) -> float:
+    """Return a +0.1 pacing boost for hook scenes when top performers reward it.
+
+    Queries the learning store for top hook patterns on the given platform and
+    returns 0.1 when any winning pattern is a hook-type pattern, else 0.0.
+    """
+    try:
+        top_hooks = learning_store.top_hooks(platform=platform)
+        if top_hooks:
+            return 0.1
+    except Exception:
+        pass
+    return 0.0

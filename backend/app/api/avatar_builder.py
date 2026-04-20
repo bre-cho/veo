@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -132,3 +133,42 @@ def get_avatar(avatar_id: str, db: Session = Depends(get_db)):
         "is_published": avatar.is_published,
         "is_featured": avatar.is_featured,
     }
+
+
+# ---------------------------------------------------------------------------
+# Render-time identity verification  (Trục 1)
+# ---------------------------------------------------------------------------
+
+
+class VerifyRenderRequest(BaseModel):
+    render_url: str = Field(..., description="URL of the completed render output")
+    frame_count: int = Field(default=0, ge=0, description="Number of frames in the render")
+    frame_embeddings: list[list[float]] | None = Field(
+        default=None,
+        description="Per-frame embedding vectors (optional; enables cosine-similarity check)",
+    )
+
+
+@router.post("/{avatar_id}/verify-render")
+def verify_render(
+    avatar_id: str,
+    req: VerifyRenderRequest,
+    db: Session = Depends(get_db),
+):
+    """Verify that a completed render is consistent with the avatar's identity.
+
+    When ``frame_embeddings`` is provided, each frame is compared against the
+    avatar's canonical embedding via cosine similarity.  When the overall
+    ``consistency_score`` falls below the threshold the response includes
+    ``action='identity_review'`` which the caller can use to trigger an FSM
+    transition to the ``identity_review`` state.
+    """
+    result = _identity.verify_render_output(
+        db=db,
+        avatar_id=avatar_id,
+        render_url=req.render_url,
+        frame_count=req.frame_count,
+        frame_embeddings=req.frame_embeddings,
+    )
+    return result
+

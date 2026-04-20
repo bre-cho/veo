@@ -153,28 +153,35 @@ def generate_review_video(req: GenerateReviewVideoRequest):
 
 
 @router.post("/generate-review-variants")
-def generate_review_variants(payload: dict):
+def generate_review_variants(payload: dict, db: Session = Depends(get_db)):
     from app.services.commerce.review_variant_engine import ReviewVariantEngine
-    result = _review_engine.generate_review_variants(
-        product_payload=payload,
-        variant_count=payload.get("count", 5),
+    engine = ReviewVariantEngine()
+    result = engine.generate_variants_with_history(
+        product_profile=payload,
+        count=payload.get("count", 5),
         platform=payload.get("platform"),
+        db=db,
     )
     return {
         "variants": result["variants"],
         "winner": result["winner"],
-        "normalized_product_profile": result["normalized_product_profile"],
         "run_id": result.get("run_id"),
     }
 
 
 @router.get("/variant-history")
-def variant_history(product_name: str | None = None, platform: str | None = None, limit: int = 20):
+def variant_history(
+    product_name: str | None = None,
+    platform: str | None = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
     from app.services.commerce.review_variant_engine import ReviewVariantEngine
     records = ReviewVariantEngine.get_history(
         product_name=product_name,
         platform=platform,
         limit=limit,
+        db=db,
     )
     return {"records": records, "count": len(records)}
 
@@ -362,3 +369,89 @@ def learning_health():
         "data_quality": quality,
         "score_drift": drift,
     }
+
+
+@router.get("/intelligence/status", response_model=dict)
+def intelligence_status(db: Session = Depends(get_db)):
+    """Return the operational status of all data-driven intelligence layers.
+
+    Surfaces data sufficiency, active detector type, calibration staleness,
+    and per-layer confidence.  Useful for ops dashboards and self-monitoring.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.performance_record import PerformanceRecord
+    from app.models.scoring_calibration import ScoringCalibration
+    from app.models.objection_patterns import ObjectionPattern
+    from app.models.variant_run_record import VariantRunRecord
+
+    record_count = 0
+    try:
+        record_count = db.query(PerformanceRecord).count()
+    except Exception:
+        pass
+
+    variant_count = 0
+    try:
+        variant_count = db.query(VariantRunRecord).count()
+    except Exception:
+        pass
+
+    objection_count = 0
+    try:
+        objection_count = db.query(ObjectionPattern).filter(ObjectionPattern.is_active.is_(True)).count()
+    except Exception:
+        pass
+
+    # Scoring calibration staleness
+    calibration_status: dict = {"available": False}
+    try:
+        latest_cal = (
+            db.query(ScoringCalibration)
+            .order_by(ScoringCalibration.calibrated_at.desc())
+            .first()
+        )
+        if latest_cal is not None:
+            age_days = (
+                datetime.now(timezone.utc).replace(tzinfo=None) - latest_cal.calibrated_at
+            ).days
+            calibration_status = {
+                "available": True,
+                "platform": latest_cal.platform,
+                "product_category": latest_cal.product_category,
+                "sample_count": latest_cal.sample_count,
+                "r_squared": latest_cal.r_squared,
+                "age_days": age_days,
+                "stale": age_days > 7,
+            }
+    except Exception:
+        pass
+
+    return {
+        "layers": {
+            "category_detection": {
+                "active_detector": "statistical" if record_count >= 50 else "keyword",
+                "record_count": record_count,
+                "sufficient_for_statistical": record_count >= 50,
+                "confidence": "high" if record_count >= 50 else "low",
+            },
+            "persona_inference": {
+                "active_detector": "data_driven" if record_count >= 10 else "keyword",
+                "record_count": record_count,
+                "sufficient_for_data_driven": record_count >= 10,
+                "confidence": "medium" if record_count >= 10 else "low",
+            },
+            "conversion_scoring": {
+                "calibration": calibration_status,
+                "sufficient_for_calibration": variant_count >= 30,
+                "variant_count": variant_count,
+            },
+            "objection_extraction": {
+                "pattern_count": objection_count,
+                "active_detector": "db" if objection_count > 0 else "hardcoded",
+                "confidence": "high" if objection_count >= 10 else "low",
+            },
+        },
+        "overall_health": "healthy" if record_count >= 50 and calibration_status.get("available") and not calibration_status.get("stale") else "degraded",
+    }
+

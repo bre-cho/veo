@@ -75,6 +75,7 @@ from app.api.motion_clone import router as motion_clone_router
 from app.api.patterns import router as patterns_router
 from app.api.creative_runs import router as creative_runs_router
 from app.api.publish_signal import router as publish_signal_router
+from app.api.publish_webhooks import router as publish_webhooks_router
 
 _CORE_ROUTERS = [
     health_router,
@@ -152,6 +153,7 @@ _CREATIVE_ROUTERS = [
     patterns_router,
     creative_runs_router,
     publish_signal_router,
+    publish_webhooks_router,
 ]
 
 
