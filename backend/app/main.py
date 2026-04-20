@@ -42,6 +42,7 @@ from app.api.creator_economy import router as creator_economy_router
 from app.api.avatar_localization import router as avatar_localization_router
 from app.api.avatar_meta import router as avatar_meta_router
 from app.api.avatar_analytics import router as avatar_analytics_router
+from app.api.storyboard import router as storyboard_router
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -110,6 +111,7 @@ app.include_router(creator_economy_router)
 app.include_router(avatar_localization_router)
 app.include_router(avatar_meta_router)
 app.include_router(avatar_analytics_router)
+app.include_router(storyboard_router)
 
 
 @app.get("/", tags=["root"])

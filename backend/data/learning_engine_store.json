@@ -1,0 +1,12 @@
+[
+  {
+    "video_id": "test-vid-999",
+    "hook_pattern": "Did you know?",
+    "cta_pattern": "Shop now",
+    "template_family": "sales_conversion",
+    "conversion_score": 0.75,
+    "view_count": 5000,
+    "click_through_rate": 0.08,
+    "recorded_at": 1776659693.7309504
+  }
+]
