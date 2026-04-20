@@ -4,37 +4,62 @@ This module provides a Celery-compatible periodic task that runs every 24 hours,
 queries renders per avatar, identifies the highest-quality frames, and upserts
 AvatarReferenceFrame rows.
 
-When Celery is not configured the task function can be called directly.
+Phase 2.2 additions:
+- ``staleness_policy``: only refresh when canonical frame > CANONICAL_MAX_AGE_DAYS old
+  **and** at least 1 new render exists in the window.
+- ``drift_triggered_refresh``: auto-refresh when verify_render_output() similarity
+  drops below _TEMPORAL_CONTINUITY_THRESHOLD 3 consecutive times.
 """
 from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _CELERY_BROKER = os.environ.get("CELERY_BROKER_URL", "")
 _TOP_N_FRAMES = int(os.environ.get("CANONICAL_REFRESH_TOP_N", "3"))
+_CANONICAL_MAX_AGE_DAYS = int(os.environ.get("CANONICAL_MAX_AGE_DAYS", "7"))
+_DRIFT_FAIL_THRESHOLD = int(os.environ.get("CANONICAL_DRIFT_FAIL_THRESHOLD", "3"))
+
+# In-memory tracker for consecutive failed verifications per avatar
+_drift_fail_counts: dict[str, int] = {}
 
 
-def refresh_canonical_references(db: Any = None) -> dict[str, Any]:
+def record_verification_failure(avatar_id: str) -> int:
+    """Record a verification failure for drift-triggered refresh.
+
+    Returns the updated consecutive failure count for this avatar.
+    Call this from verify_render_output() when similarity < threshold.
+    """
+    _drift_fail_counts[avatar_id] = _drift_fail_counts.get(avatar_id, 0) + 1
+    return _drift_fail_counts[avatar_id]
+
+
+def record_verification_success(avatar_id: str) -> None:
+    """Reset consecutive failure count after a successful verification."""
+    _drift_fail_counts.pop(avatar_id, None)
+
+
+def should_drift_trigger_refresh(avatar_id: str) -> bool:
+    """Return True if the avatar has enough consecutive failures for immediate refresh."""
+    return _drift_fail_counts.get(avatar_id, 0) >= _DRIFT_FAIL_THRESHOLD
+
+
+def refresh_canonical_references(
+    db: Any = None,
+    staleness_policy: bool = True,
+) -> dict[str, Any]:
     """Refresh canonical reference frames for all avatars with recent renders.
+
+    Phase 2.2: When ``staleness_policy=True`` (default), only refresh when:
+    1. The existing canonical frame is older than ``CANONICAL_MAX_AGE_DAYS``, OR
+    2. A drift-triggered refresh has been flagged (≥3 consecutive failures).
 
     Can be called directly (synchronous) or via Celery beat schedule.
     Returns a summary dict with ``avatars_refreshed`` count.
-
-    For each avatar the scheduler:
-    1. Checks the render repository for recently completed render outputs.
-    2. Uses ``MediaEmbeddingExtractor`` to sample ``_TOP_N_FRAMES`` distinct
-       frame embeddings from each render URL.
-    3. Passes those embeddings to ``CanonicalReferenceRefresher`` which selects
-       the highest-quality frame and upserts it as the new canonical reference.
-
-    When no completed renders exist for an avatar (e.g. new avatar with no
-    renders yet), the existing canonical frame is left unchanged.  Unlike the
-    previous implementation, the scheduler never writes synthetic duplicates of
-    the same embedding.
     """
     from app.services.avatar.avatar_identity_service import CanonicalReferenceRefresher
     from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
@@ -52,6 +77,7 @@ def refresh_canonical_references(db: Any = None) -> dict[str, Any]:
 
     refreshed = 0
     skipped = 0
+    drift_triggered = 0
     try:
         from app.models.autovis import AvatarVisualDna
         avatar_ids = list({row.avatar_id for row in db.query(AvatarVisualDna).all()})
@@ -60,17 +86,32 @@ def refresh_canonical_references(db: Any = None) -> dict[str, Any]:
 
         for avatar_id in avatar_ids:
             try:
+                drift_needed = should_drift_trigger_refresh(avatar_id)
+                if staleness_policy and not drift_needed:
+                    # Check if canonical frame is stale
+                    if not _is_canonical_stale(db, avatar_id):
+                        skipped += 1
+                        logger.debug(
+                            "canonical_reference_scheduler: canonical not stale for avatar=%s, skipping",
+                            avatar_id,
+                        )
+                        continue
+
                 render_frames = _collect_render_frames(db, avatar_id, extractor)
                 if not render_frames:
-                    # No completed renders available — skip this avatar
                     skipped += 1
                     logger.debug(
                         "canonical_reference_scheduler: no render frames for avatar=%s, skipping",
                         avatar_id,
                     )
                     continue
+
                 refresher.refresh_after_success(db, avatar_id, render_frames)
                 refreshed += 1
+                if drift_needed:
+                    drift_triggered += 1
+                    # Reset failure counter after refresh
+                    record_verification_success(avatar_id)
             except Exception as exc:
                 logger.debug("canonical refresh failed for avatar=%s: %s", avatar_id, exc)
     except Exception as exc:
@@ -83,11 +124,62 @@ def refresh_canonical_references(db: Any = None) -> dict[str, Any]:
                 pass
 
     logger.info(
-        "canonical_reference_scheduler: refreshed=%d skipped=%d",
+        "canonical_reference_scheduler: refreshed=%d skipped=%d drift_triggered=%d",
         refreshed,
         skipped,
+        drift_triggered,
     )
-    return {"avatars_refreshed": refreshed, "avatars_skipped": skipped}
+    return {
+        "avatars_refreshed": refreshed,
+        "avatars_skipped": skipped,
+        "drift_triggered_refreshes": drift_triggered,
+    }
+
+
+def force_refresh_avatar_canonical(db: Any, avatar_id: str) -> dict[str, Any]:
+    """Force immediate canonical refresh for a single avatar (on-demand API).
+
+    Phase 2.2: Used by POST /api/v1/avatar/{id}/canonical/refresh.
+    """
+    from app.services.avatar.avatar_identity_service import CanonicalReferenceRefresher
+    from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
+
+    extractor = MediaEmbeddingExtractor()
+    render_frames = _collect_render_frames(db, avatar_id, extractor)
+    if not render_frames:
+        return {
+            "ok": False,
+            "avatar_id": avatar_id,
+            "message": "No render frames available for refresh.",
+        }
+    refresher = CanonicalReferenceRefresher()
+    refresher.refresh_after_success(db, avatar_id, render_frames)
+    record_verification_success(avatar_id)
+    return {"ok": True, "avatar_id": avatar_id, "frames_used": len(render_frames)}
+
+
+def _is_canonical_stale(db: Any, avatar_id: str) -> bool:
+    """Return True if the canonical frame is older than _CANONICAL_MAX_AGE_DAYS."""
+    try:
+        from app.models.autovis import AvatarReferenceFrame
+
+        frame = (
+            db.query(AvatarReferenceFrame)
+            .filter(AvatarReferenceFrame.avatar_id == avatar_id)
+            .order_by(AvatarReferenceFrame.created_at.desc())
+            .first()
+        )
+        if frame is None:
+            return True  # No canonical frame exists → stale
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            days=_CANONICAL_MAX_AGE_DAYS
+        )
+        created = frame.created_at
+        if created is None:
+            return True
+        return created < cutoff
+    except Exception:
+        return True  # Fail open: treat as stale
 
 
 def _collect_render_frames(
@@ -95,13 +187,7 @@ def _collect_render_frames(
     avatar_id: str,
     extractor: "MediaEmbeddingExtractor",
 ) -> list[list[float]]:
-    """Return up to ``_TOP_N_FRAMES`` per-frame embeddings from real render outputs.
-
-    Queries the render repository for recently completed renders associated
-    with this avatar, samples one frame per render from its output URL, and
-    returns the collected embeddings.  Returns an empty list when no completed
-    renders are available.
-    """
+    """Return up to ``_TOP_N_FRAMES`` per-frame embeddings from real render outputs."""
     render_urls: list[str] = _find_recent_render_urls(db, avatar_id)
     if not render_urls:
         return []
@@ -109,7 +195,6 @@ def _collect_render_frames(
     frames: list[list[float]] = []
     for url in render_urls[:_TOP_N_FRAMES]:
         try:
-            # Sample a single representative embedding per render output
             emb = extractor.extract(url, n_frames=1)
             frames.append(emb)
         except Exception as exc:
@@ -121,15 +206,9 @@ def _collect_render_frames(
 
 
 def _find_recent_render_urls(db: Any, avatar_id: str) -> list[str]:
-    """Return output URLs of recently completed renders for an avatar.
-
-    Looks up ``RenderJob`` rows (or equivalent model) where the render is
-    completed and the payload references the given ``avatar_id``.  Falls back
-    gracefully when the render model is unavailable.
-    """
+    """Return output URLs of recently completed renders for an avatar."""
     try:
         from app.models.render_job import RenderJob  # type: ignore[import]
-        from datetime import datetime, timedelta, timezone
 
         cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         rows = (
@@ -139,7 +218,7 @@ def _find_recent_render_urls(db: Any, avatar_id: str) -> list[str]:
                 RenderJob.updated_at >= cutoff,
             )
             .order_by(RenderJob.updated_at.desc())
-            .limit(_TOP_N_FRAMES * 3)  # fetch extra; filter by avatar_id below
+            .limit(_TOP_N_FRAMES * 3)
             .all()
         )
         urls: list[str] = []
@@ -183,3 +262,4 @@ def _register_celery_task() -> None:
 
 
 _register_celery_task()
+

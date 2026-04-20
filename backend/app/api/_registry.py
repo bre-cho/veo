@@ -83,6 +83,7 @@ from app.api.experiment_variants import outcome_router as experiment_outcome_rou
 from app.api.product_learning import router as product_learning_router
 from app.api.avatar_embedding import router as avatar_embedding_router
 from app.api.render_quality import router as render_quality_router
+from app.api.render_quality import router_plural as render_quality_plural_router
 from app.api.storyboard_extended import router as storyboard_extended_router
 from app.api.publish_compliance import router as publish_compliance_router
 
@@ -171,6 +172,7 @@ _PHASE_10_12_ROUTERS = [
     product_learning_router,
     avatar_embedding_router,
     render_quality_router,
+    render_quality_plural_router,
     storyboard_extended_router,
     publish_compliance_router,
 ]

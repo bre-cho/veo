@@ -348,6 +348,10 @@ def record_performance(req: RecordPerformanceRequest):
         conversion_score=req.conversion_score,
         view_count=req.view_count,
         click_through_rate=req.click_through_rate,
+        persona_id=req.persona_id,
+        product_category=req.product_category,
+        funnel_stage=req.funnel_stage,
+        campaign_id=req.campaign_id,
     )
     return {"ok": True, "video_id": record["video_id"]}
 
@@ -359,16 +363,58 @@ def learning_summary():
 
 @router.get("/learning/health", response_model=dict)
 def learning_health():
-    """Return data quality and drift diagnostics for the learning engine.
-
-    Useful for ops dashboards, CI health gates, and adaptive model governance.
-    """
+    """Return data quality, drift diagnostics, and persona score matrix for the learning engine."""
     quality = _learning_engine.data_quality_report()
     drift = _learning_engine.score_drift_summary()
+    persona_matrix = _learning_engine.persona_score_matrix()
     return {
         "data_quality": quality,
         "score_drift": drift,
+        "persona_score_matrix": persona_matrix,
     }
+
+
+@router.get("/campaigns/{campaign_id}/attribution", response_model=dict)
+def campaign_attribution(campaign_id: str, window_days: int = 7, n_touch: int = 3):
+    """Return multi-touch attribution for a campaign's most recent conversion."""
+    from app.services.commerce.campaign_attribution_service import CampaignAttributionService
+    svc = CampaignAttributionService(learning_store=_learning_engine)
+    conversion_event: dict = {"timestamp": None, "value": 1.0}
+    result = svc.attribute_conversion(
+        conversion_event=conversion_event,
+        campaign_id=campaign_id,
+        window_days=window_days,
+        n_touch=n_touch,
+    )
+    funnel = svc.campaign_funnel_report(campaign_id)
+    return {"attribution": result, "funnel": funnel}
+
+
+@router.get("/campaigns/{campaign_id}/bid-hint", response_model=dict)
+def campaign_bid_hint(campaign_id: str):
+    """Return a bid optimisation hint for a campaign based on performance data."""
+    from app.services.commerce.campaign_attribution_service import CampaignAttributionService
+    svc = CampaignAttributionService(learning_store=_learning_engine)
+    funnel = svc.campaign_funnel_report(campaign_id)
+    # Compute a simple bid hint: if conversion_rate is high, suggest increasing bid
+    conversion_rate = funnel.get("conversion_rate", 0.0)
+    ctr = funnel.get("ctr", 0.0)
+    if conversion_rate >= 0.1:
+        hint = "increase_bid"
+        rationale = f"Conversion rate {conversion_rate:.2%} is above 10% threshold."
+    elif ctr < 0.01:
+        hint = "improve_creative"
+        rationale = f"CTR {ctr:.2%} is below 1%; improve hook/creative before raising bid."
+    else:
+        hint = "maintain_bid"
+        rationale = "Performance is within normal range."
+    return {
+        "campaign_id": campaign_id,
+        "bid_hint": hint,
+        "rationale": rationale,
+        "funnel_summary": funnel,
+    }
+
 
 
 @router.get("/intelligence/status", response_model=dict)

@@ -1,4 +1,8 @@
-"""ComplianceRiskPolicy — platform-specific content compliance evaluation."""
+"""ComplianceRiskPolicy — platform-specific content compliance evaluation.
+
+Phase 3.2: Added sponsored_content_disclosure, caption_length_limit,
+hashtag_limit, and music_license_check rules.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -17,6 +21,11 @@ PLATFORM_RULES: dict[str, dict[str, Any]] = {
         ],
         "prohibited_categories": ["adult", "violence", "hate_speech", "gambling"],
         "risk_multipliers": {"adult": 1.5, "violence": 1.3},
+        # Phase 3.2: extra rules
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 2200,
+        "hashtag_limit": 30,
+        "music_license_check": True,
     },
     "youtube": {
         "max_duration_seconds": None,  # no hard limit
@@ -26,6 +35,11 @@ PLATFORM_RULES: dict[str, dict[str, Any]] = {
         ],
         "prohibited_categories": ["adult", "hate_speech", "spam"],
         "risk_multipliers": {"adult": 1.5},
+        # Phase 3.2
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 5000,
+        "hashtag_limit": None,  # YouTube: no official hashtag limit (best practice ≤15)
+        "music_license_check": True,
     },
     "reels": {
         "max_duration_seconds": 90,
@@ -35,24 +49,44 @@ PLATFORM_RULES: dict[str, dict[str, Any]] = {
         ],
         "prohibited_categories": ["adult", "violence", "hate_speech"],
         "risk_multipliers": {"adult": 1.5, "violence": 1.2},
+        # Phase 3.2
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 2200,
+        "hashtag_limit": 30,
+        "music_license_check": True,
     },
     "instagram": {
         "max_duration_seconds": 60,
         "restricted_keywords": ["adult only", "violence", "hate speech"],
         "prohibited_categories": ["adult", "violence", "hate_speech"],
         "risk_multipliers": {"adult": 1.5},
+        # Phase 3.2
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 2200,
+        "hashtag_limit": 30,
+        "music_license_check": True,
     },
     "meta": {
         "max_duration_seconds": None,
         "restricted_keywords": ["hate speech", "violence", "adult content"],
         "prohibited_categories": ["adult", "violence", "hate_speech"],
         "risk_multipliers": {"adult": 1.5, "violence": 1.2},
+        # Phase 3.2
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 2200,
+        "hashtag_limit": 30,
+        "music_license_check": True,
     },
     "facebook": {
         "max_duration_seconds": None,
         "restricted_keywords": ["hate speech", "violence", "adult only"],
         "prohibited_categories": ["adult", "violence", "hate_speech"],
         "risk_multipliers": {},
+        # Phase 3.2
+        "sponsored_content_disclosure_required": True,
+        "caption_length_limit": 2200,
+        "hashtag_limit": 30,
+        "music_license_check": True,
     },
 }
 
@@ -61,12 +95,17 @@ _DEFAULT_RULES: dict[str, Any] = {
     "restricted_keywords": [],
     "prohibited_categories": ["adult", "violence", "hate_speech"],
     "risk_multipliers": {},
+    "sponsored_content_disclosure_required": False,
+    "caption_length_limit": None,
+    "hashtag_limit": None,
+    "music_license_check": False,
 }
 
 # Base risk score increments
 _RESTRICTED_KEYWORD_INCREMENT = 0.20
 _PROHIBITED_CATEGORY_INCREMENT = 0.40
 _DURATION_EXCEEDED_INCREMENT = 0.30
+_COMPLIANCE_VIOLATION_INCREMENT = 0.25
 
 
 @dataclass
@@ -78,13 +117,16 @@ class ComplianceResult:
     risk_flags: list[str] = field(default_factory=list)
     platform: str = ""
     tier: str = "standard"
+    # Phase 3.2: severity-tagged preflight errors
+    preflight_errors: list[dict[str, str]] = field(default_factory=list)
 
 
 class ComplianceRiskPolicy:
     """Evaluate content against platform-specific compliance rules.
 
-    ``evaluate()`` checks keywords, categories, and duration constraints,
-    computing a cumulative risk score.  The result is:
+    ``evaluate()`` checks keywords, categories, duration constraints,
+    sponsored disclosure, caption length, hashtag limits, and music license.
+    The result is:
     - ``passed``:  risk_score < 0.40
     - ``review``:  0.40 <= risk_score < 0.70
     - ``failed``:  risk_score >= 0.70 or prohibited category present
@@ -99,6 +141,7 @@ class ComplianceRiskPolicy:
         """Evaluate content against platform compliance rules."""
         rules = PLATFORM_RULES.get(platform.lower(), _DEFAULT_RULES)
         risk_flags: list[str] = []
+        preflight_errors: list[dict[str, str]] = []
         risk_score: float = 0.0
         failed = False
 
@@ -138,6 +181,54 @@ class ComplianceRiskPolicy:
             risk_score += 0.50
             failed = True
 
+        # --- Phase 3.2: Sponsored content disclosure ---
+        if (
+            rules.get("sponsored_content_disclosure_required")
+            and content.get("is_paid_partnership", False)
+        ):
+            caption_text = str(content.get("caption", ""))
+            has_disclosure = any(
+                kw in caption_text.lower()
+                for kw in ("#ad", "#sponsored", "#paidpartnership", "paid partnership")
+            )
+            if not has_disclosure:
+                flag = "missing_sponsored_content_disclosure"
+                risk_flags.append(flag)
+                preflight_errors.append({"code": flag, "severity": "error"})
+                risk_score += _COMPLIANCE_VIOLATION_INCREMENT
+
+        # --- Phase 3.2: Caption length limit ---
+        caption_limit = rules.get("caption_length_limit")
+        if caption_limit is not None:
+            caption = str(content.get("caption", ""))
+            if len(caption) > caption_limit:
+                flag = f"caption_too_long:{len(caption)}>{caption_limit}"
+                risk_flags.append(flag)
+                preflight_errors.append({"code": "caption_length_exceeded", "severity": "warning"})
+                risk_score += _COMPLIANCE_VIOLATION_INCREMENT * 0.5
+
+        # --- Phase 3.2: Hashtag limit ---
+        hashtag_limit = rules.get("hashtag_limit")
+        if hashtag_limit is not None:
+            caption_for_tags = str(content.get("caption", "")) + " " + " ".join(
+                str(t) for t in content.get("tags", [])
+            )
+            hashtags = [w for w in caption_for_tags.split() if w.startswith("#")]
+            if len(hashtags) > hashtag_limit:
+                flag = f"hashtag_limit_exceeded:{len(hashtags)}>{hashtag_limit}"
+                risk_flags.append(flag)
+                preflight_errors.append({"code": "hashtag_limit_exceeded", "severity": "warning"})
+                risk_score += _COMPLIANCE_VIOLATION_INCREMENT * 0.4
+
+        # --- Phase 3.2: Music license check ---
+        if rules.get("music_license_check") and content.get("has_background_music", False):
+            if not content.get("music_licensed", False):
+                flag = "unlicensed_music"
+                risk_flags.append(flag)
+                preflight_errors.append({"code": flag, "severity": "error"})
+                risk_score += _COMPLIANCE_VIOLATION_INCREMENT
+                failed = True
+
         risk_score = round(min(risk_score, 1.0), 3)
 
         if failed or risk_score >= 0.70:
@@ -153,4 +244,6 @@ class ComplianceRiskPolicy:
             risk_flags=risk_flags,
             platform=platform,
             tier=tier,
+            preflight_errors=preflight_errors,
         )
+

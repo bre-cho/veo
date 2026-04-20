@@ -153,6 +153,9 @@ class StoryboardEngine:
         platform: str | None = None,
         learning_store: "PerformanceLearningEngine | None" = None,
         episode_memory: dict[str, Any] | None = None,
+        use_winning_graph: bool = False,
+        include_asset_plan: bool = False,
+        avatar_id: str | None = None,
     ) -> StoryboardResponse:
         grammar = _get_platform_grammar(platform)
         paragraphs = self._to_paragraphs(script_text)
@@ -173,6 +176,25 @@ class StoryboardEngine:
                 scene_pacing_boosts = {}
                 hook_pacing_boost = 0.0
 
+        # Phase 4.3: Use winning_scene_sequence from episode memory as baseline
+        winning_sequence: list[dict] | None = None
+        if episode_memory:
+            winning_sequence = episode_memory.get("winning_scene_sequence")
+
+        # Phase 4.4: Load winning scene graph when requested
+        winning_graph_used = False
+        winning_graph_sequence: list[dict] | None = None
+        if use_winning_graph:
+            try:
+                from app.services.storyboard.winning_scene_graph_store import WinningSceneGraphStore
+                store = WinningSceneGraphStore()
+                top_graphs = store.get_top_graphs(platform=platform, limit=1)
+                if top_graphs:
+                    winning_graph_sequence = top_graphs[0].get("scene_sequence")
+                    winning_graph_used = bool(winning_graph_sequence)
+            except Exception:
+                pass
+
         # Inject open-loop resolution beat from episode memory when available
         resolution_hint: str | None = None
         if episode_memory:
@@ -182,12 +204,27 @@ class StoryboardEngine:
 
         for idx, text in enumerate(paragraphs, start=1):
             goal = self._scene_goal(idx, len(paragraphs), text)
+
+            # Phase 4.4: When winning graph sequence available, align scene goal
+            if winning_graph_sequence and idx <= len(winning_graph_sequence):
+                override_goal = winning_graph_sequence[idx - 1].get("scene_goal")
+                if override_goal:
+                    goal = override_goal
+
+            # Phase 4.3: When winning sequence from episode memory, use pacing hint
+            winning_pacing: float | None = None
+            if winning_sequence and idx <= len(winning_sequence):
+                winning_pacing = winning_sequence[idx - 1].get("pacing_weight")
+
             cta_flag = self._cta_flag(goal, text, conversion_mode, grammar)
             pacing = self._pacing_weight(goal, idx, len(paragraphs), conversion_mode, grammar)
             # Apply outcome-informed pacing boost for this scene goal when available
             goal_boost = scene_pacing_boosts.get(goal, 0.0)
             if goal_boost:
                 pacing = round(min(pacing + goal_boost, self.MAX_PACING_WEIGHT), 2)
+            # Phase 4.3: override with winning episode pacing
+            if winning_pacing is not None:
+                pacing = round(float(winning_pacing), 2)
 
             # Inject resolution hint as metadata on the last body scene
             scene_meta: dict[str, Any] = {
@@ -223,26 +260,47 @@ class StoryboardEngine:
         beat_map = _build_beat_map(scenes, platform)
         dependency_graph = _build_scene_dependency_graph(scenes)
 
-        return StoryboardResponse(
-            storyboard_id=str(uuid.uuid4()),
-            scenes=scenes,
-            summary={
-                "scene_count": len(scenes),
-                "has_cta": any(scene.cta_flag for scene in scenes),
-                "content_goal": content_goal,
-                "platform": platform,
-                "platform_grammar": {
-                    "hook_max_sec": grammar["max_hook_sec"],
-                    "ideal_scene_duration": grammar["ideal_scene_duration"],
-                    "cta_position": grammar["cta_position"],
-                },
-                "beat_map": beat_map,
-                "dependency_graph": dependency_graph,
-                "hook_retention_score": self._compute_hook_retention_score(scenes, grammar),
-                "hook_pacing_boost": hook_pacing_boost,
-                "scene_pacing_boosts": scene_pacing_boosts,
+        summary: dict[str, Any] = {
+            "scene_count": len(scenes),
+            "has_cta": any(scene.cta_flag for scene in scenes),
+            "content_goal": content_goal,
+            "platform": platform,
+            "platform_grammar": {
+                "hook_max_sec": grammar["max_hook_sec"],
+                "ideal_scene_duration": grammar["ideal_scene_duration"],
+                "cta_position": grammar["cta_position"],
             },
+            "beat_map": beat_map,
+            "dependency_graph": dependency_graph,
+            "hook_retention_score": self._compute_hook_retention_score(scenes, grammar),
+            "hook_pacing_boost": hook_pacing_boost,
+            "scene_pacing_boosts": scene_pacing_boosts,
+            "winning_graph_used": winning_graph_used,
+        }
+
+        storyboard_id = str(uuid.uuid4())
+
+        # Phase 4.2: asset plan when requested
+        asset_plan: dict[str, Any] | None = None
+        if include_asset_plan and avatar_id:
+            try:
+                from app.services.storyboard.scene_asset_planner import SceneAssetPlanner
+                planner = SceneAssetPlanner()
+                response_for_planner = StoryboardResponse(
+                    storyboard_id=storyboard_id, scenes=scenes, summary=summary
+                )
+                asset_plan = planner.plan_assets(response_for_planner, avatar_id)
+            except Exception:
+                asset_plan = None
+
+        response = StoryboardResponse(
+            storyboard_id=storyboard_id,
+            scenes=scenes,
+            summary=summary,
         )
+        if asset_plan is not None:
+            response.summary["asset_plan"] = asset_plan
+        return response
 
     def generate_from_preview(
         self,
@@ -857,6 +915,14 @@ _SCENE_GOAL_MAX_BOOSTS: dict[str, float] = {
     "intro": 0.06,
 }
 
+# Boost applied to a goal when its winning pacing bucket is identified via
+# outcome analysis (Phase 4.1). This small boost nudges towards the empirically
+# optimal pacing range without overriding the grammar-derived baseline.
+_PACING_BUCKET_BOOST = 0.08
+
+# Minimum conversion mean required for a pacing bucket to be considered "winning".
+_PACING_WINNING_MEAN_THRESHOLD = 0.5
+
 
 def _derive_all_scene_pacing_boosts(
     learning_store: "PerformanceLearningEngine",
@@ -865,19 +931,58 @@ def _derive_all_scene_pacing_boosts(
 ) -> dict[str, float]:
     """Return outcome-informed pacing boosts for all scene goal types.
 
-    Extends ``_derive_hook_pacing_boost`` to cover every scene goal recognised
-    by the engine.  For each goal the function:
+    Phase 4.1: Now computes per-goal optimal pacing bucket by correlating
+    pacing_weight with conversion_score from learning store records.
 
-    1. Checks whether the learning store has strong top-performers for the
-       corresponding pattern dimension (hook → ``top_hook_patterns``, cta →
-       ``top_cta_patterns``, others → ``top_template_families``).
-    2. Queries the ``ScenePatternLibrary`` for winning scene patterns on the
-       given platform and scene goal.
-    3. Computes an EWMA-weighted boost capped at ``_SCENE_GOAL_MAX_BOOSTS[goal]``.
+    For each goal, groups records by platform + scene_goal and computes mean
+    conversion_score per pacing bucket: [0.6,1.0), [1.0,1.4), [1.4,1.8].
+    The bucket with the highest mean becomes the optimal pacing target.
 
     Returns a ``{scene_goal: boost_delta}`` dict.  Missing goals default to 0.0.
+    Requires ≥5 records per platform for outcome-driven analysis.
     """
     boosts: dict[str, float] = {}
+    _MIN_RECORDS_FOR_OUTCOME = 5
+
+    # ── Phase 4.1: Outcome-driven per-goal pacing analysis ─────────────────
+    try:
+        all_records = learning_store.all_records()
+        platform_records = [
+            r for r in all_records
+            if (not platform) or r.get("platform") == platform
+        ]
+        if len(platform_records) >= _MIN_RECORDS_FOR_OUTCOME:
+            # Pacing buckets: [0.6,1.0), [1.0,1.4), [1.4,1.8]
+            buckets = [(0.6, 1.0), (1.0, 1.4), (1.4, 1.8)]
+            # For each record that has pacing_weight + conversion_score
+            goal_bucket_scores: dict[str, dict[str, list[float]]] = {}
+            for r in platform_records:
+                pacing_weight = float(r.get("pacing_weight") or 1.0)
+                score = float(r.get("conversion_score", 0.0))
+                # Infer scene_goal from template_family or default to "body"
+                goal = str(r.get("scene_goal") or r.get("template_family") or "body")
+                for lo, hi in buckets:
+                    if lo <= pacing_weight < hi:
+                        bucket_key = f"{lo:.1f}-{hi:.1f}"
+                        if goal not in goal_bucket_scores:
+                            goal_bucket_scores[goal] = {}
+                        goal_bucket_scores[goal].setdefault(bucket_key, []).append(score)
+                        break
+
+            for goal, bucket_map in goal_bucket_scores.items():
+                best_bucket: str | None = None
+                best_mean = -1.0
+                for bk, scores in bucket_map.items():
+                    if len(scores) >= 2:  # require at least 2 samples
+                        mean = sum(scores) / len(scores)
+                        if mean > best_mean:
+                            best_mean = mean
+                            best_bucket = bk
+                if best_bucket is not None and best_mean > _PACING_WINNING_MEAN_THRESHOLD:
+                    # Boost this goal's pacing slightly toward optimal bucket
+                    boosts[goal] = boosts.get(goal, 0.0) + _PACING_BUCKET_BOOST
+    except Exception:
+        pass
 
     # ── Learning-store signal ───────────────────────────────────────────────
     try:
