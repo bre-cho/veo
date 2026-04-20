@@ -29,8 +29,7 @@ class AvatarDnaRead(BaseModel):
     tags: Optional[Any] = None
     meta: Optional[Any] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AvatarVisualDnaUpsert(BaseModel):

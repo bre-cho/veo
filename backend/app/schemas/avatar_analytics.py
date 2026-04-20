@@ -17,8 +17,7 @@ class PerformanceSnapshotRead(BaseModel):
     earnings_usd: Decimal
     conversion_rate: Optional[Decimal] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AvatarAnalyticsDashboard(BaseModel):

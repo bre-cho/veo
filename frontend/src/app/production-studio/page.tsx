@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { classifyContentGoal, recommendAvatar, recommendCTA, recommendTemplate } from "@/src/lib/api";
 
-const DEFAULT_BRIEF = "brand awareness video";
-
 export default function ProductionStudioPage() {
   const [avatarId, setAvatarId] = useState("");
   const [marketCode, setMarketCode] = useState("");
@@ -20,7 +18,7 @@ export default function ProductionStudioPage() {
     setError(null);
     setResults(null);
     try {
-      const classifyRes = await classifyContentGoal({ brief: productBrief || contentGoal || DEFAULT_BRIEF });
+      const classifyRes = await classifyContentGoal({ brief: productBrief || contentGoal || "brand awareness video" });
       const goal = contentGoal || classifyRes.content_goal;
 
       const [avatarRes, ctaRes] = await Promise.all([

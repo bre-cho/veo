@@ -40,9 +40,6 @@ _CTA_MAP: dict[str, dict[str, str]] = {
 _DEFAULT_CTA = "Get started today"
 
 
-_DEFAULT_BRIEF = "brand awareness video"
-
-
 class CTARecommendationService:
     def recommend(self, content_goal: str, conversion_mode: str | None = None) -> str:
         goal_map = _CTA_MAP.get(content_goal, {})

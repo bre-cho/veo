@@ -29,8 +29,7 @@ class MarketplaceItemRead(BaseModel):
     rating_count: int
     tags: Optional[Any] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AvatarListingRead(BaseModel):
@@ -43,8 +42,7 @@ class AvatarListingRead(BaseModel):
     is_featured: bool
     marketplace_item: Optional[MarketplaceItemRead] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class MarketplaceListResponse(BaseModel):

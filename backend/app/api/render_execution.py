@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,10 @@ from app.services.render_repository import (
     create_render_job_with_scenes,
     get_render_job_by_id,
 )
+from app.services.marketplace.avatar_usage_service import AvatarUsageService
+
+_log = logging.getLogger(__name__)
+_avatar_usage_service = AvatarUsageService()
 
 router = APIRouter(prefix="/api/v1/render", tags=["render-execution"])
 
@@ -108,6 +113,12 @@ class RenderJobCreateRequest(BaseModel):
     style_preset: str | None = None
     subtitle_mode: str = Field(default="soft")
     planned_scenes: list[PlannedSceneCreateRequest] = Field(..., min_length=1)
+
+    # --- Autovis commerce context (optional, backward-compatible) ---
+    avatar_id: str | None = None
+    market_code: str | None = None
+    content_goal: str | None = None
+    conversion_mode: str | None = None
 
     @field_validator("provider")
     @classmethod
@@ -249,7 +260,7 @@ async def create_render_job(
             detail="Render job created but could not be reloaded",
         )
 
-    return RenderJobCreateResponse(
+    response = RenderJobCreateResponse(
         id=refreshed.id,
         project_id=refreshed.project_id,
         provider=refreshed.provider,
@@ -262,3 +273,23 @@ async def create_render_job(
         failed_scene_count=refreshed.failed_scene_count,
         dispatch_task=dispatch_task,
     )
+
+    # --- Autovis production bridge: track avatar usage after job is dispatched ---
+    if payload.avatar_id:
+        try:
+            _avatar_usage_service.track_use(
+                db,
+                avatar_id=payload.avatar_id,
+                user_id=None,
+                render_job_id=refreshed.id,
+                meta={
+                    "market_code": payload.market_code,
+                    "content_goal": payload.content_goal,
+                    "conversion_mode": payload.conversion_mode,
+                    "provider": refreshed.provider,
+                },
+            )
+        except Exception as exc:
+            _log.warning("Autovis usage tracking failed (non-blocking): %s", exc)
+
+    return response

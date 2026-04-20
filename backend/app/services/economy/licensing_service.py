@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-_LICENSED_AVATARS: set[str] = set()  # In production, query license table
+import logging
+
+_log = logging.getLogger(__name__)
+
+_LICENSED_AVATARS: set[str] = set()  # In production, query a licenses table
 
 
 class LicensingService:
     def check_license(self, avatar_id: str, user_id: str) -> dict:
-        # Placeholder: in production, query a licenses table
+        # Placeholder: in production, query a licenses table.
+        # This in-memory set does not persist across restarts or instances.
         is_licensed = avatar_id in _LICENSED_AVATARS
         return {
             "avatar_id": avatar_id,

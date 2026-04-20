@@ -30,5 +30,4 @@ class LocalizationProfileRead(BaseModel):
     preferred_niches: Optional[Any] = None
     preferred_roles: Optional[Any] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
