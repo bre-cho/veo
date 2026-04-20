@@ -18,6 +18,7 @@ from app.main import app
 from app.models.channel_plan import ChannelPlan  # noqa: F401
 from app.models.creative_engine_run import CreativeEngineRun  # noqa: F401
 from app.models.optimization_run import OptimizationRun  # noqa: F401
+from app.models.performance_record import PerformanceRecord  # noqa: F401
 from app.models.publish_job import PublishJob  # noqa: F401
 
 
