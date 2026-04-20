@@ -214,13 +214,7 @@ class ConversionScoreService:
             return 0
         text_lower = text.lower()
         matched = sum(1 for pat in _CTA_SIGNALS if re.search(pat, text_lower))
-        if matched >= 3:
-            return 3
-        if matched >= 2:
-            return 2
-        if matched >= 1:
-            return 1
-        return 0
+        return min(matched, 3)
 
     def _score_cta_in_scenes(self, scenes: list[dict[str, Any]]) -> int:
         for s in scenes:

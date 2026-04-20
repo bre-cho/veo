@@ -13,6 +13,7 @@ class ExecutionBridgeService:
     RENDER_SCENE_CONVERSION_MIN_DURATION_SEC = 3
     RENDER_SCENE_CONVERSION_MAX_DURATION_SEC = 60
     RENDER_SCENE_CONVERSION_BONUS_SEC = 1
+    CONVERSION_GOAL_PROMPT = "Goal: conversion content with offer clarity."
 
     def __init__(self) -> None:
         self._avatar_repo = AvatarRepo()
@@ -220,7 +221,7 @@ class ExecutionBridgeService:
         content_goal = (ctx.get("content_goal") or "").strip()
         if content_goal:
             if content_goal.lower() == "conversion":
-                parts.append("Goal: conversion content with offer clarity.")
+                parts.append(self.CONVERSION_GOAL_PROMPT)
             else:
                 parts.append(f"Goal: {content_goal}.")
 

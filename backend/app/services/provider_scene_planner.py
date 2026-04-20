@@ -38,12 +38,11 @@ def plan_provider_scenes(
     planned: list[dict[str, Any]] = []
 
     for scene in scenes:
-        bridged_scene = _execution_bridge.apply_to_project_scene(scene, execution_context or {})
-        text = (bridged_scene.get("script_text") or "").strip()
-        title = (bridged_scene.get("title") or "Scene").strip()
-
+        text = (scene.get("script_text") or "").strip()
         if not text:
             continue
+        bridged_scene = _execution_bridge.apply_to_project_scene(scene, execution_context or {})
+        title = (bridged_scene.get("title") or "Scene").strip()
 
         estimated = estimate_duration_from_text(text)
 

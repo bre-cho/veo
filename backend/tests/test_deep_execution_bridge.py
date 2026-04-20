@@ -8,9 +8,12 @@ from fastapi.testclient import TestClient
 from app.api import render_execution as render_execution_api
 from app.db.session import get_db
 from app.main import app
+from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.project_render_runtime import trigger_project_render
 from app.services.script_ingestion import build_preview_payload
 from app.services.script_regeneration import recalculate_all_payload
+
+_CONVERSION_PROMPT = ExecutionBridgeService.CONVERSION_GOAL_PROMPT
 
 
 def test_preview_payload_applies_execution_context() -> None:
@@ -32,7 +35,7 @@ def test_preview_payload_applies_execution_context() -> None:
     assert payload["conversion_mode"] == "aggressive"
     assert payload["scenes"][0]["metadata"]["execution_context"]["avatar_id"] == "avatar-123"
     assert payload["scenes"][0]["metadata"]["cta_bias"] == "aggressive"
-    assert "Goal: conversion content" in payload["scenes"][0]["visual_prompt"]
+    assert _CONVERSION_PROMPT in payload["scenes"][0]["visual_prompt"]
 
 
 def test_project_render_runtime_bridges_scene_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,7 +82,7 @@ def test_project_render_runtime_bridges_scene_prompts(monkeypatch: pytest.Monkey
     planned = captured["planned_scenes"][0]
     assert captured["kwargs"]["provider"] == "veo_3_1"
     assert captured["kwargs"]["aspect_ratio"] == "9:16"
-    assert "Goal: conversion content" in planned["prompt_text"]
+    assert _CONVERSION_PROMPT in planned["prompt_text"]
     assert planned["metadata"]["cta_bias"] == "hard_sell"
     assert saved["project"]["render_job_id"] == "job-1"
 
@@ -157,7 +160,7 @@ def test_render_job_route_transforms_scene_payload_by_context(monkeypatch: pytes
 
     assert response.status_code == 201
     planned_scene = captured["planned_scenes"][0]
-    assert "Goal: conversion content" in planned_scene["resolved_prompt_text"]
+    assert _CONVERSION_PROMPT in planned_scene["resolved_prompt_text"]
     assert planned_scene["metadata"]["cta_bias"] == "hard_sell"
 
 

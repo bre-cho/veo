@@ -54,10 +54,12 @@ def trigger_project_render(db: Session, project_id: str) -> dict:
             project.get("provider","veo"),
             execution_context=bridge_ctx,
         )
-    except ValueError:
+    except ValueError as exc:
         _log.warning(
-            "Provider scene planning skipped due to unsupported provider: %s",
-            project.get("provider","veo"),
+            "Provider scene planning failed for project %s (provider=%s): %s",
+            project_id,
+            project.get("provider", "veo"),
+            exc,
         )
     job = create_render_job_with_scenes(db, project_id=project_id, provider=project.get("provider","veo"), aspect_ratio=project.get("format","9:16"), style_preset=project.get("style_preset"), subtitle_mode="burn", planned_scenes=planned_scenes)
     enqueue_render_dispatch(job.id)
