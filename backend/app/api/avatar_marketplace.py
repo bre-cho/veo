@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.repositories.avatar_repo import AvatarRepo
+from app.repositories.creator_economy_repo import CreatorEconomyRepo
 from app.repositories.marketplace_repo import MarketplaceRepo
 from app.services.marketplace.avatar_listing_service import AvatarListingService
 from app.services.marketplace.avatar_usage_service import AvatarUsageService
@@ -19,6 +20,7 @@ _listing_service = AvatarListingService()
 _usage_service = AvatarUsageService()
 _avatar_repo = AvatarRepo()
 _mp_repo = MarketplaceRepo()
+_eco_repo = CreatorEconomyRepo()
 
 
 @router.get("/avatars")
@@ -58,8 +60,6 @@ def recently_used_avatars(
     limit: int = 10,
     db: Session = Depends(get_db),
 ):
-    from app.repositories.creator_economy_repo import CreatorEconomyRepo
-    _eco_repo = CreatorEconomyRepo()
     events = _eco_repo.list_usage_events(db, user_id=user_id, limit=limit)
     seen = []
     result = []
