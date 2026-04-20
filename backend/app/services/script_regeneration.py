@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.script_ingestion import (
     build_subtitle_segments_from_scenes,
     estimate_duration,
@@ -10,6 +11,8 @@ from app.services.script_preview_validation import (
     rebuild_script_text_from_scenes,
     validate_edited_preview_payload,
 )
+
+_execution_bridge = ExecutionBridgeService()
 
 
 def recalculate_scene_durations(
@@ -40,13 +43,15 @@ def recalculate_durations_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     new_scenes = recalculate_scene_durations(scenes)
     validated["scenes"] = new_scenes
-    validated["script_text"] = rebuild_script_text_from_scenes(new_scenes)
+    validated = _execution_bridge.apply_to_preview_payload(validated)
+    validated["script_text"] = rebuild_script_text_from_scenes(validated["scenes"])
 
     return validated
 
 
 def rebuild_subtitles_payload(payload: dict[str, Any]) -> dict[str, Any]:
     validated = validate_edited_preview_payload(payload)
+    validated = _execution_bridge.apply_to_preview_payload(validated)
     scenes = validated["scenes"]
 
     new_subtitles = rebuild_subtitles_from_scenes(scenes)
@@ -59,10 +64,10 @@ def rebuild_subtitles_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def recalculate_all_payload(payload: dict[str, Any]) -> dict[str, Any]:
     validated = validate_edited_preview_payload(payload)
     new_scenes = recalculate_scene_durations(validated["scenes"])
-    new_subtitles = rebuild_subtitles_from_scenes(new_scenes)
-
     validated["scenes"] = new_scenes
+    validated = _execution_bridge.apply_to_preview_payload(validated)
+    new_subtitles = rebuild_subtitles_from_scenes(validated["scenes"])
     validated["subtitle_segments"] = new_subtitles
-    validated["script_text"] = rebuild_script_text_from_scenes(new_scenes)
+    validated["script_text"] = rebuild_script_text_from_scenes(validated["scenes"])
 
     return validated

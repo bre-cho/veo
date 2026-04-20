@@ -13,6 +13,10 @@ async def script_upload_preview(
     aspect_ratio: str = Form("9:16"),
     target_platform: str = Form("shorts"),
     style_preset: str | None = Form(default=None),
+    avatar_id: str | None = Form(default=None),
+    market_code: str | None = Form(default=None),
+    content_goal: str | None = Form(default=None),
+    conversion_mode: str | None = Form(default=None),
 ):
     try:
         content = await file.read()
@@ -24,6 +28,10 @@ async def script_upload_preview(
             aspect_ratio=aspect_ratio,
             target_platform=target_platform,
             style_preset=style_preset,
+            avatar_id=avatar_id,
+            market_code=market_code,
+            content_goal=content_goal,
+            conversion_mode=conversion_mode,
         )
         return {
             "ok": True,
