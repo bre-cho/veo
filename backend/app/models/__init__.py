@@ -80,6 +80,23 @@ __all__ = [
     "Project",
     "Scene",
     "GoogleAccount",
+    "AvatarRole",
+    "AvatarDna",
+    "AvatarVisualDna",
+    "AvatarVoiceDna",
+    "AvatarMotionDna",
+    "TemplateFamily",
+    "TemplateRoleMap",
+    "AvatarMarketFit",
+    "AvatarTemplateFit",
+    "MarketplaceItem",
+    "AvatarUsageEvent",
+    "CreatorEarning",
+    "AvatarRanking",
+    "CreatorRanking",
+    "AvatarCollection",
+    "LocalizationProfile",
+    "PerformanceSnapshot",
 ]
 
 from app.models.worker_concurrency_override import WorkerConcurrencyOverride
@@ -152,3 +169,22 @@ from app.models.template_governance_bulk_ops import TemplateGovernanceActionOutc
 
 from app.models.core_placeholders import Project, Scene
 from app.models.google_account import GoogleAccount
+from app.models.autovis import (
+    AvatarRole,
+    AvatarDna,
+    AvatarVisualDna,
+    AvatarVoiceDna,
+    AvatarMotionDna,
+    TemplateFamily,
+    TemplateRoleMap,
+    AvatarMarketFit,
+    AvatarTemplateFit,
+    MarketplaceItem,
+    AvatarUsageEvent,
+    CreatorEarning,
+    AvatarRanking,
+    CreatorRanking,
+    AvatarCollection,
+    LocalizationProfile,
+    PerformanceSnapshot,
+)

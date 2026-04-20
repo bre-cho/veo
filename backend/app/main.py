@@ -35,6 +35,13 @@ from app.api.google_accounts import router as google_accounts_router
 from app.api.ai_engine import router as ai_engine_router
 from app.api.rag_chat import router as rag_chat_router
 from app.api.ml_recommendation import router as ml_recommendation_router
+from app.api.avatar_builder import router as avatar_builder_router
+from app.api.avatar_commerce import router as avatar_commerce_router
+from app.api.avatar_marketplace import router as avatar_marketplace_router
+from app.api.creator_economy import router as creator_economy_router
+from app.api.avatar_localization import router as avatar_localization_router
+from app.api.avatar_meta import router as avatar_meta_router
+from app.api.avatar_analytics import router as avatar_analytics_router
 from app.core.config import settings
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
 
@@ -96,6 +103,13 @@ app.include_router(google_accounts_router)
 app.include_router(ai_engine_router)
 app.include_router(rag_chat_router)
 app.include_router(ml_recommendation_router)
+app.include_router(avatar_builder_router)
+app.include_router(avatar_commerce_router)
+app.include_router(avatar_marketplace_router)
+app.include_router(creator_economy_router)
+app.include_router(avatar_localization_router)
+app.include_router(avatar_meta_router)
+app.include_router(avatar_analytics_router)
 
 
 @app.get("/", tags=["root"])

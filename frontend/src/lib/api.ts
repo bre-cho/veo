@@ -1083,3 +1083,111 @@ export async function testOpenRouterKey(api_key: string): Promise<{ ok: boolean 
     body: JSON.stringify({ api_key }),
   });
 }
+
+// ─── Autovis Avatar Commerce Layer ──────────────────────────────────────────
+
+// Marketplace
+export async function listAvatars(params?: { market_code?: string; niche_code?: string; role_id?: string; limit?: number; offset?: number }): Promise<{ items: any[]; total: number; page: number; page_size: number }> {
+  const q = new URLSearchParams();
+  if (params?.market_code) q.set("market_code", params.market_code);
+  if (params?.niche_code) q.set("niche_code", params.niche_code);
+  if (params?.role_id) q.set("role_id", params.role_id);
+  if (params?.limit !== undefined) q.set("limit", String(params.limit));
+  if (params?.offset !== undefined) q.set("offset", String(params.offset));
+  return request<any>(`/avatars?${q.toString()}`, { cache: "no-store" });
+}
+
+export async function getAvatar(id: string): Promise<any> {
+  return request<any>(`/avatars/${id}`, { cache: "no-store" });
+}
+
+export async function recommendedAvatars(limit?: number): Promise<{ items: any[] }> {
+  const q = limit ? `?limit=${limit}` : "";
+  return request<any>(`/avatars/recommended${q}`, { cache: "no-store" });
+}
+
+export async function trendingAvatars(limit?: number): Promise<{ items: any[] }> {
+  const q = limit ? `?limit=${limit}` : "";
+  return request<any>(`/avatars/trending${q}`, { cache: "no-store" });
+}
+
+// Avatar Builder
+export async function startAvatarBuilder(payload: { name: string; role_id?: string; niche_code?: string; market_code?: string; owner_user_id?: string }): Promise<{ avatar_id: string; name: string; status: string }> {
+  return request<any>("/avatar-builder/start", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function saveAvatarDna(payload: { avatar_id: string; visual?: object; voice?: object; motion?: object }): Promise<any> {
+  return request<any>("/avatar-builder/save-dna", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function publishAvatar(avatarId: string): Promise<{ ok: boolean; status: string }> {
+  return request<any>(`/avatar-builder/publish?avatar_id=${avatarId}`, { method: "POST" });
+}
+
+// Commerce
+export async function recommendAvatar(payload: { content_goal: string; niche_code?: string; market_code?: string; limit?: number }): Promise<{ avatars: any[]; content_goal: string }> {
+  return request<any>("/commerce/recommend-avatar", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function recommendTemplate(payload: { avatar_id: string; content_goal: string; limit?: number }): Promise<{ templates: any[]; avatar_id: string; content_goal: string }> {
+  return request<any>("/commerce/recommend-template", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function recommendCTA(payload: { content_goal: string; conversion_mode?: string }): Promise<{ cta_text: string; content_goal: string }> {
+  return request<any>("/commerce/recommend-cta", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function classifyContentGoal(payload: { brief: string }): Promise<{ content_goal: string; confidence: number }> {
+  return request<any>("/commerce/classify-content-goal", { method: "POST", body: JSON.stringify(payload) });
+}
+
+// Creators
+export async function listCreators(): Promise<{ creators: any[] }> {
+  return request<any>("/creators/top", { cache: "no-store" });
+}
+
+export async function getCreator(id: string): Promise<any> {
+  return request<any>(`/creators/${id}`, { cache: "no-store" });
+}
+
+export async function getCreatorStore(id: string): Promise<any> {
+  return request<any>(`/creators/${id}/store`, { cache: "no-store" });
+}
+
+export async function getCreatorEarnings(id: string): Promise<any> {
+  return request<any>(`/creators/${id}/earnings`, { cache: "no-store" });
+}
+
+export async function requestPayout(id: string, amount: number): Promise<any> {
+  return request<any>(`/creators/${id}/request-payout`, { method: "POST", body: JSON.stringify({ creator_id: id, amount_usd: amount }) });
+}
+
+// Localization
+export async function switchCountry(marketCode: string): Promise<any> {
+  return request<any>("/system/switch-country", { method: "POST", body: JSON.stringify({ market_code: marketCode }) });
+}
+
+export async function getMetaMarketProfiles(): Promise<any[]> {
+  return request<any[]>("/meta/market-profiles", { cache: "no-store" });
+}
+
+export async function getMetaRoles(): Promise<any[]> {
+  return request<any[]>("/meta/roles", { cache: "no-store" });
+}
+
+export async function getMetaCountries(): Promise<any[]> {
+  return request<any[]>("/meta/countries", { cache: "no-store" });
+}
+
+// Analytics
+export async function getAvatarAnalytics(id: string): Promise<any> {
+  return request<any>(`/analytics/avatars/${id}`, { cache: "no-store" });
+}
+
+export async function getCreatorAnalytics(id: string): Promise<any> {
+  return request<any>(`/analytics/creators/${id}`, { cache: "no-store" });
+}
+
+export async function getMarketplaceTrending(): Promise<{ trending: any[]; period: string }> {
+  return request<any>("/analytics/marketplace/trending", { cache: "no-store" });
+}
