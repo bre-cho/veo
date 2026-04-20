@@ -9,7 +9,12 @@
     "click_through_rate": 0.08,
     "platform": null,
     "market_code": null,
-    "recorded_at": 1776684312.0955374
+    "avatar_id": null,
+    "product_id": null,
+    "experiment_id": null,
+    "variant_id": null,
+    "performance_metrics": {},
+    "recorded_at": 1776686963.1267278
   },
   {
     "video_id": "test-job-signal-001",
@@ -21,7 +26,12 @@
     "click_through_rate": 0.05,
     "platform": "tiktok",
     "market_code": "VN",
-    "recorded_at": 1776684316.0452921
+    "avatar_id": null,
+    "product_id": null,
+    "experiment_id": null,
+    "variant_id": null,
+    "performance_metrics": {},
+    "recorded_at": 1776686967.0671225
   },
   {
     "video_id": "test-job-platform-001",
@@ -33,6 +43,11 @@
     "click_through_rate": 0.0,
     "platform": "tiktok",
     "market_code": "VN",
-    "recorded_at": 1776684316.0706606
+    "avatar_id": null,
+    "product_id": null,
+    "experiment_id": null,
+    "variant_id": null,
+    "performance_metrics": {},
+    "recorded_at": 1776686967.092259
   }
 ]

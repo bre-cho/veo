@@ -22,6 +22,8 @@ PUBLISH_MODE_REAL = "REAL"
 PLATFORM = "tiktok"
 
 _RETRIABLE_STATUS_CODES = frozenset(range(500, 600))
+# TikTok API returns 429 for rate limit; treat as retriable with longer back-off.
+_RETRIABLE_STATUS_CODES = _RETRIABLE_STATUS_CODES | frozenset({429})
 
 # Supported privacy levels by the TikTok Content Posting API
 _PRIVACY_LEVEL_MAP = {
@@ -29,6 +31,10 @@ _PRIVACY_LEVEL_MAP = {
     "friends": "MUTUAL_FOLLOW_FRIENDS",
     "private": "SELF_ONLY",
 }
+
+# Rate limit: after a 429 response wait this many seconds before retrying
+_RATE_LIMIT_BACKOFF_SECS = 60.0
+_RATE_LIMIT_STATUS = 429
 
 
 class ConfigurationError(Exception):
@@ -83,9 +89,15 @@ class TikTokPublishProvider(PublishProviderBase):
                     "raw": raw,
                 }
             except urllib.error.HTTPError as exc:
-                if exc.code not in _RETRIABLE_STATUS_CODES:
+                if exc.code == _RATE_LIMIT_STATUS:
+                    # Rate-limited: use header-indicated wait or default backoff
+                    retry_after = self._parse_retry_after(exc)
+                    self._sleep(retry_after)
+                    last_exc = exc
+                elif exc.code not in _RETRIABLE_STATUS_CODES:
                     raise
-                last_exc = exc
+                else:
+                    last_exc = exc
             except (urllib.error.URLError, OSError) as exc:
                 last_exc = exc
 
@@ -126,6 +138,17 @@ class TikTokPublishProvider(PublishProviderBase):
         req = urllib.request.Request(self._url, data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             return _json.loads(resp.read())
+
+    @staticmethod
+    def _parse_retry_after(exc: urllib.error.HTTPError) -> float:
+        """Parse Retry-After header from a 429 response, falling back to default."""
+        try:
+            retry_after = exc.headers.get("Retry-After") or exc.headers.get("retry-after")
+            if retry_after:
+                return float(retry_after)
+        except Exception:
+            pass
+        return _RATE_LIMIT_BACKOFF_SECS
 
     @staticmethod
     def _sleep(seconds: float) -> None:  # pragma: no cover

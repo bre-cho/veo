@@ -388,6 +388,8 @@ class ReviewVideoEngine:
         *,
         product_payload: dict[str, Any],
         variant_count: int = 5,
+        platform: str | None = None,
+        save_history: bool = True,
     ) -> dict[str, Any]:
         if product_payload.get("benefits") is not None and product_payload.get("pain_points") is not None:
             profile = dict(product_payload)
@@ -395,12 +397,30 @@ class ReviewVideoEngine:
             profile = self._product_ingestion.ingest(
                 req=self._build_product_ingestion_request(product_payload)
             ).model_dump()
-        variants = self._review_variant_engine.generate_variants(profile, count=variant_count)
-        winner = self._review_variant_engine.select_winner(variants)
+
+        if save_history:
+            result = self._review_variant_engine.generate_variants_with_history(
+                profile,
+                count=variant_count,
+                platform=platform,
+                context={"source": "review_engine"},
+            )
+        else:
+            variants = self._review_variant_engine.generate_variants(
+                profile,
+                count=variant_count,
+                platform=platform,
+            )
+            result = {
+                "run_id": None,
+                "variants": variants,
+                "winner": self._review_variant_engine.select_winner(variants),
+            }
         return {
             "normalized_product_profile": profile,
-            "variants": variants,
-            "winner": winner,
+            "variants": result["variants"],
+            "winner": result["winner"],
+            "run_id": result.get("run_id"),
         }
 
     def select_review_winner(self, variants: list[dict[str, Any]]) -> dict[str, Any]:
@@ -419,4 +439,7 @@ class ReviewVideoEngine:
             target_audience=product_payload.get("target_audience"),
             market_code=product_payload.get("market_code"),
             source_type=product_payload.get("source_type"),
+            personas=product_payload.get("personas"),
+            objections=product_payload.get("objections"),
+            product_category=product_payload.get("product_category"),
         )

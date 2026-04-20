@@ -14,6 +14,10 @@ class ProductIngestionRequest(BaseModel):
     target_audience: str | None = None
     market_code: str | None = None
     source_type: str | None = None
+    # Optional direct fields (skip extraction when supplied)
+    personas: list[str] | None = None
+    objections: list[str] | None = None
+    product_category: str | None = None
 
 
 class NormalizedProductProfile(BaseModel):
@@ -22,6 +26,9 @@ class NormalizedProductProfile(BaseModel):
     pain_points: list[str] = Field(default_factory=list)
     benefits: list[str] = Field(default_factory=list)
     social_proof: list[str] = Field(default_factory=list)
+    personas: list[str] = Field(default_factory=list)
+    objections: list[str] = Field(default_factory=list)
+    product_category: str | None = None
     target_audience: str | None = None
     recommended_angles: list[str] = Field(default_factory=list)
     market_code: str | None = None
