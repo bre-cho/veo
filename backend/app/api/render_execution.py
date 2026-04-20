@@ -12,6 +12,7 @@ from app.services.render_queue import enqueue_render_dispatch
 from app.services.control_plane import get_or_create_release_gate
 from app.services.kill_switch import get_or_create_global_kill_switch
 from app.services.provider_normalize import normalize_provider_name
+from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.render_repository import (
     create_render_job_with_scenes,
     get_render_job_by_id,
@@ -20,6 +21,7 @@ from app.services.marketplace.avatar_usage_service import AvatarUsageService
 
 _log = logging.getLogger(__name__)
 _avatar_usage_service = AvatarUsageService()
+_execution_bridge = ExecutionBridgeService()
 
 router = APIRouter(prefix="/api/v1/render", tags=["render-execution"])
 
@@ -207,11 +209,21 @@ async def create_render_job(
         )
 
     normalized_provider = normalize_provider_name(payload.provider)
+    bridge_ctx = _execution_bridge.resolve_context(
+        db,
+        avatar_id=payload.avatar_id,
+        market_code=payload.market_code,
+        content_goal=payload.content_goal,
+        conversion_mode=payload.conversion_mode,
+    )
 
     planned_scenes = [
-        scene.to_repository_payload(
-            job_provider=normalized_provider,
-            job_aspect_ratio=payload.aspect_ratio,
+        _execution_bridge.transform_scene_payload(
+            scene.to_repository_payload(
+                job_provider=normalized_provider,
+                job_aspect_ratio=payload.aspect_ratio,
+            ),
+            bridge_ctx,
         )
         for scene in payload.planned_scenes
     ]

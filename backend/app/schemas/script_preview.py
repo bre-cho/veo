@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -13,6 +13,8 @@ class ScriptScene(BaseModel):
     scene_index: int = Field(..., ge=1)
     title: str
     script_text: str
+    visual_prompt: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     target_duration_sec: float = Field(..., gt=0)
 
     @field_validator("title", "script_text")
@@ -46,6 +48,10 @@ class SubtitleSegment(BaseModel):
 
 
 class ScriptPreviewPayload(BaseModel):
+    avatar_id: str | None = None
+    market_code: str | None = None
+    content_goal: str | None = None
+    conversion_mode: str | None = None
     source_mode: SourceMode = "script_upload"
     aspect_ratio: AspectRatio
     target_platform: TargetPlatform

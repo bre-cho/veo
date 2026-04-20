@@ -8,9 +8,12 @@ from typing import Any
 
 from docx import Document
 
+from app.services.execution_bridge_service import ExecutionBridgeService
+
 
 ALLOWED_EXTENSIONS = {".txt", ".docx"}
 MAX_SIZE_BYTES = 5 * 1024 * 1024
+_execution_bridge = ExecutionBridgeService()
 
 
 def validate_script_file(filename: str, content: bytes) -> str:
@@ -145,18 +148,36 @@ def build_preview_payload(
     aspect_ratio: str,
     target_platform: str,
     style_preset: str | None,
+    avatar_id: str | None = None,
+    market_code: str | None = None,
+    content_goal: str | None = None,
+    conversion_mode: str | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_script_text(script_text)
     if not normalized:
         raise ValueError("Parsed script is empty")
 
     scenes = split_script_into_scenes(normalized, max_scenes=12)
+    bridged_payload = _execution_bridge.apply_to_preview_payload(
+        {
+            "avatar_id": avatar_id,
+            "market_code": market_code,
+            "content_goal": content_goal,
+            "conversion_mode": conversion_mode,
+            "scenes": scenes,
+        }
+    )
+    scenes = bridged_payload["scenes"]
     subtitles = build_subtitle_segments_from_scenes(scenes)
 
     if not scenes:
         raise ValueError("Unable to generate scenes from script")
 
     return {
+        "avatar_id": avatar_id,
+        "market_code": market_code,
+        "content_goal": content_goal,
+        "conversion_mode": conversion_mode,
         "source_mode": "script_upload",
         "aspect_ratio": aspect_ratio,
         "target_platform": target_platform,

@@ -1,12 +1,15 @@
 from __future__ import annotations
 from sqlalchemy.orm import Session
 from app.services.project_workspace_service import load_project, save_project
+from app.services.provider_scene_planner import plan_provider_scenes
+from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.render_repository import create_render_job_with_scenes, get_render_job_by_id, build_render_job_response
 from app.services.render_queue import enqueue_render_dispatch
 from app.services.render_events import build_project_render_event_summary
 from app.services.template_feedback_loop import maybe_enqueue_template_extraction
 
 PROJECT_RENDER_BLOCKING_STATUSES = {"render_queued", "rendering"}
+_execution_bridge = ExecutionBridgeService()
 
 def can_render_project(project: dict) -> tuple[bool, list[str]]:
     reasons=[]; scenes=project.get("scenes") or []; subtitle_segments=project.get("subtitle_segments") or []
@@ -24,23 +27,33 @@ def trigger_project_render(db: Session, project_id: str) -> dict:
     ok, reasons = can_render_project(project)
     if not ok: raise ValueError("; ".join(reasons))
     veo_config = project.get("veo_config") or {}
+    bridge_ctx = _execution_bridge.resolve_project_context(db, project)
     planned_scenes=[]
     for scene in project.get("scenes", []):
+        bridged_scene = _execution_bridge.apply_to_project_scene(scene, bridge_ctx)
         planned_scenes.append({
-            "scene_index": scene["scene_index"],
-            "title": scene["title"],
-            "script_text": scene.get("script_text"),
-            "prompt_text": scene.get("visual_prompt") or scene.get("script_text") or scene["title"],
-            "provider_target_duration_sec": int(round(float(scene.get("target_duration_sec", 5)))),
+            "scene_index": bridged_scene["scene_index"],
+            "title": bridged_scene["title"],
+            "script_text": bridged_scene.get("script_text"),
+            "prompt_text": bridged_scene.get("visual_prompt") or bridged_scene.get("script_text") or bridged_scene["title"],
+            "provider_target_duration_sec": int(round(float(bridged_scene.get("target_duration_sec", 5)))),
             "aspect_ratio": project.get("format","9:16"),
-            "provider_mode": scene.get("provider_mode") or veo_config.get("veo_mode"),
-            "start_image_url": scene.get("start_image_url"),
-            "end_image_url": scene.get("end_image_url"),
-            "character_reference_image_urls": scene.get("character_reference_image_urls") or [],
+            "provider_mode": bridged_scene.get("provider_mode") or veo_config.get("veo_mode"),
+            "start_image_url": bridged_scene.get("start_image_url"),
+            "end_image_url": bridged_scene.get("end_image_url"),
+            "character_reference_image_urls": bridged_scene.get("character_reference_image_urls") or [],
             "character_reference_pack_id": veo_config.get("character_reference_pack_id"),
             "sound_generation": veo_config.get("sound_generation", False),
             "provider_model": veo_config.get("provider_model"),
         })
+    try:
+        planned_scenes = plan_provider_scenes(
+            planned_scenes,
+            project.get("provider","veo"),
+            execution_context=bridge_ctx,
+        )
+    except ValueError:
+        pass
     job = create_render_job_with_scenes(db, project_id=project_id, provider=project.get("provider","veo"), aspect_ratio=project.get("format","9:16"), style_preset=project.get("style_preset"), subtitle_mode="burn", planned_scenes=planned_scenes)
     enqueue_render_dispatch(job.id)
     project["status"]="render_queued"; project["render_job_id"]=job.id; project.setdefault("is_template_source", True); project.setdefault("template_extracted", False)

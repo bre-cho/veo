@@ -3,7 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.render_provider_registry import get_provider_capabilities
+
+_execution_bridge = ExecutionBridgeService()
 
 
 def estimate_duration_from_text(text: str) -> float:
@@ -29,11 +32,13 @@ def split_text_into_chunks(text: str, chunks: int) -> list[str]:
 def plan_provider_scenes(
     scenes: list[dict[str, Any]],
     provider: str,
+    execution_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     caps = get_provider_capabilities(provider)
     planned: list[dict[str, Any]] = []
 
     for scene in scenes:
+        scene = _execution_bridge.apply_to_project_scene(scene, execution_context or {})
         text = (scene.get("script_text") or "").strip()
         title = (scene.get("title") or "Scene").strip()
 
