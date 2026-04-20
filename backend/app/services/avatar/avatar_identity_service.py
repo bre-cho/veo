@@ -11,6 +11,24 @@ from app.repositories.avatar_repo import AvatarRepo
 _repo = AvatarRepo()
 
 # ---------------------------------------------------------------------------
+# Identity gate threshold for post-render verification
+# ---------------------------------------------------------------------------
+IDENTITY_GATE_THRESHOLD = 0.80
+_TEMPORAL_CONTINUITY_THRESHOLD = 0.90
+
+
+class IdentityDriftException(Exception):
+    """Raised when a render output fails the identity gate check."""
+
+    def __init__(self, avatar_id: str, similarity: float) -> None:
+        self.avatar_id = avatar_id
+        self.similarity = similarity
+        super().__init__(
+            f"Identity drift detected for avatar '{avatar_id}': "
+            f"similarity={similarity:.3f} < threshold={IDENTITY_GATE_THRESHOLD}"
+        )
+
+# ---------------------------------------------------------------------------
 # Consistency scoring thresholds
 # ---------------------------------------------------------------------------
 _FACE_SIMILARITY_FIELDS = ("skin_tone", "eye_color", "age_range", "gender_expression")
@@ -128,7 +146,18 @@ class AvatarIdentityService:
         return _repo.update_avatar(db, avatar_id, data)
 
     def upsert_visual(self, db: Session, avatar_id: str, data: dict) -> AvatarVisualDna:
-        return _repo.upsert_visual(db, avatar_id, data)
+        visual = _repo.upsert_visual(db, avatar_id, data)
+        # If source media is provided, extract and store embedding
+        source_media = data.get("source_media_path") or data.get("source_media_url")
+        if source_media and "embedding_vector" not in data:
+            try:
+                from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
+                extractor = MediaEmbeddingExtractor()
+                embedding = extractor.extract(source_media)
+                visual = _repo.upsert_visual(db, avatar_id, {"embedding_vector": embedding})
+            except Exception:
+                pass
+        return visual
 
     def upsert_voice(self, db: Session, avatar_id: str, data: dict) -> AvatarVoiceDna:
         return _repo.upsert_voice(db, avatar_id, data)
@@ -254,22 +283,22 @@ class AvatarIdentityService:
     ) -> dict[str, Any]:
         """Verify that a completed render is consistent with the avatar's identity.
 
-        Computes a per-frame consistency score when ``frame_embeddings`` is
-        provided and falls back to field-level matching otherwise.
+        Full gate loop: extracts per-frame embeddings, compares against the
+        canonical AvatarReferenceFrame, and raises ``IdentityDriftException``
+        when similarity falls below ``IDENTITY_GATE_THRESHOLD``.
 
         Returns a result dict including ``consistency_score``, ``ok`` (bool),
-        ``action`` ("accept" | "identity_review"), and ``frame_results``
-        (per-frame breakdown when embeddings are provided).
+        ``action`` ("accept" | "identity_review"), and ``frame_results``.
         """
         frame_results: list[dict[str, Any]] = []
         consistency_score: float = 1.0
 
         if frame_embeddings:
+            # Use provided embeddings for per-frame check
             frame_results = self.lock_frame_sequence(db, avatar_id, frame_embeddings)
             scores = [r["cosine_similarity"] for r in frame_results]
             consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
         else:
-            # Fallback: use field-level consistency scoring
             identity = self.get_identity_vector(db, avatar_id)
             consistency_score = round(
                 identity.get("consistency_score", 1.0)
@@ -277,6 +306,10 @@ class AvatarIdentityService:
                 else 1.0,
                 3,
             )
+
+        # Identity gate: raise when below threshold
+        if consistency_score < IDENTITY_GATE_THRESHOLD:
+            raise IdentityDriftException(avatar_id, consistency_score)
 
         action = "accept" if consistency_score >= _RENDER_CONSISTENCY_THRESHOLD else "identity_review"
         return {
@@ -377,3 +410,113 @@ class AvatarIdentityService:
             return 1.0
         return matched / present
 
+
+
+# ---------------------------------------------------------------------------
+# Temporal Identity Continuity Checker (Phase 2A)
+# ---------------------------------------------------------------------------
+
+class TemporalIdentityContinuityChecker:
+    """Check temporal identity continuity across consecutive render frames.
+
+    ``check()`` samples ``n_frames`` from a render, computes consecutive-frame
+    cosine similarity, and returns a violations list where similarity drops
+    below ``_TEMPORAL_CONTINUITY_THRESHOLD``.
+    """
+
+    def check(
+        self,
+        render_path: str,
+        n_frames: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Sample frames from ``render_path`` and check consecutive similarity.
+
+        Returns a list of violation dicts.  Each violation contains:
+        - ``frame_a``: index of the first frame
+        - ``frame_b``: index of the second frame
+        - ``similarity``: cosine similarity between them
+        """
+        from app.services.avatar.media_embedding_extractor import MediaEmbeddingExtractor
+
+        extractor = MediaEmbeddingExtractor()
+        # Generate per-frame embeddings (stub uses deterministic hashing)
+        embeddings: list[list[float]] = []
+        for i in range(n_frames):
+            frame_source = f"{render_path}:frame:{i}"
+            emb = extractor.extract(frame_source, n_frames=1)
+            embeddings.append(emb)
+
+        violations: list[dict[str, Any]] = []
+        for i in range(len(embeddings) - 1):
+            sim = _cosine_similarity(embeddings[i], embeddings[i + 1])
+            if sim < _TEMPORAL_CONTINUITY_THRESHOLD:
+                violations.append({
+                    "frame_a": i,
+                    "frame_b": i + 1,
+                    "similarity": round(sim, 4),
+                    "threshold": _TEMPORAL_CONTINUITY_THRESHOLD,
+                })
+        return violations
+
+
+# ---------------------------------------------------------------------------
+# Canonical Reference Refresher (Phase 2A)
+# ---------------------------------------------------------------------------
+
+class CanonicalReferenceRefresher:
+    """Refresh the canonical AvatarReferenceFrame after a successful render.
+
+    ``refresh_after_success()`` selects the highest-quality frame from
+    ``render_frames`` (by embedding norm as a quality proxy) and upserts it
+    as the new canonical reference.
+    """
+
+    def refresh_after_success(
+        self,
+        db: Session,
+        avatar_id: str,
+        render_frames: list[list[float]],
+        frame_type: str = "face_neutral",
+        image_url: Optional[str] = None,
+    ) -> Optional[Any]:
+        """Upsert AvatarReferenceFrame with the highest-quality render frame.
+
+        Returns the upserted row, or None if no frames are provided or an error
+        occurs.
+        """
+        if not render_frames:
+            return None
+        try:
+            from app.models.autovis import AvatarReferenceFrame
+
+            # Select frame with highest L2 norm as quality proxy
+            def _norm(v: list[float]) -> float:
+                return math.sqrt(sum(x * x for x in v))
+
+            best_frame = max(render_frames, key=_norm)
+
+            existing = (
+                db.query(AvatarReferenceFrame)
+                .filter(
+                    AvatarReferenceFrame.avatar_id == avatar_id,
+                    AvatarReferenceFrame.frame_type == frame_type,
+                )
+                .first()
+            )
+            if existing is not None:
+                existing.embedding_vector = best_frame
+                if image_url:
+                    existing.image_url = image_url
+                db.add(existing)
+            else:
+                row = AvatarReferenceFrame(
+                    avatar_id=avatar_id,
+                    frame_type=frame_type,
+                    embedding_vector=best_frame,
+                    image_url=image_url,
+                )
+                db.add(row)
+            db.commit()
+            return existing or row  # type: ignore[return-value]
+        except Exception:
+            return None

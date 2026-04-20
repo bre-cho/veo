@@ -487,10 +487,9 @@ class StoryboardEngine:
     ) -> list[dict[str, Any]]:
         """Generate a per-scene asset production checklist.
 
-        Returns a list of dicts (one per scene) describing what assets need to
-        be prepared: background type, avatar pose, overlay text flag, and
-        b-roll category.  This is used by the production pipeline to pre-fetch
-        or generate required materials before a render job is created.
+        Returns a full asset manifest per scene: ``video_clip_type``,
+        ``prop_list``, ``background``, ``avatar_outfit``, ``text_overlay``,
+        ``missing_assets`` flag, plus the original checklist fields.
         """
         _GOAL_BACKGROUNDS = {
             "hook": "branded_gradient",
@@ -519,17 +518,60 @@ class StoryboardEngine:
             "social_proof": "before_after",
             "cta": None,
         }
+        _GOAL_CLIP_TYPE = {
+            "hook": "motion_graphic",
+            "build_tension": "live_action",
+            "reveal": "product_showcase",
+            "body": "talking_head",
+            "intro": "avatar_render",
+            "social_proof": "testimonial_clip",
+            "cta": "overlay_card",
+        }
+        _GOAL_PROPS = {
+            "hook": ["logo_badge", "countdown_timer"],
+            "build_tension": ["problem_prop", "contrast_visual"],
+            "reveal": ["product_model", "lighting_rig"],
+            "body": ["screen_capture", "diagram"],
+            "intro": ["name_lower_third"],
+            "social_proof": ["review_card", "star_rating"],
+            "cta": ["cta_button", "url_card", "qr_code"],
+        }
+        _GOAL_OUTFITS = {
+            "hook": "branded_casual",
+            "body": "professional",
+            "cta": "branded_casual",
+        }
+
         checklist = []
         for scene in scenes:
             goal = scene.scene_goal
+            background = _GOAL_BACKGROUNDS.get(goal, "neutral_studio")
+            avatar_outfit = _GOAL_OUTFITS.get(goal, "natural")
+            text_overlay = scene.cta_flag or goal in ("hook", "cta")
+            video_clip_type = _GOAL_CLIP_TYPE.get(goal, "talking_head")
+            prop_list = _GOAL_PROPS.get(goal, [])
+            broll = _GOAL_BROLL.get(goal)
+
+            # missing_assets flag: True when avatar not specified for scenes requiring it
+            missing_assets = (
+                avatar_id is None
+                and goal in ("hook", "body", "intro", "social_proof", "cta")
+            )
+
             checklist.append({
                 "scene_index": scene.scene_index,
                 "scene_goal": goal,
                 "avatar_id": avatar_id,
-                "background_type": _GOAL_BACKGROUNDS.get(goal, "neutral_studio"),
+                "background": background,
+                "background_type": background,  # backward compat alias
                 "avatar_pose": _GOAL_POSES.get(goal, "explaining"),
-                "overlay_text": scene.cta_flag or goal in ("hook", "cta"),
-                "broll_category": _GOAL_BROLL.get(goal),
+                "avatar_outfit": avatar_outfit,
+                "overlay_text": text_overlay,
+                "text_overlay": text_overlay,  # explicit manifest field
+                "broll_category": broll,
+                "video_clip_type": video_clip_type,
+                "prop_list": prop_list,
+                "missing_assets": missing_assets,
                 "voice_direction": scene.voice_direction,
                 "shot_hint": scene.shot_hint,
             })
@@ -689,6 +731,8 @@ class ScenePatternLibrary:
         platform: str | None,
         content_goal: str | None,
         conversion_score: float,
+        conversion_rate: float | None = None,
+        avg_watch_time: float | None = None,
     ) -> None:
         """Persist high-scoring scenes as reusable patterns."""
         if conversion_score < self._MIN_CONVERSION_SCORE:
@@ -698,21 +742,27 @@ class ScenePatternLibrary:
 
         lib = PatternLibrary()
         for scene in storyboard.scenes:
+            payload: dict[str, Any] = {
+                "platform": platform,
+                "scene_goal": scene.scene_goal,
+                "visual_type": scene.visual_type,
+                "shot_hint": scene.shot_hint,
+                "pacing_weight": scene.pacing_weight,
+                "emotion": scene.emotion,
+                "voice_direction": scene.voice_direction,
+                "transition_hint": scene.transition_hint,
+            }
+            if conversion_rate is not None:
+                payload["conversion_rate"] = conversion_rate
+            if avg_watch_time is not None:
+                payload["avg_watch_time"] = avg_watch_time
+
             pattern = PatternMemoryIn(
                 pattern_type=self._PATTERN_TYPE,
                 content_goal=content_goal,
                 source_id=storyboard.storyboard_id,
                 score=conversion_score,
-                payload={
-                    "platform": platform,
-                    "scene_goal": scene.scene_goal,
-                    "visual_type": scene.visual_type,
-                    "shot_hint": scene.shot_hint,
-                    "pacing_weight": scene.pacing_weight,
-                    "emotion": scene.emotion,
-                    "voice_direction": scene.voice_direction,
-                    "transition_hint": scene.transition_hint,
-                },
+                payload=payload,
             )
             try:
                 lib.save(db, pattern)
@@ -756,16 +806,295 @@ class ScenePatternLibrary:
 def _derive_hook_pacing_boost(
     learning_store: "PerformanceLearningEngine",
     platform: str | None,
+    db: Any = None,
 ) -> float:
-    """Return a +0.1 pacing boost for hook scenes when top performers reward it.
+    """Return a pacing boost for hook scenes when top performers reward it.
 
-    Queries the learning store for top hook patterns on the given platform and
-    returns 0.1 when any winning pattern is a hook-type pattern, else 0.0.
+    Queries ``top_hook_patterns()`` from the learning store and
+    winning scenes from the pattern library.  Returns up to +0.15 when both
+    sources confirm hook-heavy content wins on the given platform.
     """
+    boost = 0.0
     try:
-        top_hooks = learning_store.top_hooks(platform=platform)
+        top_hooks = learning_store.top_hook_patterns(platform=platform)
         if top_hooks:
-            return 0.1
+            boost += 0.1
     except Exception:
         pass
-    return 0.0
+
+    # Also check pattern library winning scenes for hook-type goals
+    if db is not None:
+        try:
+            lib = ScenePatternLibrary()
+            patterns = lib.get_top_patterns(db, platform=platform, scene_goal="hook", limit=3)
+            if patterns:
+                boost = min(boost + 0.05, 0.15)
+        except Exception:
+            pass
+
+    return round(boost, 3)
+
+
+# ---------------------------------------------------------------------------
+# Outcome-Informed Shot Selector (Phase 2C)
+# ---------------------------------------------------------------------------
+
+class OutcomeInformedShotSelector:
+    """Select biased shot types based on winning scenes history.
+
+    ``select_shot_hint()`` queries the pattern library for winning scenes
+    matching the given platform/niche/scene_goal and returns the most
+    common shot type.  Falls back to a generic default when no history is
+    available.
+    """
+
+    _FALLBACK_SHOT_HINTS: dict[str, str] = {
+        "hook": "wide_shot",
+        "body": "medium_shot",
+        "cta": "close_up",
+        "reveal": "product_close_up",
+        "social_proof": "over_the_shoulder",
+    }
+
+    def select_shot_hint(
+        self,
+        platform: str,
+        niche: str,
+        scene_goal: str,
+        db: Any = None,
+    ) -> str:
+        """Return a shot type hint biased by winning scene history.
+
+        When ``db`` is provided the pattern library is queried.  Falls back to
+        ``_FALLBACK_SHOT_HINTS`` when no history is available.
+        """
+        if db is not None:
+            try:
+                lib = ScenePatternLibrary()
+                patterns = lib.get_top_patterns(
+                    db,
+                    platform=platform,
+                    scene_goal=scene_goal,
+                    limit=5,
+                )
+                if patterns:
+                    # Count shot hints in winning patterns
+                    shot_counts: dict[str, int] = {}
+                    for p in patterns:
+                        hint = p.get("shot_hint") or ""
+                        if hint:
+                            shot_counts[hint] = shot_counts.get(hint, 0) + 1
+                    if shot_counts:
+                        return max(shot_counts, key=lambda k: shot_counts[k])
+            except Exception:
+                pass
+
+        return self._FALLBACK_SHOT_HINTS.get(scene_goal, "medium_shot")
+
+
+# ---------------------------------------------------------------------------
+# Cross-Scene Continuity Optimizer (Phase 2C)
+# ---------------------------------------------------------------------------
+
+class CrossSceneContinuityOptimizer:
+    """Check visual, audio, and character continuity across scenes.
+
+    ``optimize()`` inspects consecutive scenes for continuity violations and
+    adds a ``continuity_violation`` flag to each scene's metadata dict.
+    """
+
+    def optimize(
+        self,
+        scenes: list["StoryboardScene"],
+    ) -> list["StoryboardScene"]:
+        """Flag continuity violations in the scenes list.
+
+        Checks:
+        - Visual type consistency: same visual_type on consecutive non-transition scenes
+        - Audio mood consistency: emotion should not flip abruptly
+        - Character continuity: cta_flag should not appear before any body scene
+
+        Returns the (mutated) scenes list with ``continuity_violation`` added
+        to each scene's metadata where applicable.
+        """
+        if not scenes:
+            return scenes
+
+        seen_body = False
+        for i, scene in enumerate(scenes):
+            violations: list[str] = []
+
+            if scene.scene_goal == "body":
+                seen_body = True
+
+            # CTA before any body scene is a continuity issue
+            if scene.cta_flag and not seen_body and scene.scene_goal != "hook":
+                violations.append("cta_before_body")
+
+            # Visual type should not jump between consecutive scenes
+            if i > 0:
+                prev = scenes[i - 1]
+                if (
+                    prev.visual_type and scene.visual_type
+                    and prev.visual_type != scene.visual_type
+                    and prev.scene_goal not in ("hook", "cta")
+                    and scene.scene_goal not in ("hook", "cta")
+                ):
+                    violations.append(f"visual_type_mismatch:{prev.visual_type}->{scene.visual_type}")
+
+                # Emotion continuity: avoid abrupt flip (e.g. excited -> somber)
+                _OPPOSITE_EMOTIONS = {
+                    "excited": "somber",
+                    "somber": "excited",
+                    "playful": "serious",
+                    "serious": "playful",
+                }
+                if prev.emotion and scene.emotion:
+                    if _OPPOSITE_EMOTIONS.get(prev.emotion) == scene.emotion:
+                        violations.append(f"emotion_flip:{prev.emotion}->{scene.emotion}")
+
+            # Inject violations into scene metadata
+            meta: dict = dict(scene.metadata or {})
+            if violations:
+                meta["continuity_violation"] = violations
+            scene.metadata = meta
+
+        return scenes
+
+
+# ---------------------------------------------------------------------------
+# Episode Ladder Memory (Phase 3A)
+# ---------------------------------------------------------------------------
+
+class EpisodeLadderMemory:
+    """Extended episode memory with series arc and plot hook tracking.
+
+    ``save_episode()`` persists richer metadata than ``ContinuityPlanner``
+    including ``series_arc``, ``character_flags``, and ``plot_hooks``.
+    ``load_ladder()`` returns all episodes in order.
+    ``blocks_hook()`` returns True when a hook has already been used in the
+    last N episodes of the series (preventing repetition).
+    """
+
+    def save_episode(
+        self,
+        db: Any,
+        series_id: str,
+        episode_data: dict[str, Any],
+    ) -> None:
+        """Persist episode data with series arc, character flags, and plot hooks."""
+        try:
+            from app.models.episode_memory import EpisodeMemory
+
+            row = EpisodeMemory(
+                series_id=series_id,
+                episode_index=episode_data.get("episode_index", 0),
+                storyboard_id=episode_data.get("storyboard_id"),
+                character_state={
+                    "character_flags": episode_data.get("character_flags", []),
+                    "series_arc": episode_data.get("series_arc", ""),
+                    "plot_hooks": episode_data.get("plot_hooks", []),
+                    **episode_data.get("character_state", {}),
+                },
+                open_loops=episode_data.get("open_loops", []),
+                resolved_loops=episode_data.get("resolved_loops", []),
+            )
+            db.add(row)
+            db.commit()
+        except Exception:
+            pass
+
+    def load_ladder(self, db: Any, series_id: str) -> list[dict[str, Any]]:
+        """Return all episodes for a series in chronological order."""
+        try:
+            from app.models.episode_memory import EpisodeMemory
+
+            rows = (
+                db.query(EpisodeMemory)
+                .filter(EpisodeMemory.series_id == series_id)
+                .order_by(EpisodeMemory.episode_index.asc())
+                .all()
+            )
+            return [
+                {
+                    "series_id": row.series_id,
+                    "episode_index": row.episode_index,
+                    "storyboard_id": row.storyboard_id,
+                    "character_state": row.character_state or {},
+                    "open_loops": row.open_loops or [],
+                    "resolved_loops": row.resolved_loops or [],
+                    "series_arc": (row.character_state or {}).get("series_arc", ""),
+                    "character_flags": (row.character_state or {}).get("character_flags", []),
+                    "plot_hooks": (row.character_state or {}).get("plot_hooks", []),
+                }
+                for row in rows
+            ]
+        except Exception:
+            return []
+
+    def blocks_hook(
+        self,
+        db: Any,
+        series_id: str,
+        hook: str,
+        last_n: int = 3,
+    ) -> bool:
+        """Return True when ``hook`` was used in the last ``last_n`` episodes."""
+        ladder = self.load_ladder(db, series_id)
+        recent = ladder[-last_n:] if len(ladder) >= last_n else ladder
+        for ep in recent:
+            if hook in ep.get("plot_hooks", []):
+                return True
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Scene Memory Index (Phase 3A)
+# ---------------------------------------------------------------------------
+
+class SceneMemoryIndex:
+    """Query whether a scene configuration has been recently used in a series.
+
+    ``has_scene_been_used()`` returns True when a scene with the given
+    ``scene_goal`` and ``visual_type`` appears in the last ``last_n`` episodes,
+    preventing content repetition.
+    """
+
+    def has_scene_been_used(
+        self,
+        db: Any,
+        series_id: str,
+        scene_goal: str,
+        visual_type: str,
+        last_n: int = 3,
+    ) -> bool:
+        """Return True when the scene combination appeared in the last N episodes."""
+        try:
+            from app.services.pattern_library import PatternLibrary
+            from app.models.episode_memory import EpisodeMemory
+
+            rows = (
+                db.query(EpisodeMemory)
+                .filter(EpisodeMemory.series_id == series_id)
+                .order_by(EpisodeMemory.episode_index.desc())
+                .limit(last_n)
+                .all()
+            )
+            for row in rows:
+                storyboard_id = row.storyboard_id
+                if not storyboard_id:
+                    continue
+                # Check pattern library for scenes from this storyboard
+                lib = PatternLibrary()
+                patterns = lib.list(db, pattern_type="scene_pattern")
+                for p in patterns:
+                    if p.source_id == storyboard_id:
+                        payload: dict = p.payload or {}
+                        if (
+                            payload.get("scene_goal") == scene_goal
+                            and payload.get("visual_type") == visual_type
+                        ):
+                            return True
+        except Exception:
+            pass
+        return False

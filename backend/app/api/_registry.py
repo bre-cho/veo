@@ -77,6 +77,15 @@ from app.api.creative_runs import router as creative_runs_router
 from app.api.publish_signal import router as publish_signal_router
 from app.api.publish_webhooks import router as publish_webhooks_router
 
+# ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
+from app.api.experiment_variants import router as experiment_variants_router
+from app.api.experiment_variants import outcome_router as experiment_outcome_router
+from app.api.product_learning import router as product_learning_router
+from app.api.avatar_embedding import router as avatar_embedding_router
+from app.api.render_quality import router as render_quality_router
+from app.api.storyboard_extended import router as storyboard_extended_router
+from app.api.publish_compliance import router as publish_compliance_router
+
 _CORE_ROUTERS = [
     health_router,
     storage_router,
@@ -156,6 +165,16 @@ _CREATIVE_ROUTERS = [
     publish_webhooks_router,
 ]
 
+_PHASE_10_12_ROUTERS = [
+    experiment_variants_router,
+    experiment_outcome_router,
+    product_learning_router,
+    avatar_embedding_router,
+    render_quality_router,
+    storyboard_extended_router,
+    publish_compliance_router,
+]
+
 
 def register_all_routers(app: FastAPI) -> None:
     """Register every domain router with the FastAPI application."""
@@ -170,6 +189,7 @@ def register_all_routers(app: FastAPI) -> None:
         _AUDIO_ROUTERS,
         _AVATAR_ROUTERS,
         _CREATIVE_ROUTERS,
+        _PHASE_10_12_ROUTERS,
     ):
         for router in group:
             app.include_router(router)

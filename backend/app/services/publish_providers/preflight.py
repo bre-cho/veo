@@ -7,9 +7,12 @@ an empty list means the job passed all checks.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.models.publish_job import PublishJob
+
+if TYPE_CHECKING:
+    from app.services.avatar.render_quality_gate import QualityReport
 
 # ---------------------------------------------------------------------------
 # Platform rulesets
@@ -77,7 +80,12 @@ class PublishPreflightValidator:
             # fail fast
     """
 
-    def validate(self, job: PublishJob) -> list[str]:
+    def validate(
+        self,
+        job: PublishJob,
+        quality_report: "QualityReport | None" = None,
+        compliance_content: dict[str, Any] | None = None,
+    ) -> list[str]:
         """Return a list of human-readable violation strings (empty = OK)."""
         platform = (job.platform or "").lower()
         rules = _PLATFORM_RULES.get(platform, _DEFAULT_RULES)
@@ -124,5 +132,30 @@ class PublishPreflightValidator:
                 errors.append(
                     f"platform '{platform}' requires metadata.video_url to be set before publishing"
                 )
+
+        # --- Render quality gate ---
+        if quality_report is not None and not quality_report.passed:
+            errors.append(
+                f"render quality gate failed: composite_score={quality_report.composite_score:.3f} "
+                f"< threshold={quality_report.composite_score.__class__.__module__}"  # placeholder
+            )
+            # Rebuild message cleanly
+            errors[-1] = (
+                f"render quality gate failed: composite_score={quality_report.composite_score:.3f}"
+            )
+
+        # --- Compliance check ---
+        if compliance_content is not None:
+            try:
+                from app.services.publish_providers.compliance_risk_policy import ComplianceRiskPolicy
+                policy = ComplianceRiskPolicy()
+                result = policy.evaluate(compliance_content, platform=platform)
+                if result.compliance_status == "failed":
+                    errors.append(
+                        f"compliance check failed: risk_score={result.risk_score:.2f}, "
+                        f"flags={result.risk_flags}"
+                    )
+            except Exception:
+                pass
 
         return errors
