@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.scoring import CandidateScore
+
 
 class OptimizationInput(BaseModel):
     project_id: str | None = None
@@ -25,8 +27,12 @@ class OptimizationSuggestion(BaseModel):
 
 
 class OptimizationResponse(BaseModel):
+    run_id: str | None = None
     rewrite_suggestions: list[OptimizationSuggestion] = Field(default_factory=list)
     new_hook_variant: str | None = None
     new_cta_variant: str | None = None
     scene_priority_changes: list[dict[str, Any]] = Field(default_factory=list)
     score_delta_estimate: float | None = None
+    candidates: list[CandidateScore] = Field(default_factory=list)
+    winner_candidate_id: str | None = None
+    winner_rationale: str | None = None
