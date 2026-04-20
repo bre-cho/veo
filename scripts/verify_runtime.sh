@@ -6,10 +6,20 @@ cd "${ROOT_DIR}"
 
 echo "Preparing environment files..."
 cp backend/.env.example backend/.env.dev || true
+FRONTEND_ENV_FILE="${ROOT_DIR}/frontend/.env.local"
+CREATED_FRONTEND_ENV_FILE=0
+if [[ ! -f "${FRONTEND_ENV_FILE}" ]]; then
+  touch "${FRONTEND_ENV_FILE}"
+  CREATED_FRONTEND_ENV_FILE=1
+fi
+export BACKEND_SCHEMA_BOOTSTRAP="${BACKEND_SCHEMA_BOOTSTRAP:-metadata-create-all}"
 
 cleanup() {
   echo "Tearing down runtime stack..."
-  docker compose down -v
+  docker compose down -v || true
+  if [[ "${CREATED_FRONTEND_ENV_FILE}" == "1" ]]; then
+    rm -f "${FRONTEND_ENV_FILE}"
+  fi
 }
 trap cleanup EXIT
 
