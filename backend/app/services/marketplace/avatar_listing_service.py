@@ -14,20 +14,16 @@ class AvatarListingService:
         avatars = _avatar_repo.list_avatars(
             db, published_only=True, limit=limit
         )
+        public_avatars = [
+            avatar for avatar in avatars if _mp_repo.is_avatar_publicly_listable(db, avatar.id)
+        ]
         results = []
-        for avatar in avatars:
-            item = _mp_repo.get_item_by_avatar(db, avatar.id)
-            if not item:
-                continue
-            if not item.is_active:
-                continue
-            if avatar.moderation_status != "approved":
-                continue
+        for avatar in public_avatars:
             if avatar.is_featured:
                 results.append({"id": avatar.id, "name": avatar.name, "niche_code": avatar.niche_code, "is_featured": True})
         # Pad with non-featured if needed
         if len(results) < limit:
-            for avatar in avatars:
+            for avatar in public_avatars:
                 if not avatar.is_featured and len(results) < limit:
                     results.append({"id": avatar.id, "name": avatar.name, "niche_code": avatar.niche_code, "is_featured": False})
         return results[:limit]
