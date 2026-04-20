@@ -5,34 +5,39 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
-# ---------------------------------------------------------------------------
-# Storyboard schemas
-# ---------------------------------------------------------------------------
-
-
-class SceneBeatOut(BaseModel):
+class StoryboardScene(BaseModel):
     scene_index: int
+    title: str
     scene_goal: str
     visual_type: str
-    emotion: str
+    emotion: str | None = None
     cta_flag: bool
-    script_text: str
-    title: str
+    open_loop_flag: bool
+    shot_hint: str | None = None
+    pacing_weight: float
+    voice_direction: str | None = None
+    transition_hint: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class StoryboardGenerateRequest(BaseModel):
-    script: str = Field(..., min_length=1)
-    max_scenes: int = Field(default=10, ge=1, le=20)
+class StoryboardRequest(BaseModel):
+    script_text: str | None = None
+    preview_payload: dict[str, Any] | None = None
+    avatar_id: str | None = None
+    market_code: str | None = None
+    content_goal: str | None = None
+    conversion_mode: str | None = None
+    template_family: str | None = None
 
 
-class StoryboardGenerateResponse(BaseModel):
-    scene_count: int
-    scenes: list[SceneBeatOut]
+class StoryboardResponse(BaseModel):
+    storyboard_id: str
+    scenes: list[StoryboardScene] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
-# Advanced commerce schemas
+# Existing advanced-commerce schemas retained for compatibility
 # ---------------------------------------------------------------------------
 
 
@@ -91,11 +96,6 @@ class GenerateComparisonVideoRequest(BaseModel):
     hook_variant: int = 0
 
 
-# ---------------------------------------------------------------------------
-# Template intelligence schemas
-# ---------------------------------------------------------------------------
-
-
 class TemplateIntelligenceRequest(BaseModel):
     content_goal: str = Field(..., min_length=1)
     market_code: Optional[str] = None
@@ -106,11 +106,6 @@ class TemplateIntelligenceResponse(BaseModel):
     style_preset: str
     cta_intent: str
     recommended_scene_count: int
-
-
-# ---------------------------------------------------------------------------
-# Combo recommender schemas
-# ---------------------------------------------------------------------------
 
 
 class ComboRecommendRequest(BaseModel):
@@ -131,11 +126,6 @@ class ComboRecommendResponse(BaseModel):
     rationale: str
 
 
-# ---------------------------------------------------------------------------
-# Analytics action schemas
-# ---------------------------------------------------------------------------
-
-
 class AnalyticsActionRequest(BaseModel):
     conversion_score: float = Field(..., ge=0.0, le=1.0)
     details: dict[str, Any] = Field(default_factory=dict)
@@ -154,11 +144,6 @@ class AnalyticsActionItem(BaseModel):
 class AnalyticsActionResponse(BaseModel):
     suggestion_count: int
     actions: list[AnalyticsActionItem]
-
-
-# ---------------------------------------------------------------------------
-# Learning engine schemas
-# ---------------------------------------------------------------------------
 
 
 class RecordPerformanceRequest(BaseModel):

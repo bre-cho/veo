@@ -9,11 +9,13 @@ from typing import Any
 from docx import Document
 
 from app.services.execution_bridge_service import ExecutionBridgeService
+from app.services.storyboard_engine import StoryboardEngine
 
 
 ALLOWED_EXTENSIONS = {".txt", ".docx"}
 MAX_SIZE_BYTES = 5 * 1024 * 1024
 _execution_bridge = ExecutionBridgeService()
+_storyboard_engine = StoryboardEngine()
 
 
 def validate_script_file(filename: str, content: bytes) -> str:
@@ -168,6 +170,31 @@ def build_preview_payload(
         }
     )
     scenes = bridged_payload["scenes"]
+    storyboard = _storyboard_engine.generate_from_script(
+        script_text=normalized,
+        conversion_mode=conversion_mode,
+        content_goal=content_goal,
+    )
+    storyboard_scenes = {scene.scene_index: scene for scene in storyboard.scenes}
+    enriched_scenes: list[dict[str, Any]] = []
+    for scene in scenes:
+        enriched = dict(scene)
+        beat = storyboard_scenes.get(int(scene.get("scene_index", 0)))
+        if beat:
+            meta = dict(enriched.get("metadata") or {})
+            meta.update(
+                {
+                    "scene_goal": beat.scene_goal,
+                    "pacing_weight": beat.pacing_weight,
+                    "shot_hint": beat.shot_hint,
+                    "cta_flag": beat.cta_flag,
+                }
+            )
+            enriched["metadata"] = meta
+            if beat.shot_hint:
+                enriched["shot_hint"] = beat.shot_hint
+        enriched_scenes.append(enriched)
+    scenes = enriched_scenes
     subtitles = build_subtitle_segments_from_scenes(scenes)
 
     if not scenes:
@@ -186,5 +213,6 @@ def build_preview_payload(
         "script_text": normalized,
         "scenes": scenes,
         "subtitle_segments": subtitles,
+        "storyboard": storyboard.model_dump(),
     }
 	

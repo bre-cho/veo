@@ -98,6 +98,10 @@ __all__ = [
     "AvatarCollection",
     "LocalizationProfile",
     "PerformanceSnapshot",
+    "PatternMemory",
+    "OptimizationRun",
+    "ChannelPlan",
+    "PublishJob",
 ]
 
 from app.models.worker_concurrency_override import WorkerConcurrencyOverride
@@ -190,3 +194,7 @@ from app.models.autovis import (
     LocalizationProfile,
     PerformanceSnapshot,
 )
+from app.models.pattern_memory import PatternMemory
+from app.models.optimization_run import OptimizationRun
+from app.models.channel_plan import ChannelPlan
+from app.models.publish_job import PublishJob

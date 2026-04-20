@@ -14,6 +14,7 @@ class ScriptScene(BaseModel):
     title: str
     script_text: str
     visual_prompt: str | None = None
+    shot_hint: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     target_duration_sec: float = Field(..., gt=0)
 
@@ -60,6 +61,9 @@ class ScriptPreviewPayload(BaseModel):
     script_text: str
     scenes: list[ScriptScene]
     subtitle_segments: list[SubtitleSegment]
+    storyboard: dict[str, Any] | None = None
+    optimization_response: dict[str, Any] | None = None
+    winner_patterns: list[dict[str, Any]] | None = None
 
     @field_validator("script_text")
     @classmethod

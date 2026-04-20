@@ -6,6 +6,8 @@ from typing import Any
 
 from app.services.commerce.content_goal_classifier import ContentGoalClassifier
 from app.services.commerce.cta_recommendation_service import CTARecommendationService
+from app.services.commerce.product_ingestion_service import ProductIngestionService
+from app.services.commerce.review_variant_engine import ReviewVariantEngine
 from app.services.script_ingestion import build_subtitle_segments_from_scenes, estimate_duration
 
 _classifier = ContentGoalClassifier()
@@ -242,6 +244,8 @@ class ReviewVideoEngine:
 
     def __init__(self) -> None:
         self._score_svc = ConversionScoreService()
+        self._product_ingestion = ProductIngestionService()
+        self._review_variant_engine = ReviewVariantEngine()
 
     def generate(
         self,
@@ -374,3 +378,45 @@ class ReviewVideoEngine:
         }
         hint = role_hints.get(role, f"scene for {product_name}")
         return f"{hint}. {script_text[:80].strip()}"
+
+    # ------------------------------------------------------------------
+    # V2 variant orchestration
+    # ------------------------------------------------------------------
+
+    def generate_review_variants(
+        self,
+        *,
+        product_payload: dict[str, Any],
+        variant_count: int = 5,
+    ) -> dict[str, Any]:
+        if product_payload.get("benefits") is not None and product_payload.get("pain_points") is not None:
+            profile = dict(product_payload)
+        else:
+            profile = self._product_ingestion.ingest(
+                req=self._build_product_ingestion_request(product_payload)
+            ).model_dump()
+        variants = self._review_variant_engine.generate_variants(profile, count=variant_count)
+        winner = self._review_variant_engine.select_winner(variants)
+        return {
+            "normalized_product_profile": profile,
+            "variants": variants,
+            "winner": winner,
+        }
+
+    def select_review_winner(self, variants: list[dict[str, Any]]) -> dict[str, Any]:
+        return self._review_variant_engine.select_winner(variants)
+
+    @staticmethod
+    def _build_product_ingestion_request(product_payload: dict[str, Any]):
+        from app.schemas.product_ingestion import ProductIngestionRequest
+
+        return ProductIngestionRequest(
+            product_url=product_payload.get("product_url"),
+            product_name=product_payload.get("product_name"),
+            product_features=product_payload.get("product_features"),
+            product_description=product_payload.get("product_description"),
+            customer_reviews=product_payload.get("customer_reviews"),
+            target_audience=product_payload.get("target_audience"),
+            market_code=product_payload.get("market_code"),
+            source_type=product_payload.get("source_type"),
+        )

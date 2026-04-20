@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.services.project_workspace_service import load_project, save_project
 from app.services.provider_scene_planner import plan_provider_scenes
 from app.services.execution_bridge_service import ExecutionBridgeService
+from app.services.optimization_engine import OptimizationEngine
 from app.services.render_repository import create_render_job_with_scenes, get_render_job_by_id, build_render_job_response
 from app.services.render_queue import enqueue_render_dispatch
 from app.services.render_events import build_project_render_event_summary
@@ -12,6 +13,7 @@ from app.services.template_feedback_loop import maybe_enqueue_template_extractio
 PROJECT_RENDER_BLOCKING_STATUSES = {"render_queued", "rendering"}
 _log = logging.getLogger(__name__)
 _execution_bridge = ExecutionBridgeService()
+_optimization_engine = OptimizationEngine()
 
 def can_render_project(project: dict) -> tuple[bool, list[str]]:
     reasons=[]; scenes=project.get("scenes") or []; subtitle_segments=project.get("subtitle_segments") or []
@@ -29,6 +31,13 @@ def trigger_project_render(db: Session, project_id: str) -> dict:
     ok, reasons = can_render_project(project)
     if not ok: raise ValueError("; ".join(reasons))
     veo_config = project.get("veo_config") or {}
+    optimization_response = project.get("optimization_response")
+    if optimization_response and project.get("scenes"):
+        rewritten = _optimization_engine.rewrite_preview_payload(
+            {"scenes": project.get("scenes") or []},
+            optimization_response,
+        )
+        project["scenes"] = rewritten.get("scenes") or project.get("scenes")
     bridge_ctx = _execution_bridge.resolve_project_context(db, project)
     planned_scenes=[]
     for scene in project.get("scenes", []):
