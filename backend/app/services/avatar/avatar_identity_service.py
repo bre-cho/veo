@@ -21,9 +21,105 @@ _MOTION_CONSISTENCY_FIELDS = ("motion_style", "gesture_set", "lipsync_mode")
 _FACE_DRIFT_THRESHOLD = 0.65
 _STYLE_DRIFT_THRESHOLD = 0.60
 _MOTION_DRIFT_THRESHOLD = 0.55
+# Cosine similarity threshold for embedding-based consistency check
+_EMBEDDING_DRIFT_THRESHOLD = 0.80
+# Threshold below which a render is flagged for identity review
+_RENDER_CONSISTENCY_THRESHOLD = 0.70
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two float vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a < 1e-12 or norm_b < 1e-12:
+        return 0.0
+    return round(dot / (norm_a * norm_b), 6)
+
+
+class AvatarEmbeddingStore:
+    """Manages embedding vectors for avatar identity comparison.
+
+    When a ``AvatarVisualDna.embedding_vector`` is populated, cosine similarity
+    is used instead of (or alongside) field-level matching for more robust
+    identity checks.
+    """
+
+    def get_embedding(self, db: Session, avatar_id: str) -> list[float] | None:
+        visual: AvatarVisualDna | None = _repo.get_visual(db, avatar_id)
+        if visual is None:
+            return None
+        vec = visual.embedding_vector
+        if not isinstance(vec, list):
+            return None
+        return [float(v) for v in vec]
+
+    def set_embedding(
+        self,
+        db: Session,
+        avatar_id: str,
+        embedding: list[float],
+    ) -> AvatarVisualDna:
+        return _repo.upsert_visual(db, avatar_id, {"embedding_vector": embedding})
+
+    def similarity(
+        self,
+        db: Session,
+        avatar_id: str,
+        candidate_embedding: list[float],
+    ) -> float:
+        """Return cosine similarity between the avatar's canonical embedding and a candidate."""
+        ref = self.get_embedding(db, avatar_id)
+        if ref is None:
+            return 1.0  # No reference → treat as consistent
+        return _cosine_similarity(ref, candidate_embedding)
+
+
+class AvatarConsistencyGuard:
+    """Frame-level identity drift detection.
+
+    ``lock_frame_sequence()`` compares each frame embedding against the avatar's
+    canonical reference and returns a per-frame drift score list.
+    """
+
+    def __init__(self) -> None:
+        self._embedding_store = AvatarEmbeddingStore()
+
+    def lock_frame_sequence(
+        self,
+        db: Session,
+        avatar_id: str,
+        frame_embeddings: list[list[float]],
+    ) -> list[dict[str, Any]]:
+        """Score each frame against the avatar's canonical embedding.
+
+        Returns a list of per-frame dicts with:
+        - ``frame_index``: 0-based index
+        - ``cosine_similarity``: float in [0, 1]
+        - ``drift_detected``: bool (True when similarity < threshold)
+        """
+        canonical = self._embedding_store.get_embedding(db, avatar_id)
+        results: list[dict[str, Any]] = []
+        for i, frame_emb in enumerate(frame_embeddings):
+            if canonical is not None:
+                sim = _cosine_similarity(canonical, frame_emb)
+            else:
+                sim = 1.0  # no canonical → all frames pass
+            results.append({
+                "frame_index": i,
+                "cosine_similarity": sim,
+                "drift_detected": sim < _EMBEDDING_DRIFT_THRESHOLD,
+            })
+        return results
 
 
 class AvatarIdentityService:
+    def __init__(self) -> None:
+        self._embedding_store = AvatarEmbeddingStore()
+        self._guard = AvatarConsistencyGuard()
+
     def upsert_identity(self, db: Session, avatar_id: str, data: dict) -> AvatarDna:
         avatar = _repo.get_avatar(db, avatar_id)
         if not avatar:
@@ -45,11 +141,7 @@ class AvatarIdentityService:
     # ------------------------------------------------------------------
 
     def get_identity_vector(self, db: Session, avatar_id: str) -> dict[str, Any]:
-        """Return a compact identity vector for the avatar.
-
-        The vector encodes key visual, voice, and motion traits in a
-        normalised dictionary suitable for downstream similarity checks.
-        """
+        """Return a compact identity vector for the avatar."""
         avatar = _repo.get_avatar(db, avatar_id)
         if not avatar:
             return {}
@@ -66,6 +158,9 @@ class AvatarIdentityService:
             for field in _FACE_SIMILARITY_FIELDS + _STYLE_SIMILARITY_FIELDS:
                 vector[field] = getattr(visual, field, None)
             vector["reference_image_url"] = visual.reference_image_url
+            # Include embedding when available
+            if visual.embedding_vector:
+                vector["has_embedding"] = True
         if voice:
             vector["language_code"] = voice.language_code
             vector["tone"] = voice.tone
@@ -75,17 +170,125 @@ class AvatarIdentityService:
 
         return vector
 
-    def get_reference_frames(self, avatar_id: str) -> list[dict[str, Any]]:
-        """Return canonical reference frames used for consistency scoring.
+    def get_reference_frames(
+        self,
+        avatar_id: str,
+        db: Session | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return canonical reference frames for consistency scoring.
 
-        In production these would be actual frame descriptors (embeddings).
-        Here we return named reference points that consistency checks can use.
+        When a DB session is provided, reads from the ``avatar_reference_frames``
+        table.  Falls back to static placeholders when the table is empty or
+        no DB session is available.
         """
+        if db is not None:
+            try:
+                from app.models.autovis import AvatarReferenceFrame
+                rows = (
+                    db.query(AvatarReferenceFrame)
+                    .filter(AvatarReferenceFrame.avatar_id == avatar_id)
+                    .order_by(AvatarReferenceFrame.created_at)
+                    .all()
+                )
+                if rows:
+                    return [
+                        {
+                            "frame_type": r.frame_type,
+                            "avatar_id": avatar_id,
+                            "image_url": r.image_url,
+                            "embedding_vector": r.embedding_vector,
+                            "source": "db",
+                        }
+                        for r in rows
+                    ]
+            except Exception:
+                pass
+        # Static placeholders
         return [
             {"frame_type": "face_neutral", "avatar_id": avatar_id, "source": "static"},
             {"frame_type": "pose_default", "avatar_id": avatar_id, "source": "animated"},
             {"frame_type": "style_primary", "avatar_id": avatar_id, "source": "static"},
         ]
+
+    # ------------------------------------------------------------------
+    # Embedding-based cosine similarity check
+    # ------------------------------------------------------------------
+
+    def score_embedding_similarity(
+        self,
+        db: Session,
+        avatar_id: str,
+        candidate_embedding: list[float],
+    ) -> float:
+        """Return cosine similarity between avatar's canonical embedding and a render output embedding."""
+        return self._embedding_store.similarity(db, avatar_id, candidate_embedding)
+
+    # ------------------------------------------------------------------
+    # Frame sequence identity lock
+    # ------------------------------------------------------------------
+
+    def lock_frame_sequence(
+        self,
+        db: Session,
+        avatar_id: str,
+        frame_embeddings: list[list[float]],
+    ) -> list[dict[str, Any]]:
+        """Score each frame against the avatar's canonical embedding.
+
+        Returns per-frame drift scores.  Frames with ``drift_detected=True``
+        should be flagged for manual review or re-render.
+        """
+        return self._guard.lock_frame_sequence(db, avatar_id, frame_embeddings)
+
+    # ------------------------------------------------------------------
+    # Render-time verification loop
+    # ------------------------------------------------------------------
+
+    def verify_render_output(
+        self,
+        db: Session,
+        avatar_id: str,
+        render_url: str,
+        frame_count: int = 0,
+        frame_embeddings: list[list[float]] | None = None,
+    ) -> dict[str, Any]:
+        """Verify that a completed render is consistent with the avatar's identity.
+
+        Computes a per-frame consistency score when ``frame_embeddings`` is
+        provided and falls back to field-level matching otherwise.
+
+        Returns a result dict including ``consistency_score``, ``ok`` (bool),
+        ``action`` ("accept" | "identity_review"), and ``frame_results``
+        (per-frame breakdown when embeddings are provided).
+        """
+        frame_results: list[dict[str, Any]] = []
+        consistency_score: float = 1.0
+
+        if frame_embeddings:
+            frame_results = self.lock_frame_sequence(db, avatar_id, frame_embeddings)
+            scores = [r["cosine_similarity"] for r in frame_results]
+            consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
+        else:
+            # Fallback: use field-level consistency scoring
+            identity = self.get_identity_vector(db, avatar_id)
+            consistency_score = round(
+                identity.get("consistency_score", 1.0)
+                if isinstance(identity.get("consistency_score"), float)
+                else 1.0,
+                3,
+            )
+
+        action = "accept" if consistency_score >= _RENDER_CONSISTENCY_THRESHOLD else "identity_review"
+        return {
+            "ok": True,
+            "avatar_id": avatar_id,
+            "render_url": render_url,
+            "frame_count": frame_count or len(frame_embeddings or []),
+            "consistency_score": consistency_score,
+            "action": action,
+            "requires_review": action == "identity_review",
+            "frame_results": frame_results,
+        }
 
     # ------------------------------------------------------------------
     # Consistency scoring
@@ -97,11 +300,7 @@ class AvatarIdentityService:
         avatar_id: str,
         output_traits: dict[str, Any],
     ) -> dict[str, Any]:
-        """Compare output_traits against the avatar's stored identity vector.
-
-        Returns face_similarity, style_similarity, motion_consistency scores in
-        [0, 1], plus an overall ``consistency_score`` and ``drift_flags``.
-        """
+        """Compare output_traits against the avatar's stored identity vector."""
         identity = self.get_identity_vector(db, avatar_id)
         if not identity:
             return {
@@ -111,13 +310,31 @@ class AvatarIdentityService:
                 "drift_flags": ["avatar_not_found"],
             }
 
+        # Use embedding-based similarity when available
+        candidate_emb: list[float] | None = output_traits.get("embedding_vector")
+        if candidate_emb is not None and identity.get("has_embedding"):
+            emb_sim = self._embedding_store.similarity(db, avatar_id, candidate_emb)
+            drift_flags: list[str] = []
+            if emb_sim < _EMBEDDING_DRIFT_THRESHOLD:
+                drift_flags.append("embedding_drift_detected")
+            return {
+                "ok": True,
+                "avatar_id": avatar_id,
+                "embedding_similarity": emb_sim,
+                "consistency_score": emb_sim,
+                "drift_flags": drift_flags,
+                "should_reject": emb_sim < _EMBEDDING_DRIFT_THRESHOLD,
+                "method": "embedding",
+            }
+
+        # Fall back to field-level matching
         face_sim = self._compute_field_similarity(identity, output_traits, _FACE_SIMILARITY_FIELDS)
         style_sim = self._compute_field_similarity(identity, output_traits, _STYLE_SIMILARITY_FIELDS)
         motion_cons = self._compute_field_similarity(identity, output_traits, _MOTION_CONSISTENCY_FIELDS)
 
         overall = round((face_sim * 0.4 + style_sim * 0.35 + motion_cons * 0.25), 3)
 
-        drift_flags: list[str] = []
+        drift_flags = []
         if face_sim < _FACE_DRIFT_THRESHOLD:
             drift_flags.append("face_drift_detected")
         if style_sim < _STYLE_DRIFT_THRESHOLD:
@@ -134,6 +351,7 @@ class AvatarIdentityService:
             "consistency_score": overall,
             "drift_flags": drift_flags,
             "should_reject": len(drift_flags) >= 2 or face_sim < _FACE_DRIFT_THRESHOLD,
+            "method": "field_matching",
         }
 
     @staticmethod
@@ -153,9 +371,9 @@ class AvatarIdentityService:
                 if ref_val == cand_val:
                     matched += 1
                 elif isinstance(ref_val, str) and isinstance(cand_val, str):
-                    # Partial string match contributes 0.5 weight
                     if ref_val.lower() in cand_val.lower() or cand_val.lower() in ref_val.lower():
                         matched += 0.5
         if present == 0:
-            return 1.0  # no reference data → treat as consistent
+            return 1.0
         return matched / present
+

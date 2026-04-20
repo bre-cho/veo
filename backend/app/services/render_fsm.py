@@ -19,6 +19,7 @@ RENDER_JOB_STATES = {
     "completed",
     "failed",
     "queue_error",
+    "identity_review",  # Avatar identity check failed post-render; pending reject/requeue
 }
 
 RENDER_SCENE_STATES = {
@@ -37,10 +38,11 @@ RENDER_SCENE_STATES = {
 RENDER_JOB_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"dispatching", "failed", "queue_error"},
     "dispatching": {"polling", "failed", "queue_error"},
-    "polling": {"merging", "burning_subtitles", "completed", "failed"},
-    "merging": {"burning_subtitles", "completed", "failed"},
-    "burning_subtitles": {"completed", "failed"},
+    "polling": {"merging", "burning_subtitles", "completed", "failed", "identity_review"},
+    "merging": {"burning_subtitles", "completed", "failed", "identity_review"},
+    "burning_subtitles": {"completed", "failed", "identity_review"},
     "queue_error": {"failed"},
+    "identity_review": {"queued", "failed"},  # requeue or reject
     "completed": set(),
     "failed": set(),
 }

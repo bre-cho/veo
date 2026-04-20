@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass  # Session imported lazily inside historical_boost to avoid circular deps
 
 # ---------------------------------------------------------------------------
 # Product category → expected conversion signal boosters
@@ -132,3 +135,262 @@ class ConversionScoringEngine:
             if word_count > 100:
                 base = min(base + 0.04, 1.0)
         return base
+
+    @staticmethod
+    def historical_boost(
+        variant_type: str,
+        product_category: str | None = None,
+        platform: str | None = None,
+        db: "Any | None" = None,
+    ) -> float:
+        """Compute an EWMA-based score adjustment from historical outcomes.
+
+        Queries ``VariantRunRecord`` rows that have an ``actual_conversion_score``
+        recorded and computes an exponentially-weighted moving average for the
+        given ``variant_type`` + optional filters.
+
+        Returns a value in [-0.1, +0.1]:
+        - positive when history shows above-average conversion
+        - negative when history shows below-average conversion
+        - 0.0 when insufficient data or no DB session
+        """
+        if db is None:
+            return 0.0
+        try:
+            from app.models.variant_run_record import VariantRunRecord
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=60)
+            query = (
+                db.query(VariantRunRecord)
+                .filter(
+                    VariantRunRecord.actual_conversion_score.isnot(None),
+                    VariantRunRecord.recorded_at >= cutoff,
+                )
+            )
+            if product_category:
+                query = query.filter(VariantRunRecord.product_category == product_category)
+            if platform:
+                query = query.filter(VariantRunRecord.platform == platform)
+            rows = query.all()
+
+            # Filter to rows whose winning variant matches the requested type
+            relevant_scores: list[float] = []
+            for row in rows:
+                winner_idx = row.winner_variant_index
+                variants = row.variants or []
+                winning_v = next(
+                    (v for v in variants if v.get("variant_index") == winner_idx), None
+                )
+                if winning_v and winning_v.get("variant_type") == variant_type:
+                    if row.actual_conversion_score is not None:
+                        relevant_scores.append(float(row.actual_conversion_score))
+
+            if not relevant_scores:
+                return 0.0
+
+            # EWMA: more recent scores get higher weight
+            import math
+            ewma = 0.0
+            weight_sum = 0.0
+            for i, score in enumerate(relevant_scores):
+                w = math.exp(-0.1 * (len(relevant_scores) - 1 - i))
+                ewma += score * w
+                weight_sum += w
+            if weight_sum > 0:
+                ewma /= weight_sum
+
+            # Map EWMA to [-0.1, +0.1] centred on 0.65 (neutral)
+            raw = (ewma - 0.65) * (0.1 / 0.35)
+            return round(max(-0.1, min(0.1, raw)), 4)
+        except Exception:
+            return 0.0
+
+    # ------------------------------------------------------------------
+    # Weight calibration
+    # ------------------------------------------------------------------
+
+    _CALIBRATION_MIN_RECORDS = 30
+    _DIMENSION_NAMES = (
+        "hook_strength", "clarity", "trust", "cta_quality",
+        "market_fit", "persona_fit", "product_category_fit", "platform_fit",
+    )
+
+    @classmethod
+    def calibrate_weights(
+        cls,
+        db: "Any",
+        platform: str | None = None,
+        product_category: str | None = None,
+    ) -> dict[str, float]:
+        """Compute optimal scoring weights from historical conversion data.
+
+        Uses least-squares linear regression over ``VariantRunRecord`` rows
+        that have ``actual_conversion_score`` recorded.  When ≥30 records are
+        available the computed weights are persisted to ``ScoringCalibration``
+        and returned.
+
+        Returns the calibrated weights dict (or the static defaults when
+        insufficient data is available).
+        """
+        defaults = {d: round(1.0 / len(cls._DIMENSION_NAMES), 4) for d in cls._DIMENSION_NAMES}
+        try:
+            from app.models.variant_run_record import VariantRunRecord
+            from app.models.scoring_calibration import ScoringCalibration
+            from datetime import datetime, timezone
+
+            query = db.query(VariantRunRecord).filter(
+                VariantRunRecord.actual_conversion_score.isnot(None)
+            )
+            if platform:
+                query = query.filter(VariantRunRecord.platform == platform)
+            if product_category:
+                query = query.filter(VariantRunRecord.product_category == product_category)
+            rows = query.all()
+
+            if len(rows) < cls._CALIBRATION_MIN_RECORDS:
+                return defaults
+
+            # Build X (feature matrix) and y (target) from winner variants
+            X: list[list[float]] = []
+            y: list[float] = []
+            for row in rows:
+                winner_idx = row.winner_variant_index
+                variants = row.variants or []
+                winning_v = next(
+                    (v for v in variants if v.get("variant_index") == winner_idx), None
+                )
+                if winning_v is None:
+                    continue
+                breakdown: dict = winning_v.get("score_breakdown") or {}
+                features = [float(breakdown.get(d, 0.5)) for d in cls._DIMENSION_NAMES]
+                X.append(features)
+                y.append(float(row.actual_conversion_score))
+
+            if len(X) < cls._CALIBRATION_MIN_RECORDS:
+                return defaults
+
+            # Ordinary least squares: w = (X^T X)^{-1} X^T y
+            n = len(cls._DIMENSION_NAMES)
+            # Compute X^T X
+            XtX = [[0.0] * n for _ in range(n)]
+            Xty = [0.0] * n
+            for xi, yi in zip(X, y):
+                for i in range(n):
+                    Xty[i] += xi[i] * yi
+                    for j in range(n):
+                        XtX[i][j] += xi[i] * xi[j]
+
+            # Simple Cholesky-free solve via normalised gradient approach
+            # (avoids numpy dependency; good enough for n=8)
+            w = _solve_lstsq(XtX, Xty, n)
+            if w is None:
+                return defaults
+
+            # Normalise weights to [0.05, 0.4] range and sum to 1
+            total_w = sum(abs(wi) for wi in w) or 1.0
+            calibrated = {
+                d: max(0.05, min(0.40, round(abs(w[i]) / total_w, 4)))
+                for i, d in enumerate(cls._DIMENSION_NAMES)
+            }
+            # Re-normalise to 1
+            cw_sum = sum(calibrated.values())
+            calibrated = {k: round(v / cw_sum, 4) for k, v in calibrated.items()}
+
+            # Compute R²
+            y_mean = sum(y) / len(y)
+            ss_tot = sum((yi - y_mean) ** 2 for yi in y)
+            y_hat = [sum(calibrated[d] * xi[i] for i, d in enumerate(cls._DIMENSION_NAMES)) for xi in X]
+            ss_res = sum((yi - yh) ** 2 for yi, yh in zip(y, y_hat))
+            r_sq = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 0 else 0.0
+
+            # Persist calibration
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            existing = (
+                db.query(ScoringCalibration)
+                .filter(
+                    ScoringCalibration.platform == platform,
+                    ScoringCalibration.product_category == product_category,
+                )
+                .first()
+            )
+            if existing is not None:
+                existing.weights = calibrated
+                existing.sample_count = len(X)
+                existing.r_squared = r_sq
+                existing.calibrated_at = now
+                db.add(existing)
+            else:
+                db.add(ScoringCalibration(
+                    platform=platform,
+                    product_category=product_category,
+                    weights=calibrated,
+                    sample_count=len(X),
+                    r_squared=r_sq,
+                    calibrated_at=now,
+                ))
+            db.commit()
+            return calibrated
+        except Exception:
+            return defaults
+
+    @classmethod
+    def load_calibrated_weights(
+        cls,
+        db: "Any | None",
+        platform: str | None = None,
+        product_category: str | None = None,
+    ) -> dict[str, float] | None:
+        """Load persisted calibrated weights from DB, or None if unavailable."""
+        if db is None:
+            return None
+        try:
+            from app.models.scoring_calibration import ScoringCalibration
+            from datetime import datetime, timedelta, timezone
+
+            row = (
+                db.query(ScoringCalibration)
+                .filter(
+                    ScoringCalibration.platform == platform,
+                    ScoringCalibration.product_category == product_category,
+                )
+                .order_by(ScoringCalibration.calibrated_at.desc())
+                .first()
+            )
+            if row is None:
+                return None
+            # Staleness check: warn if calibration is >7 days old (but still use it)
+            age_days = (
+                datetime.now(timezone.utc).replace(tzinfo=None) - row.calibrated_at
+            ).days
+            if age_days > 7:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "ScoringCalibration for platform=%s category=%s is %d days old",
+                    platform, product_category, age_days,
+                )
+            return row.weights
+        except Exception:
+            return None
+
+
+def _solve_lstsq(A: list[list[float]], b: list[float], n: int) -> list[float] | None:
+    """Gaussian elimination to solve A*w = b.  Returns w or None on failure."""
+    # Augmented matrix
+    M = [A[i][:] + [b[i]] for i in range(n)]
+    for col in range(n):
+        pivot = None
+        for row in range(col, n):
+            if abs(M[row][col]) > 1e-12:
+                pivot = row
+                break
+        if pivot is None:
+            return None
+        M[col], M[pivot] = M[pivot], M[col]
+        scale = M[col][col]
+        M[col] = [v / scale for v in M[col]]
+        for row in range(n):
+            if row != col:
+                factor = M[row][col]
+                M[row] = [M[row][j] - factor * M[col][j] for j in range(n + 1)]
+    return [M[i][n] for i in range(n)]

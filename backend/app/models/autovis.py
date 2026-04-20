@@ -63,7 +63,31 @@ class AvatarVisualDna(Base):
     gender_expression: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     accessories: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     reference_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Float-array embedding (128-512 dims) for cosine-similarity identity checks.
+    # Stored as a JSON list; null means no embedding has been computed yet.
+    embedding_vector: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, default=_now, onupdate=_now)
+
+
+class AvatarReferenceFrame(Base):
+    """Canonical reference frames used for per-frame identity consistency scoring.
+
+    Each row stores a named reference frame (face_neutral, pose_default, …)
+    together with its embedding vector and optional source image URL.
+    ``AvatarIdentityService.get_reference_frames()`` reads from this table
+    instead of returning static placeholders.
+    """
+
+    __tablename__ = "avatar_reference_frames"
+
+    id: Mapped[str] = uuid_col()
+    avatar_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # e.g. "face_neutral" | "pose_default" | "style_primary"
+    frame_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    # Float-array embedding for this reference frame
+    embedding_vector: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, default=_now, index=True)
 
 
 class AvatarVoiceDna(Base):

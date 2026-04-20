@@ -32,6 +32,12 @@ class PublishJob(Base):
     parent_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     payload: Mapped[Any] = mapped_column(JSON, nullable=False)
     signal_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Idempotency key = sha256(platform + channel_plan_id + payload_hash).
+    # Used to prevent duplicate publishes for the same content.
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    # Preflight validation status: null (not run) | "ok" | "error"
+    preflight_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    preflight_errors: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     preparing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     publishing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
