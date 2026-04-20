@@ -188,6 +188,127 @@ class PerformanceLearningEngine:
             "avg_conversion_score": round(avg_score, 3),
         }
 
+    def data_quality_report(self) -> dict[str, Any]:
+        """Return a data quality summary for governance / observability.
+
+        Checks:
+        - total record count
+        - fraction of records missing platform / market_code
+        - fraction of records with out-of-range conversion_score
+        - duplicate video_id count (should be 0 with upsert semantics)
+        """
+        records = self._records
+        total = len(records)
+        if total == 0:
+            return {
+                "ok": True,
+                "total_records": 0,
+                "missing_platform_pct": 0.0,
+                "missing_market_code_pct": 0.0,
+                "invalid_score_pct": 0.0,
+                "duplicate_video_ids": 0,
+                "issues": [],
+            }
+
+        missing_platform = sum(1 for r in records if not r.get("platform"))
+        missing_market = sum(1 for r in records if not r.get("market_code"))
+        invalid_score = sum(
+            1 for r in records
+            if not (0.0 <= float(r.get("conversion_score", -1)) <= 1.0)
+        )
+
+        video_ids = [r.get("video_id") for r in records]
+        unique_ids = len(set(video_ids))
+        duplicates = total - unique_ids
+
+        issues: list[str] = []
+        missing_platform_pct = round(missing_platform / total, 3)
+        missing_market_pct = round(missing_market / total, 3)
+        invalid_score_pct = round(invalid_score / total, 3)
+
+        if missing_platform_pct > 0.5:
+            issues.append(f">{missing_platform_pct*100:.0f}% records missing platform field")
+        if missing_market_pct > 0.5:
+            issues.append(f">{missing_market_pct*100:.0f}% records missing market_code field")
+        if invalid_score_pct > 0:
+            issues.append(f"{invalid_score_pct*100:.0f}% records have out-of-range conversion_score")
+        if duplicates > 0:
+            issues.append(f"{duplicates} duplicate video_id(s) found")
+
+        return {
+            "ok": len(issues) == 0,
+            "total_records": total,
+            "missing_platform_pct": missing_platform_pct,
+            "missing_market_code_pct": missing_market_pct,
+            "invalid_score_pct": invalid_score_pct,
+            "duplicate_video_ids": duplicates,
+            "issues": issues,
+        }
+
+    def score_drift_summary(
+        self,
+        *,
+        window_days: int = 7,
+        baseline_days: int = 30,
+    ) -> dict[str, Any]:
+        """Detect score drift by comparing a recent window to a longer baseline.
+
+        Returns the mean and std of conversion_score for:
+        - ``recent``: records from the last ``window_days`` days
+        - ``baseline``: all records up to ``baseline_days`` days old
+
+        The ``drift`` field is ``recent_mean - baseline_mean``.  A large
+        negative drift suggests performance is degrading; a large positive
+        drift suggests improvement (or score inflation).
+        """
+        now = time.time()
+        recent_cutoff = now - window_days * 86400
+        baseline_cutoff = now - baseline_days * 86400
+
+        recent_scores = [
+            float(r["conversion_score"])
+            for r in self._records
+            if float(r.get("recorded_at", 0)) >= recent_cutoff
+        ]
+        baseline_scores = [
+            float(r["conversion_score"])
+            for r in self._records
+            if float(r.get("recorded_at", 0)) >= baseline_cutoff
+        ]
+
+        def _stats(scores: list[float]) -> dict[str, Any]:
+            if not scores:
+                return {"count": 0, "mean": None, "std": None}
+            mean = sum(scores) / len(scores)
+            variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+            return {
+                "count": len(scores),
+                "mean": round(mean, 4),
+                "std": round(variance ** 0.5, 4),
+            }
+
+        recent_stats = _stats(recent_scores)
+        baseline_stats = _stats(baseline_scores)
+
+        drift: float | None = None
+        if recent_stats["mean"] is not None and baseline_stats["mean"] is not None:
+            drift = round(recent_stats["mean"] - baseline_stats["mean"], 4)
+
+        alert = (
+            drift is not None
+            and abs(drift) >= 0.15  # ±15 pp drift triggers an alert
+            and recent_stats["count"] >= 3  # require at least a few recent records
+        )
+
+        return {
+            "recent_window_days": window_days,
+            "baseline_days": baseline_days,
+            "recent": recent_stats,
+            "baseline": baseline_stats,
+            "drift": drift,
+            "alert": alert,
+        }
+
     def all_records(self) -> list[dict[str, Any]]:
         return list(self._records)
 

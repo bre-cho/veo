@@ -31,6 +31,7 @@ class PublishJob(Base):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     parent_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     payload: Mapped[Any] = mapped_column(JSON, nullable=False)
+    signal_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     preparing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     publishing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

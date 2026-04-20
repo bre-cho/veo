@@ -6,6 +6,7 @@ from typing import Any
 
 from app.schemas.scoring import CandidateScore
 from app.schemas.trend_image import TrendImageConcept, TrendImageRequest, TrendImageResponse
+from app.services.creative_feedback import build_unified_feedback_boosts, score_weight_recalibration
 
 # ---------------------------------------------------------------------------
 # Scoring weights – kept in a module-level dict so they are easy to tune
@@ -80,42 +81,15 @@ def _relevance_score(topic: str, niche: str | None, content_goal: str | None) ->
 
 
 # ---------------------------------------------------------------------------
-# Feedback boost helpers (Phase 2.2)
+# Feedback boost helpers – delegate to unified creative_feedback module
 # ---------------------------------------------------------------------------
-_FEEDBACK_WIN_THRESHOLD = 3  # minimum consecutive wins before applying boost
-_FEEDBACK_BOOST_STEP = 0.05  # trend_fit boost per winning streak
+_FEEDBACK_WIN_THRESHOLD = 3  # retained for backward-compat imports in tests
+_FEEDBACK_BOOST_STEP = 0.05
 
 
 def _build_feedback_boosts(learning_store: Any | None, niche: str | None) -> dict[str, float]:
-    """Return per-style trend_fit boosts derived from learning store history.
-
-    If a style has been the top template_family for the given niche at least
-    ``_FEEDBACK_WIN_THRESHOLD`` times, it receives a positive boost; losing
-    styles receive a small penalty.
-    """
-    if learning_store is None:
-        return {}
-    try:
-        records = learning_store.all_records()
-    except Exception:
-        return {}
-
-    niche_key = (niche or "").lower()
-    style_wins: dict[str, int] = {}
-    for rec in records:
-        # template_family maps to style in trend-image context
-        tf = str(rec.get("template_family") or "")
-        rec_niche = str(rec.get("hook_pattern") or "")  # hook_pattern stores format/style
-        if niche_key and niche_key not in rec_niche.lower() and niche_key not in tf.lower():
-            continue
-        if rec.get("conversion_score", 0) >= 0.7:
-            style_wins[tf] = style_wins.get(tf, 0) + 1
-
-    boosts: dict[str, float] = {}
-    for style, wins in style_wins.items():
-        if wins >= _FEEDBACK_WIN_THRESHOLD:
-            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
-    return boosts
+    """Return per-style trend_fit boosts via unified feedback module."""
+    return build_unified_feedback_boosts(learning_store, niche=niche)
 
 
 class TrendImageEngine:
@@ -165,8 +139,20 @@ class TrendImageEngine:
         candidates: list[CandidateScore] = []
         style = req.style_preset
 
-        # Build per-style feedback boosts from learning store (Phase 2.2)
+        # Build per-style feedback boosts from learning store (unified module)
         feedback_boosts = _build_feedback_boosts(learning_store, niche=req.niche)
+        # Apply score-weight recalibration when context (platform/market/goal) is available
+        weight_factors = score_weight_recalibration(
+            learning_store,
+            _SCORE_WEIGHTS,
+            platform=None,  # TrendImageRequest has no platform field; extend if needed
+            market_code=req.market_code,
+            goal=req.content_goal,
+        )
+        effective_weights = {k: _SCORE_WEIGHTS[k] * weight_factors[k] for k in _SCORE_WEIGHTS}
+        total_w = sum(effective_weights.values())
+        if total_w > 0:
+            effective_weights = {k: v / total_w for k, v in effective_weights.items()}
         feedback_applied = bool(feedback_boosts)
 
         for idx in range(req.count):
@@ -191,10 +177,10 @@ class TrendImageEngine:
             visual_strength = round(min(0.99, max(0.50, visual_strength + jitter * 0.4)), 3)
 
             total = round(
-                (relevance * _SCORE_WEIGHTS["relevance"])
-                + (trend_fit * _SCORE_WEIGHTS["trend_fit"])
-                + (market_fit * _SCORE_WEIGHTS["market_fit"])
-                + (visual_strength * _SCORE_WEIGHTS["visual_strength"]),
+                (relevance * effective_weights["relevance"])
+                + (trend_fit * effective_weights["trend_fit"])
+                + (market_fit * effective_weights["market_fit"])
+                + (visual_strength * effective_weights["visual_strength"]),
                 3,
             )
 

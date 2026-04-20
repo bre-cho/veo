@@ -6,6 +6,7 @@ from typing import Any
 
 from app.schemas.scoring import CandidateScore
 from app.schemas.lookbook import LookbookRequest, LookbookResponse
+from app.services.creative_feedback import build_unified_feedback_boosts, score_weight_recalibration
 
 # ---------------------------------------------------------------------------
 # Scoring weights
@@ -78,32 +79,15 @@ def _style_coherence_score(style_preset: str, target_platform: str | None) -> fl
 
 
 # ---------------------------------------------------------------------------
-# Feedback boost helper (Phase 2.2)
+# Feedback boost helper – delegate to unified creative_feedback module
 # ---------------------------------------------------------------------------
 _FEEDBACK_WIN_THRESHOLD = 3
 _FEEDBACK_BOOST_STEP = 0.05
 
 
 def _build_lookbook_feedback_boosts(learning_store: Any | None) -> dict[str, float]:
-    """Return per-style campaign_fit boosts derived from learning store history."""
-    if learning_store is None:
-        return {}
-    try:
-        records = learning_store.all_records()
-    except Exception:
-        return {}
-
-    style_wins: dict[str, int] = {}
-    for rec in records:
-        tf = str(rec.get("template_family") or "")
-        if rec.get("conversion_score", 0) >= 0.7:
-            style_wins[tf] = style_wins.get(tf, 0) + 1
-
-    boosts: dict[str, float] = {}
-    for style, wins in style_wins.items():
-        if wins >= _FEEDBACK_WIN_THRESHOLD:
-            boosts[style] = round(_FEEDBACK_BOOST_STEP * (wins // _FEEDBACK_WIN_THRESHOLD), 3)
-    return boosts
+    """Return per-style campaign_fit boosts via unified feedback module."""
+    return build_unified_feedback_boosts(learning_store)
 
 
 class LookbookEngine:
@@ -149,8 +133,20 @@ class LookbookEngine:
     def _generate_internal(self, req: LookbookRequest, learning_store=None) -> LookbookResponse:
         candidate_styles = [req.style_preset or "clean-commerce", "editorial", "ugc-dynamic"]
 
-        # Build style boosts from learning store (Phase 2.2)
+        # Build style boosts from learning store (unified module)
         feedback_boosts = _build_lookbook_feedback_boosts(learning_store)
+        # Weight recalibration from context (platform / market / goal)
+        platform_key = req.target_platform
+        weight_factors = score_weight_recalibration(
+            learning_store,
+            _SCORE_WEIGHTS,
+            platform=platform_key,
+            market_code=req.market_code,
+        )
+        effective_weights = {k: _SCORE_WEIGHTS[k] * weight_factors[k] for k in _SCORE_WEIGHTS}
+        total_w = sum(effective_weights.values())
+        if total_w > 0:
+            effective_weights = {k: v / total_w for k, v in effective_weights.items()}
         feedback_applied = bool(feedback_boosts)
 
         candidate_payloads: list[tuple[list[dict[str, Any]], list[dict[str, Any]], CandidateScore]] = []
@@ -169,10 +165,10 @@ class LookbookEngine:
             effective_campaign_fit = round(min(0.99, campaign_fit + fb_boost), 3)
 
             total = round(
-                (coherence * _SCORE_WEIGHTS["style_coherence"])
-                + (compatibility * _SCORE_WEIGHTS["product_compatibility"])
-                + (effective_campaign_fit * _SCORE_WEIGHTS["campaign_fit"])
-                + (localization_fit * _SCORE_WEIGHTS["localization_fit"]),
+                (coherence * effective_weights["style_coherence"])
+                + (compatibility * effective_weights["product_compatibility"])
+                + (effective_campaign_fit * effective_weights["campaign_fit"])
+                + (localization_fit * effective_weights["localization_fit"]),
                 3,
             )
             candidate_payloads.append(
