@@ -153,6 +153,7 @@ class VerifyRenderRequest(BaseModel):
 def verify_render(
     avatar_id: str,
     req: VerifyRenderRequest,
+    render_job_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Verify that a completed render is consistent with the avatar's identity.
@@ -162,6 +163,10 @@ def verify_render(
     ``consistency_score`` falls below the threshold the response includes
     ``action='identity_review'`` which the caller can use to trigger an FSM
     transition to the ``identity_review`` state.
+
+    When ``render_job_id`` is supplied and quality/identity issues are found,
+    the always-on QA hook runs automatically to transition the job to
+    ``quality_remediation`` or ``identity_gate_failed``.
     """
     result = _identity.verify_render_output(
         db=db,
@@ -170,6 +175,24 @@ def verify_render(
         frame_count=req.frame_count,
         frame_embeddings=req.frame_embeddings,
     )
+
+    # Always-on QA hook: if a render_job_id is provided and the render needs
+    # further review, execute the full quality gate pipeline immediately.
+    if render_job_id and (result.get("requires_review") or result.get("action") == "identity_review"):
+        try:
+            from app.services.avatar.render_qa_hook import execute_qa_for_job
+            from app.services.render_repository import get_render_job_by_id
+
+            rj = get_render_job_by_id(db, render_job_id)
+            if rj is not None and rj.status == "identity_review":
+                qa_summary = execute_qa_for_job(db, rj)
+                result["qa_hook"] = qa_summary
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug(
+                "verify_render QA hook failed job_id=%s: %s", render_job_id, exc
+            )
+
     return result
 
 

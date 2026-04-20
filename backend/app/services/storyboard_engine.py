@@ -156,9 +156,14 @@ class StoryboardEngine:
         use_winning_graph: bool = False,
         include_asset_plan: bool = False,
         avatar_id: str | None = None,
+        db: Any | None = None,
     ) -> StoryboardResponse:
         grammar = _get_platform_grammar(platform)
         paragraphs = self._to_paragraphs(script_text)
+        scenes: list[StoryboardScene] = []
+
+        # Store db context for later use in asset planning
+        _db_ctx = db
         scenes: list[StoryboardScene] = []
 
         # Derive per-scene pacing boosts from learning store and pattern library.
@@ -289,7 +294,8 @@ class StoryboardEngine:
                 response_for_planner = StoryboardResponse(
                     storyboard_id=storyboard_id, scenes=scenes, summary=summary
                 )
-                asset_plan = planner.plan_assets(response_for_planner, avatar_id)
+                # Pass db so planner can JOIN with RenderJob inventory
+                asset_plan = planner.plan_assets(response_for_planner, avatar_id, db=_db_ctx)
             except Exception:
                 asset_plan = None
 

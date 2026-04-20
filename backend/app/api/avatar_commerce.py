@@ -416,6 +416,76 @@ def campaign_bid_hint(campaign_id: str):
     }
 
 
+@router.post("/calibration/apply", response_model=dict)
+def apply_calibration(
+    platform: str | None = None,
+    product_category: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Trigger a manual calibration sweep for a platform/category combination.
+
+    Reads VariantRunRecord history, computes optimal dimension weights via
+    linear regression, persists them to ScoringCalibration, and returns
+    the new weight profile.
+    """
+    from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
+
+    applier = ScoringCalibrationApplier(db=db)
+    result = applier.run_calibration_sweep(
+        platform=platform,
+        product_category=product_category,
+    )
+    return result
+
+
+@router.post("/attribution/{campaign_id}/record", response_model=dict)
+def record_attribution_as_performance(
+    campaign_id: str,
+    conversion_value: float = 1.0,
+    window_days: int = 7,
+    n_touch: int = 3,
+    db: Session = Depends(get_db),
+):
+    """Attribute a conversion and feed the result back into PerformanceLearningEngine.
+
+    Each attributed touchpoint becomes a performance record tagged with
+    ``campaign_id``, which feeds ``_derive_contextual_weight_adjustments()``
+    in ChannelEngine automatically.
+    """
+    from app.services.commerce.campaign_attribution_service import CampaignAttributionService
+    import time
+
+    svc = CampaignAttributionService(learning_store=_learning_engine)
+    conversion_event: dict = {"timestamp": time.time(), "value": conversion_value}
+    attribution = svc.attribute_conversion(
+        conversion_event=conversion_event,
+        campaign_id=campaign_id,
+        window_days=window_days,
+        n_touch=n_touch,
+    )
+
+    engine = PerformanceLearningEngine(db=db)
+    records_written = 0
+    for touch in attribution.get("attributions", []):
+        try:
+            engine.record(
+                video_id=str(touch.get("video_id") or f"{campaign_id}_attr_{records_written}"),
+                hook_pattern=str(touch.get("hook_pattern") or "unknown"),
+                cta_pattern="attribution_touch",
+                template_family="attribution",
+                conversion_score=float(touch.get("credit", 0.5)),
+                campaign_id=campaign_id,
+            )
+            records_written += 1
+        except Exception:
+            pass
+
+    return {
+        "campaign_id": campaign_id,
+        "attribution": attribution,
+        "performance_records_written": records_written,
+    }
+
 
 @router.get("/intelligence/status", response_model=dict)
 def intelligence_status(db: Session = Depends(get_db)):
