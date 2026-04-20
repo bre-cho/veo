@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -230,7 +231,7 @@ class ComparisonVideoEngine:
     def _build_competitor(self, competitor: str, pain: str) -> str:
         return (
             f"{competitor} has been the go-to for {pain}. "
-            f"But is it still the best option in {str(__import__('datetime').date.today().year)}?"
+            f"But is it still the best option in {datetime.date.today().year}?"
         )
 
     def _build_intro(self, product: str, audience: str) -> str:
