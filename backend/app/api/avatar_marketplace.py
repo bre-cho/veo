@@ -33,13 +33,6 @@ def list_avatars(
     db: Session = Depends(get_db),
 ):
     items = _mp_service.list_avatars(db, market_code=market_code, niche_code=niche_code, role_id=role_id, limit=limit, offset=offset)
-    items = [
-        item
-        for item in items
-        if item.get("is_published", True)
-        and bool(item.get("marketplace_item", {}).get("is_active"))
-        and item.get("moderation_status") == "approved"
-    ]
     return {"items": items, "total": len(items), "page": offset // limit + 1, "page_size": limit}
 
 
