@@ -58,3 +58,28 @@ class ProductTemplateRouterResponse(BaseModel):
     template_name: Optional[str] = None
     content_goal: str
     rationale: str
+
+
+class CommerceOptimizeRequest(BaseModel):
+    niche: str
+    goal: Optional[str] = None
+    days: int = 7
+    posts_per_day: int = 1
+    market_code: Optional[str] = None
+    platform: Optional[str] = None
+    formats: Optional[list[str]] = None
+    budget_constraint: Optional[float] = None
+    objectives: Optional[dict[str, float]] = None
+    channel_name: Optional[str] = None
+    avatar_id: Optional[str] = None
+    product_id: Optional[str] = None
+    project_id: Optional[str] = None
+
+
+class CommerceOptimizeResponse(BaseModel):
+    plan_id: Optional[str] = None
+    series_plan: list[Any] = []
+    publish_queue_count: int
+    calendar_summary: dict[str, Any] = {}
+    candidates: list[Any] = []
+    winner_candidate_id: Optional[str] = None

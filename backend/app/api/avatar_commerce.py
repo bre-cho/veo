@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.schemas.avatar_commerce import (
     CommerceCTARequest,
     CommerceCTAResponse,
+    CommerceOptimizeRequest,
+    CommerceOptimizeResponse,
     CommerceRecommendAvatarRequest,
     CommerceRecommendAvatarResponse,
     CommerceRecommendTemplateRequest,
@@ -40,6 +42,7 @@ from app.schemas.storyboard import (
     TemplateIntelligenceResponse,
 )
 from app.services.analytics_action_service import AnalyticsActionService
+from app.services.channel_engine import ChannelEngine
 from app.services.commerce.avatar_recommendation_service import AvatarRecommendationService
 from app.services.commerce.combo_recommender import AvatarTemplateComboRecommender
 from app.services.commerce.content_goal_classifier import ContentGoalClassifier
@@ -72,6 +75,7 @@ _comparison_engine = ComparisonVideoEngine()
 _template_intel_svc = TemplateIntelligenceService()
 _combo_recommender = AvatarTemplateComboRecommender()
 _analytics_action_svc = AnalyticsActionService()
+_channel_engine = ChannelEngine()
 _learning_engine = PerformanceLearningEngine()
 
 
@@ -372,6 +376,52 @@ def learning_health():
         "score_drift": drift,
         "persona_score_matrix": persona_matrix,
     }
+
+
+@router.post("/optimize", response_model=CommerceOptimizeResponse)
+def optimize_channel_plan(req: CommerceOptimizeRequest):
+    """Generate an optimised channel plan respecting an optional budget constraint.
+
+    Accepts the same fields as a standard channel plan request plus:
+
+    - ``budget_constraint``: maximum total spend (in cost-per-post units).  When
+      provided, the returned series plan is capped to
+      ``floor(budget_constraint / cost_per_post)`` items.
+    - ``objectives``: optional multi-objective weight dict forwarded to
+      ``MultiObjectiveScorer`` for blended candidate scoring.
+    """
+    from app.schemas.channel import ChannelPlanRequest
+
+    plan_req = ChannelPlanRequest(
+        channel_name=req.channel_name,
+        niche=req.niche,
+        market_code=req.market_code,
+        goal=req.goal,
+        days=req.days,
+        posts_per_day=req.posts_per_day,
+        formats=req.formats,
+        project_id=req.project_id,
+        avatar_id=req.avatar_id,
+        product_id=req.product_id,
+    )
+    # Attach platform so channel engine contextual scoring picks it up
+    if req.platform is not None:
+        object.__setattr__(plan_req, "platform", req.platform)
+
+    result = _channel_engine.generate_plan(
+        plan_req,
+        learning_store=_learning_engine,
+        budget_constraint=req.budget_constraint,
+        objectives=req.objectives,
+    )
+    return CommerceOptimizeResponse(
+        plan_id=result.plan_id,
+        series_plan=[item.model_dump() for item in result.series_plan],
+        publish_queue_count=result.publish_queue_count,
+        calendar_summary=result.calendar_summary,
+        candidates=[c.model_dump() for c in result.candidates],
+        winner_candidate_id=result.winner_candidate_id,
+    )
 
 
 @router.get("/campaigns/{campaign_id}/attribution", response_model=dict)

@@ -270,7 +270,7 @@
     "product_category": null,
     "funnel_stage": null,
     "campaign_id": null,
-    "recorded_at": 1776725917.85028
+    "recorded_at": 1776742514.0064437
   },
   {
     "video_id": "test-job-signal-001",
@@ -291,7 +291,7 @@
     "product_category": null,
     "funnel_stage": null,
     "campaign_id": null,
-    "recorded_at": 1776725921.9243608
+    "recorded_at": 1776742518.011338
   },
   {
     "video_id": "test-job-platform-001",
@@ -312,6 +312,6 @@
     "product_category": null,
     "funnel_stage": null,
     "campaign_id": null,
-    "recorded_at": 1776725921.9487529
+    "recorded_at": 1776742518.0347552
   }
 ]

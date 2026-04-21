@@ -155,6 +155,11 @@ _CONTEXT_WIN_THRESHOLD = 2  # minimum wins to apply contextual boost
 _NOVELTY_DECAY_WINDOW = 30  # recent angle count considered for dedup
 _NOVELTY_PENALTY = 0.25     # fraction of pool to avoid from head of recent history
 
+# Budget constraint: assumed cost per published post (currency-agnostic unit).
+# When a budget_constraint is supplied to generate_plan(), the series plan is
+# capped to floor(budget_constraint / _DEFAULT_COST_PER_POST) total posts.
+_DEFAULT_COST_PER_POST = 1.0
+
 
 def _derive_adaptive_weight_adjustments(learning_store: Any) -> dict[str, float]:
     """Return bounded additive adjustments to ``_SCORE_WEIGHTS`` from learning feedback.
@@ -387,6 +392,7 @@ class ChannelEngine:
         learning_store: Any | None = None,
         angle_history: list[str] | None = None,
         objectives: dict[str, float] | None = None,
+        budget_constraint: float | None = None,
     ) -> ChannelPlanResponse:
         candidates_with_plans = self._build_candidates(
             req,
@@ -398,19 +404,31 @@ class ChannelEngine:
         winner_score: CandidateScore = winner["score"]
         series_plan: list[ChannelPlanItem] = winner["plan"]
 
+        # Apply budget constraint: cap total posts to what the budget allows.
+        budget_posts_cap: int | None = None
+        if budget_constraint is not None and budget_constraint >= 0:
+            budget_posts_cap = int(budget_constraint / _DEFAULT_COST_PER_POST)
+            series_plan = series_plan[:budget_posts_cap]
+
         candidates = [item["score"] for item in candidates_with_plans]
         for candidate in candidates:
             candidate.winner_flag = candidate.candidate_id == winner_score.candidate_id
 
+        calendar_summary: dict[str, Any] = {
+            "days": req.days,
+            "posts_per_day": req.posts_per_day,
+            "total_posts": len(series_plan),
+            "niche": req.niche,
+        }
+        if budget_posts_cap is not None:
+            calendar_summary["budget_constraint"] = budget_constraint
+            calendar_summary["budget_posts_cap"] = budget_posts_cap
+            calendar_summary["budget_applied"] = len(series_plan) < req.days * req.posts_per_day
+
         return ChannelPlanResponse(
             series_plan=series_plan,
             publish_queue_count=len(series_plan),
-            calendar_summary={
-                "days": req.days,
-                "posts_per_day": req.posts_per_day,
-                "total_posts": len(series_plan),
-                "niche": req.niche,
-            },
+            calendar_summary=calendar_summary,
             candidates=candidates,
             winner_candidate_id=winner_score.candidate_id,
         )
