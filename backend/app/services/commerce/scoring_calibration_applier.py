@@ -32,7 +32,8 @@ class ScoringCalibrationApplier:
 
         applier = ScoringCalibrationApplier(db=db)
         weights = applier.get_dimension_weights(platform="tiktok", product_category="skincare")
-        # weights is a dict[str, float] or None
+        # weights is a dict[str, float] or None — None means calibration unavailable
+        # applier.last_r2 → R² of the loaded calibration (or None)
 
     Usage (MultiObjectiveScorer)::
 
@@ -45,6 +46,8 @@ class ScoringCalibrationApplier:
 
     def __init__(self, db: "Session | None" = None) -> None:
         self._db = db
+        # Exposed so ConversionScoringEngine can use R² for confidence weighting
+        self.last_r2: float | None = None
 
     # ------------------------------------------------------------------
     # ConversionScoringEngine dimensions
@@ -57,24 +60,37 @@ class ScoringCalibrationApplier:
     ) -> dict[str, float] | None:
         """Return calibrated dimension weights for ``ConversionScoringEngine``.
 
+        Also stores the calibration R² in ``self.last_r2`` for confidence
+        weighting by the caller.
+
         Returns ``None`` when no fresh calibration is available, signalling the
-        engine should use its static defaults.
+        engine should use its static defaults (with an explicit warning).
         """
+        self.last_r2 = None
         if self._db is None:
             return None
         try:
-            from app.services.commerce.conversion_scoring_engine import (
-                ConversionScoringEngine,
-            )
+            from app.models.scoring_calibration import ScoringCalibration
 
-            weights = ConversionScoringEngine.load_calibrated_weights(
-                self._db,
-                platform=platform,
-                product_category=product_category,
+            row = (
+                self._db.query(ScoringCalibration)
+                .filter(
+                    ScoringCalibration.platform == platform,
+                    ScoringCalibration.product_category == product_category,
+                )
+                .order_by(ScoringCalibration.calibrated_at.desc())
+                .first()
             )
-            if weights is None:
+            if row is None:
+                logger.info(
+                    "ScoringCalibrationApplier: no calibration row found for "
+                    "platform=%s category=%s",
+                    platform,
+                    product_category,
+                )
                 return None
-            return weights
+            self.last_r2 = row.r_squared if hasattr(row, "r_squared") else None
+            return row.weights
         except Exception as exc:
             logger.debug("ScoringCalibrationApplier.get_dimension_weights failed: %s", exc)
             return None

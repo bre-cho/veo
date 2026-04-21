@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass  # Session imported lazily inside historical_boost to avoid circular deps
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Product category → expected conversion signal boosters
@@ -29,6 +32,17 @@ _PLATFORM_INTENT_SIGNALS: dict[str, float] = {
     "instagram": 0.78,
 }
 
+# Funnel stage → score multiplier applied to overall composite score
+_FUNNEL_STAGE_MULTIPLIERS: dict[str, float] = {
+    "awareness": 0.85,   # early stage: penalise hard-sell signals
+    "consideration": 1.0,
+    "conversion": 1.10,  # bottom-of-funnel: reward CTA / urgency signals
+    "retention": 0.95,
+}
+
+# Minimum R² to consider calibrated weights "reliable enough"
+_MIN_CALIBRATION_R2 = 0.10
+
 
 class ConversionScoringEngine:
     def score_variant(
@@ -38,6 +52,7 @@ class ConversionScoringEngine:
         persona: str | None = None,
         product_category: str | None = None,
         platform: str | None = None,
+        funnel_stage: str | None = None,
         calibration_store: "Any | None" = None,
     ) -> dict[str, Any]:
         text = " ".join(
@@ -63,6 +78,9 @@ class ConversionScoringEngine:
         # New dimension: platform_fit
         platform_fit = self._score_platform_fit(text, platform)
 
+        # New dimension: funnel_stage_fit
+        funnel_stage_fit = self._score_funnel_stage_fit(text, funnel_stage)
+
         dimensions = {
             "hook_strength": hook_strength,
             "clarity": clarity,
@@ -72,37 +90,101 @@ class ConversionScoringEngine:
             "persona_fit": persona_fit,
             "product_category_fit": product_category_fit,
             "platform_fit": platform_fit,
+            "funnel_stage_fit": funnel_stage_fit,
         }
 
-        # Apply calibrated weights when a calibration_store is provided;
-        # fall back to equal-weight average otherwise.
+        # Load calibration weights.  When calibration is available, enforce its
+        # use.  When absent, log a warning and fall back to equal weights.
         calibrated_weights: dict[str, float] | None = None
+        calibration_r2: float | None = None
         if calibration_store is not None:
             try:
                 calibrated_weights = calibration_store.get_dimension_weights(
                     platform=platform, product_category=product_category
                 )
-            except Exception:
+                calibration_r2 = getattr(calibration_store, "last_r2", None)
+            except Exception as exc:
+                logger.warning(
+                    "ConversionScoringEngine: calibration load failed (%s) — "
+                    "using equal-weight fallback",
+                    exc,
+                )
                 calibrated_weights = None
 
         if calibrated_weights:
+            # Confidence weight: scale by how reliable calibration is (R²-based)
+            r2 = calibration_r2 if calibration_r2 is not None else 1.0
+            confidence = max(0.0, min(1.0, r2))
+            # Blend calibrated weights with equal-weight fallback proportionally to R²
+            n = len(dimensions)
+            equal_w = 1.0 / n
+            blended_weights = {
+                k: round(confidence * calibrated_weights.get(k, equal_w) + (1 - confidence) * equal_w, 4)
+                for k in dimensions
+            }
             score = round(
-                sum(calibrated_weights.get(k, 1.0 / len(dimensions)) * v
-                    for k, v in dimensions.items()),
+                sum(blended_weights.get(k, equal_w) * v for k, v in dimensions.items()),
                 3,
             )
         else:
-            score = round(sum(dimensions.values()) / len(dimensions), 3)
+            # No calibration available — emit warning and use equal weights
+            if calibration_store is not None:
+                logger.warning(
+                    "ConversionScoringEngine: no persisted calibration found for "
+                    "platform=%s category=%s; using equal-weight scoring",
+                    platform,
+                    product_category,
+                )
+            n = len(dimensions)
+            score = round(sum(dimensions.values()) / n, 3)
+            confidence = 0.0
+
+        # Apply funnel-stage multiplier AFTER base score is computed
+        funnel_multiplier = _FUNNEL_STAGE_MULTIPLIERS.get(
+            (funnel_stage or "").lower(), 1.0
+        )
+        score = round(min(1.0, score * funnel_multiplier), 3)
 
         return {
             "score": score,
             "details": {k: round(v, 3) for k, v in dimensions.items()},
             "calibrated": calibrated_weights is not None,
+            "calibration_confidence": round(confidence, 3),
+            "funnel_stage": funnel_stage,
+            "funnel_multiplier": funnel_multiplier,
         }
 
     # ------------------------------------------------------------------
     # New scoring helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _score_funnel_stage_fit(text: str, funnel_stage: str | None) -> float:
+        """Score how well the variant copy fits the target funnel stage."""
+        if not funnel_stage:
+            return 0.68
+        stage = funnel_stage.lower()
+        if stage == "awareness":
+            # Awareness: storytelling, problem framing — penalise hard sell
+            has_story = any(w in text for w in ("imagine", "story", "what if", "discover", "?"))
+            has_hard_sell = any(w in text for w in ("buy", "order", "purchase", "claim"))
+            score = 0.80 if has_story else 0.65
+            if has_hard_sell:
+                score = max(score - 0.10, 0.50)
+            return score
+        if stage == "consideration":
+            # Consideration: features, comparison, social proof
+            has_proof = any(w in text for w in ("review", "compare", "trusted", "proven", "vs", "better"))
+            return 0.82 if has_proof else 0.68
+        if stage == "conversion":
+            # Conversion: CTA urgency, offer
+            has_cta = any(w in text for w in ("buy", "tap", "start", "claim", "order", "shop", "now", "today"))
+            return 0.88 if has_cta else 0.60
+        if stage == "retention":
+            # Retention: loyalty, community, value
+            has_retention = any(w in text for w in ("exclusive", "loyalty", "member", "community", "thank"))
+            return 0.80 if has_retention else 0.65
+        return 0.68
 
     @staticmethod
     def _score_persona_fit(text: str, persona: str | None) -> float:
@@ -233,6 +315,7 @@ class ConversionScoringEngine:
     _DIMENSION_NAMES = (
         "hook_strength", "clarity", "trust", "cta_quality",
         "market_fit", "persona_fit", "product_category_fit", "platform_fit",
+        "funnel_stage_fit",
     )
 
     @classmethod

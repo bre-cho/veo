@@ -81,7 +81,32 @@ class SceneAssetPlanner:
             "missing_assets": missing_assets,
             "inventory_complete": len(missing_assets) == 0,
             "render_inventory": render_inventory,
+            "asset_inventory": self._build_asset_inventory(scene_assets, render_inventory),
         }
+
+    def _build_asset_inventory(
+        self,
+        scene_assets: dict[str, Any],
+        render_inventory: dict[str, list[str]],
+    ) -> dict[str, Any]:
+        """Build a structured asset_inventory keyed by asset_type.
+
+        Returns:
+            Dict mapping ``asset_type → {scenes: [scene_index, ...], render_urls: [...],
+            available: bool}``.
+        """
+        inventory: dict[str, Any] = {}
+        for scene_idx, scene_data in scene_assets.items():
+            for asset_type in scene_data.get("required_assets", []):
+                if asset_type not in inventory:
+                    inventory[asset_type] = {
+                        "asset_type": asset_type,
+                        "scenes": [],
+                        "render_urls": render_inventory.get(asset_type, []),
+                        "available": asset_type in render_inventory and bool(render_inventory[asset_type]),
+                    }
+                inventory[asset_type]["scenes"].append(int(scene_idx))
+        return inventory
 
     # ------------------------------------------------------------------
     # Private helpers
