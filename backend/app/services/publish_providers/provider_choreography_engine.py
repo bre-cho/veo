@@ -64,6 +64,12 @@ _AUDIT_LOG: list[dict[str, Any]] = []
 # Maximum audit log entries retained in memory
 _MAX_AUDIT_ENTRIES = 10_000
 
+_PLATFORM_RETRY_POLICY: dict[str, dict[str, float]] = {
+    "youtube": {"network_error": 45.0, "rate_limited": 600.0, "quota_exceeded": 86400.0},
+    "tiktok": {"network_error": 30.0, "rate_limited": 300.0, "quota_exceeded": 43200.0},
+    "meta": {"network_error": 60.0, "rate_limited": 420.0, "quota_exceeded": 43200.0},
+}
+
 
 class ProviderChoreographyEngine:
     """Orchestrate multi-platform publishing with deep coordination.
@@ -87,6 +93,84 @@ class ProviderChoreographyEngine:
         self._db = db
         self._syncer = syncer
         self._poll_orchestrator = poll_orchestrator
+
+    def orchestrate_batch(
+        self,
+        jobs: list[Any],
+        batch_id: str | None = None,
+        sequence_strategy: str = "youtube_first",
+    ) -> dict[str, Any]:
+        result = self.choreograph_multi_platform_publish(
+            jobs=jobs,
+            sequence_strategy=sequence_strategy,
+            orchestration_id=batch_id,
+        )
+        batch_key = result.get("orchestration_id") or batch_id or "unknown"
+        self._persist_orchestration_state(
+            batch_id=str(batch_key),
+            stage="dispatched",
+            platform_states={r.get("platform", "unknown"): r for r in result.get("results", [])},
+            recovery_state={"partial_failures": [r for r in result.get("results", []) if r.get("status") != "dispatched"]},
+            compliance_state={"all_clear": True},
+        )
+        return result
+
+    def sync_batch_state(
+        self,
+        batch_id: str,
+        webhook_state: dict[str, Any] | None = None,
+        manual_retry_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        persisted = self._load_orchestration_state(batch_id)
+        existing_platform_states = dict(persisted.get("platform_states") or {})
+        pairs = [
+            (v.get("job_id"), k)
+            for k, v in existing_platform_states.items()
+            if isinstance(v, dict) and v.get("job_id")
+        ]
+        sync_result = self.sync_all_platform_states([(str(j), str(p)) for j, p in pairs]) if pairs else {
+            "total": 0,
+            "synced": [],
+            "confirmed_published": 0,
+            "confirmed_failed": 0,
+            "pending": 0,
+        }
+
+        merged_platform_states = dict(existing_platform_states)
+        for row in sync_result.get("synced", []):
+            plat = str(row.get("platform", "unknown"))
+            merged_platform_states[plat] = {**merged_platform_states.get(plat, {}), **row}
+        if webhook_state:
+            for plat, ws in webhook_state.items():
+                merged_platform_states[str(plat)] = {
+                    **merged_platform_states.get(str(plat), {}),
+                    "webhook_state": ws,
+                }
+        manual_retry_state = manual_retry_state or {}
+
+        self._persist_orchestration_state(
+            batch_id=batch_id,
+            stage="synced",
+            platform_states=merged_platform_states,
+            recovery_state={
+                **(persisted.get("recovery_state") or {}),
+                "last_sync": sync_result,
+            },
+            compliance_state=persisted.get("compliance_state") or {},
+            manual_retry_state=manual_retry_state,
+        )
+        return {
+            "batch_id": batch_id,
+            "platform_states": merged_platform_states,
+            "sync_result": sync_result,
+            "manual_retry_state": manual_retry_state,
+        }
+
+    def _retry_partial_failures(
+        self,
+        failed_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self.coordinate_retry_schedule(failed_results)
 
     # ------------------------------------------------------------------
     # Compliance gate
@@ -392,7 +476,7 @@ class ProviderChoreographyEngine:
             retry_num = int(result.get("retry_number", 1))
 
             # Determine retry delay based on error type
-            delay_sec = self._retry_delay_for_error(error_type, retry_num)
+            delay_sec = self._retry_delay_for_error(error_type, retry_num, platform=platform)
             strategy = FailureClassifier.get_strategy_for_error_type(error_type, platform)
 
             schedule.append({
@@ -601,7 +685,7 @@ class ProviderChoreographyEngine:
         }
 
     @staticmethod
-    def _retry_delay_for_error(error_type: str, retry_num: int) -> float:
+    def _retry_delay_for_error(error_type: str, retry_num: int, platform: str | None = None) -> float:
         """Return retry delay in seconds for a given error type and attempt number."""
         _BASE_DELAYS: dict[str, float] = {
             "auth_expired": 60.0,
@@ -614,9 +698,84 @@ class ProviderChoreographyEngine:
             "account_restricted": 0.0,
             "unknown": 900.0,
         }
-        base = _BASE_DELAYS.get(error_type, 900.0)
+        plat = (platform or "").lower()
+        platform_policy = _PLATFORM_RETRY_POLICY.get(plat, {})
+        base = platform_policy.get(error_type, _BASE_DELAYS.get(error_type, 900.0))
         # Exponential back-off capped at 24h
         return min(base * (2 ** max(0, retry_num - 1)), 86400.0)
+
+    def _persist_orchestration_state(
+        self,
+        *,
+        batch_id: str,
+        stage: str,
+        platform_states: dict[str, Any],
+        recovery_state: dict[str, Any],
+        compliance_state: dict[str, Any],
+        manual_retry_state: dict[str, Any] | None = None,
+    ) -> None:
+        _ORCH_STATE[batch_id] = dict(platform_states)
+        if self._db is None:
+            return
+        try:
+            from app.models.provider_orchestration_state import ProviderOrchestrationState
+
+            row = self._db.query(ProviderOrchestrationState).filter(
+                ProviderOrchestrationState.batch_id == batch_id
+            ).first()
+            if row is None:
+                row = ProviderOrchestrationState(
+                    batch_id=batch_id,
+                    stage=stage,
+                    platform_states=platform_states,
+                    recovery_state=recovery_state,
+                    compliance_state=compliance_state,
+                    manual_retry_state=manual_retry_state or {},
+                )
+            else:
+                row.stage = stage
+                row.platform_states = platform_states
+                row.recovery_state = recovery_state
+                row.compliance_state = compliance_state
+                row.manual_retry_state = manual_retry_state or row.manual_retry_state or {}
+            self._db.add(row)
+            self._db.commit()
+        except Exception as exc:
+            logger.debug("ProviderChoreographyEngine: persist state failed: %s", exc)
+            try:
+                self._db.rollback()
+            except Exception:
+                pass
+
+    def _load_orchestration_state(self, batch_id: str) -> dict[str, Any]:
+        state = {
+            "batch_id": batch_id,
+            "stage": "unknown",
+            "platform_states": _ORCH_STATE.get(batch_id, {}),
+            "recovery_state": {},
+            "compliance_state": {},
+            "manual_retry_state": {},
+        }
+        if self._db is None:
+            return state
+        try:
+            from app.models.provider_orchestration_state import ProviderOrchestrationState
+
+            row = self._db.query(ProviderOrchestrationState).filter(
+                ProviderOrchestrationState.batch_id == batch_id
+            ).first()
+            if row is None:
+                return state
+            return {
+                "batch_id": batch_id,
+                "stage": row.stage,
+                "platform_states": row.platform_states or {},
+                "recovery_state": row.recovery_state or {},
+                "compliance_state": row.compliance_state or {},
+                "manual_retry_state": row.manual_retry_state or {},
+            }
+        except Exception:
+            return state
 
     @staticmethod
     def _persist_job_state(

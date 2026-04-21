@@ -202,7 +202,10 @@ class PerformanceLearningEngine:
         hook_pattern: str | None = None,
         platform: str | None = None,
         market_code: str | None = None,
-    ) -> float:
+        persona_id: str | None = None,
+        campaign_id: str | None = None,
+        funnel_stage: str | None = None,
+    ) -> dict[str, Any]:
         """Compute adaptive score = base + performance_boost for a template/hook combo.
 
         This is the main scoring primitive for "self-learning" content selection:
@@ -214,6 +217,12 @@ class PerformanceLearningEngine:
         Scores are clamped to [0, 1].
         """
         filtered = self._filter_records(platform=platform, market_code=market_code)
+        if persona_id is not None:
+            filtered = [r for r in filtered if r.get("persona_id") == persona_id]
+        if campaign_id is not None:
+            filtered = [r for r in filtered if r.get("campaign_id") == campaign_id]
+        if funnel_stage is not None:
+            filtered = [r for r in filtered if r.get("funnel_stage") == funnel_stage]
         tf_records = [r for r in filtered if r.get("template_family") == template_family]
         if hook_pattern:
             hp_records = [r for r in tf_records if r.get("hook_pattern") == hook_pattern]
@@ -221,7 +230,12 @@ class PerformanceLearningEngine:
                 tf_records = hp_records
 
         if len(tf_records) < _BOOST_MIN_RECORDS:
-            return _ADAPTIVE_BASE_SCORE
+            return {
+                "score": _ADAPTIVE_BASE_SCORE,
+                "confidence": 0.0,
+                "sample_count": len(tf_records),
+                "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
+            }
 
         pairs = [
             (float(r["conversion_score"]), _time_weight(float(r.get("recorded_at") or time.time())))
@@ -229,11 +243,91 @@ class PerformanceLearningEngine:
         ]
         total_weight = sum(w for _, w in pairs)
         if total_weight < 1e-9:
-            return _ADAPTIVE_BASE_SCORE
+            return {
+                "score": _ADAPTIVE_BASE_SCORE,
+                "confidence": 0.0,
+                "sample_count": len(tf_records),
+                "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
+            }
         weighted_avg = sum(s * w for s, w in pairs) / total_weight
         performance_boost = (weighted_avg - _ADAPTIVE_BASE_SCORE) * _MAX_PERFORMANCE_BOOST / 0.5
         result = _ADAPTIVE_BASE_SCORE + performance_boost
-        return round(min(1.0, max(0.0, result)), 3)
+        sample_count = len(tf_records)
+        confidence = min(1.0, sample_count / 10.0)
+        return {
+            "score": round(min(1.0, max(0.0, result)), 3),
+            "confidence": round(confidence, 3),
+            "sample_count": sample_count,
+            "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
+        }
+
+    def record_outcome(
+        self,
+        *,
+        video_id: str,
+        hook_pattern: str,
+        cta_pattern: str,
+        template_family: str,
+        conversion_score: float,
+        persona_id: str,
+        campaign_id: str,
+        funnel_stage: str,
+        asset_bundle_id: str,
+        shot_config_id: str,
+        platform: str | None = None,
+        market_code: str | None = None,
+    ) -> dict[str, Any]:
+        rec = self.record(
+            video_id=video_id,
+            hook_pattern=hook_pattern,
+            cta_pattern=cta_pattern,
+            template_family=template_family,
+            conversion_score=conversion_score,
+            persona_id=persona_id,
+            campaign_id=campaign_id,
+            funnel_stage=funnel_stage,
+            platform=platform,
+            market_code=market_code,
+            performance_metrics={
+                "asset_bundle_id": asset_bundle_id,
+                "shot_config_id": shot_config_id,
+            },
+        )
+        return rec
+
+    def summarize_patterns(
+        self,
+        *,
+        platform: str | None = None,
+        market_code: str | None = None,
+    ) -> dict[str, Any]:
+        filtered = self._filter_records(platform=platform, market_code=market_code)
+        creative = {
+            "top_hook_patterns": self.top_hook_patterns(limit=5, platform=platform, market_code=market_code),
+            "top_cta_patterns": self.top_cta_patterns(limit=5, platform=platform, market_code=market_code),
+            "top_template_families": self.top_template_families(limit=5, platform=platform, market_code=market_code),
+        }
+        commerce_records = [r for r in filtered if r.get("campaign_id") or r.get("funnel_stage")]
+        publish_records = [r for r in filtered if r.get("platform")]
+        commerce = {
+            "record_count": len(commerce_records),
+            "by_funnel_stage": {
+                stage: len([r for r in commerce_records if r.get("funnel_stage") == stage])
+                for stage in sorted({r.get("funnel_stage") for r in commerce_records if r.get("funnel_stage")})
+            },
+            "by_campaign": {
+                cid: len([r for r in commerce_records if r.get("campaign_id") == cid])
+                for cid in sorted({r.get("campaign_id") for r in commerce_records if r.get("campaign_id")})
+            },
+        }
+        publish = {
+            "record_count": len(publish_records),
+            "by_platform": {
+                p: len([r for r in publish_records if r.get("platform") == p])
+                for p in sorted({r.get("platform") for r in publish_records if r.get("platform")})
+            },
+        }
+        return {"creative": creative, "commerce": commerce, "publish": publish}
 
     def experiment_summary(
         self,

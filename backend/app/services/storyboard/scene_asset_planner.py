@@ -27,6 +27,9 @@ class SceneAssetPlanner:
         storyboard: "StoryboardResponse",
         avatar_id: str,
         db: Any | None = None,
+        asset_inventory: dict[str, Any] | None = None,
+        render_history: list[dict[str, Any]] | None = None,
+        winning_shot_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return asset plan for all scenes in the storyboard.
 
@@ -47,11 +50,36 @@ class SceneAssetPlanner:
 
         # Build inventory of visual types for this avatar (now also includes RenderJob data)
         available_visual_types, render_inventory = self._get_available_visual_types(avatar_id, db)
+        if asset_inventory:
+            for asset_type, payload in (asset_inventory or {}).items():
+                urls = list((payload or {}).get("render_urls") or [])
+                if urls:
+                    render_inventory.setdefault(str(asset_type), [])
+                    for url in urls:
+                        if url not in render_inventory[str(asset_type)]:
+                            render_inventory[str(asset_type)].append(url)
+                    available_visual_types.add(str(asset_type))
 
         for scene in storyboard.scenes:
             visual_type = scene.visual_type or "unknown"
-            required_assets = [visual_type]
-            available = visual_type in available_visual_types
+            grouped = self._group_assets_for_scene(
+                scene_goal=scene.scene_goal,
+                visual_type=visual_type,
+                winning_shot_config=winning_shot_config,
+            )
+            required_assets = grouped["required_assets"]
+            optional_assets = grouped["optional_assets"]
+            available = all(asset in available_visual_types for asset in required_assets)
+            ranked_assets = self._rank_asset_candidates(
+                scene_goal=scene.scene_goal or "",
+                visual_type=visual_type,
+                candidates=required_assets + optional_assets,
+                winning_shot_config=winning_shot_config,
+                render_history=render_history,
+                render_inventory=render_inventory,
+            )
+            reuse_assets = [a for a in ranked_assets if a in render_inventory and render_inventory.get(a)]
+            local_missing = [a for a in required_assets if a not in available_visual_types]
 
             suggested_params: dict[str, Any] = {
                 "scene_goal": scene.scene_goal,
@@ -61,17 +89,21 @@ class SceneAssetPlanner:
 
             scene_assets[str(scene.scene_index)] = {
                 "required_assets": required_assets,
+                "optional_assets": optional_assets,
+                "reuse_assets": reuse_assets,
+                "missing_assets": local_missing,
                 "available_in_inventory": available,
                 "render_urls": render_inventory.get(visual_type, []),
                 "suggested_render_params": suggested_params,
             }
 
-            if not available:
+            for missing in local_missing:
                 missing_assets.append(
                     {
                         "scene_index": scene.scene_index,
                         "visual_type": visual_type,
                         "scene_goal": scene.scene_goal,
+                        "asset_type": missing,
                     }
                 )
 
@@ -83,6 +115,62 @@ class SceneAssetPlanner:
             "render_inventory": render_inventory,
             "asset_inventory": self._build_asset_inventory(scene_assets, render_inventory),
         }
+
+    @staticmethod
+    def _group_assets_for_scene(
+        *,
+        scene_goal: str | None,
+        visual_type: str,
+        winning_shot_config: dict[str, Any] | None = None,
+    ) -> dict[str, list[str]]:
+        required = [visual_type]
+        optional: list[str] = []
+        goal = (scene_goal or "").lower()
+        if goal in ("cta", "reveal"):
+            optional.append("product_closeup")
+        if goal in ("hook", "intro"):
+            optional.append("attention_motion_overlay")
+        shot_type = str((winning_shot_config or {}).get("shot_type") or "")
+        if shot_type:
+            optional.append(f"shot_{shot_type}")
+        return {
+            "required_assets": list(dict.fromkeys(required)),
+            "optional_assets": list(dict.fromkeys(optional)),
+        }
+
+    @staticmethod
+    def _rank_asset_candidates(
+        *,
+        scene_goal: str,
+        visual_type: str,
+        candidates: list[str],
+        winning_shot_config: dict[str, Any] | None,
+        render_history: list[dict[str, Any]] | None,
+        render_inventory: dict[str, list[str]],
+    ) -> list[str]:
+        history = render_history or []
+        scored: list[tuple[str, float]] = []
+        for asset in candidates:
+            score = 0.0
+            if asset == visual_type:
+                score += 2.0
+            if scene_goal and scene_goal in asset:
+                score += 1.5
+            if winning_shot_config:
+                if str(winning_shot_config.get("shot_type") or "") in asset:
+                    score += 1.0
+                if str(winning_shot_config.get("transition_style") or "") in asset:
+                    score += 0.5
+            if render_inventory.get(asset):
+                score += 1.25
+                score += min(len(render_inventory.get(asset, [])) * 0.1, 0.5)
+            for row in history:
+                if str(row.get("asset_type") or "") == asset:
+                    score += float(row.get("conversion_outcome") or 0.0) * 0.8
+                    score += float(row.get("retention_outcome") or 0.0) * 0.8
+            scored.append((asset, score))
+        scored.sort(key=lambda kv: kv[1], reverse=True)
+        return [a for a, _ in scored]
 
     def _build_asset_inventory(
         self,

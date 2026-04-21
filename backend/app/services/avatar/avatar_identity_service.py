@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -192,6 +193,19 @@ class AvatarIdentityService:
             # Include embedding when available
             if visual.embedding_vector:
                 vector["has_embedding"] = True
+        try:
+            from app.models.autovis import AvatarReferenceFrame
+
+            ref = (
+                db.query(AvatarReferenceFrame)
+                .filter(AvatarReferenceFrame.avatar_id == avatar_id)
+                .order_by(AvatarReferenceFrame.created_at.desc())
+                .first()
+            )
+            if ref:
+                vector["reference_revision"] = ref.frame_type
+        except Exception:
+            pass
         if voice:
             vector["language_code"] = voice.language_code
             vector["tone"] = voice.tone
@@ -269,7 +283,16 @@ class AvatarIdentityService:
         Returns per-frame drift scores.  Frames with ``drift_detected=True``
         should be flagged for manual review or re-render.
         """
-        return self._guard.lock_frame_sequence(db, avatar_id, frame_embeddings)
+        raw = self._guard.lock_frame_sequence(db, avatar_id, frame_embeddings)
+        if not raw:
+            return raw
+        fail_count = sum(1 for r in raw if r.get("drift_detected"))
+        dominant = "stable"
+        if fail_count >= max(2, len(raw) // 2):
+            dominant = "embedding_drift"
+        for row in raw:
+            row["dominant_drift_type"] = dominant
+        return raw
 
     # ------------------------------------------------------------------
     # Render-time verification loop
@@ -308,6 +331,9 @@ class AvatarIdentityService:
         consistency_score: float = 1.0
         extraction_method: str = "provided"
         extraction_failed: bool = False
+        extraction_source: str = "provided"
+        quality_score: float = 1.0
+        reverify_required = False
 
         if frame_embeddings:
             # Use caller-supplied embeddings (fastest path)
@@ -323,9 +349,12 @@ class AvatarIdentityService:
             extraction_method = "media_extractor"
             try:
                 extractor = MediaEmbeddingExtractor()
-                mean_embedding: list[float] = extractor.extract(
+                mean_embedding, quality_score = extractor.extract_with_quality(
                     render_url, n_frames=self._VERIFY_N_FRAMES
                 )
+                extraction_info = extractor.get_last_extraction_info()
+                extraction_source = str(extraction_info.get("extraction_source") or "local_sampler")
+                reverify_required = bool(extraction_info.get("needs_reverification"))
                 # Wrap in a list so lock_frame_sequence receives list[list[float]]
                 frame_results = self.lock_frame_sequence(db, avatar_id, [mean_embedding])
                 scores = [r["cosine_similarity"] for r in frame_results]
@@ -336,6 +365,9 @@ class AvatarIdentityService:
                 # accepted.  Callers can inspect extraction_failed=True to handle this.
                 extraction_method = "identity_fallback"
                 extraction_failed = True
+                extraction_source = "stub"
+                quality_score = 0.4
+                reverify_required = True
                 logger.warning(
                     "verify_render_output: embedding extraction failed for avatar=%s url=%s — "
                     "falling back to static identity score: %s",
@@ -355,6 +387,9 @@ class AvatarIdentityService:
         else:
             # No render URL provided: use static identity field as last resort
             extraction_method = "identity_fallback"
+            extraction_source = "stub"
+            quality_score = 0.4
+            reverify_required = True
             identity = self.get_identity_vector(db, avatar_id)
             consistency_score = round(
                 identity.get("consistency_score", 1.0)
@@ -392,18 +427,73 @@ class AvatarIdentityService:
 
         action = "accept" if consistency_score >= _RENDER_CONSISTENCY_THRESHOLD else "identity_review"
         effective_frame_count = frame_count or len(frame_results) or len(frame_embeddings or [])
+        frame_fail_indices = [r.get("frame_index") for r in frame_results if r.get("drift_detected")]
+        temporal_consistency_score = round(
+            1.0 - (len(frame_fail_indices) / max(len(frame_results), 1)),
+            3,
+        )
+        dominant_drift_type = (
+            frame_results[0].get("dominant_drift_type")
+            if frame_results and isinstance(frame_results[0], dict)
+            else "stable"
+        )
         return {
             "ok": True,
             "avatar_id": avatar_id,
             "render_url": render_url,
             "frame_count": effective_frame_count,
             "consistency_score": consistency_score,
+            "temporal_consistency_score": temporal_consistency_score,
+            "quality_score": quality_score,
             "action": action,
             "requires_review": action == "identity_review",
+            "reverify_required": reverify_required,
+            "reverify_required_reason": "extractor_degraded_path" if reverify_required else None,
             "frame_results": frame_results,
+            "frame_fail_indices": frame_fail_indices,
+            "dominant_drift_type": dominant_drift_type,
             "extraction_method": extraction_method,
             "extraction_failed": extraction_failed,
+            "extraction_source": extraction_source,
         }
+
+    def refresh_reference_frame(
+        self,
+        db: Session,
+        avatar_id: str,
+        *,
+        image_url: str,
+        quality_score: float,
+        consistency_score: float,
+        quarantine: bool = False,
+    ) -> dict[str, Any]:
+        if quarantine or quality_score < 0.75 or consistency_score < 0.85:
+            return {
+                "refreshed": False,
+                "reason": "policy_blocked",
+                "quality_score": quality_score,
+                "consistency_score": consistency_score,
+                "quarantine": quarantine,
+            }
+        try:
+            from app.models.autovis import AvatarReferenceFrame
+
+            revision = f"rev-{int(time.time())}"
+            row = AvatarReferenceFrame(
+                avatar_id=avatar_id,
+                frame_type=revision,
+                image_url=image_url,
+                embedding_vector=None,
+            )
+            db.add(row)
+            db.commit()
+            return {"refreshed": True, "reference_revision": revision}
+        except Exception as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {"refreshed": False, "reason": str(exc)}
 
     # ------------------------------------------------------------------
     # Consistency scoring

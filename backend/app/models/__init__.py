@@ -200,3 +200,5 @@ from app.models.optimization_run import OptimizationRun
 from app.models.channel_plan import ChannelPlan
 from app.models.publish_job import PublishJob
 from app.models.creative_engine_run import CreativeEngineRun
+from app.models.calibration_rollout_record import CalibrationRolloutRecord
+from app.models.provider_orchestration_state import ProviderOrchestrationState
