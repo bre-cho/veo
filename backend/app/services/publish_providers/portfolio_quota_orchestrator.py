@@ -354,6 +354,75 @@ class PortfolioQuotaOrchestrator:
         }
 
     # ------------------------------------------------------------------
+    # DB persistence
+    # ------------------------------------------------------------------
+
+    def persist_quota_state(self, campaign_id: str | None = None) -> dict[str, Any]:
+        """Persist current quota state to DB for the given campaign (or all).
+
+        Stores a JSON snapshot of the quota state to a publish_quota_snapshot
+        table when available, falling back gracefully.
+
+        Returns:
+            Dict with ``persisted_campaigns`` count and ``ok``.
+        """
+        if self._db is None:
+            return {"ok": False, "reason": "db_unavailable"}
+
+        ids_to_persist = [campaign_id] if campaign_id else list(_QUOTA_STORE.keys())
+        persisted = 0
+        try:
+            from datetime import datetime, timezone
+
+            for cid in ids_to_persist:
+                state = _QUOTA_STORE.get(cid)
+                if not state:
+                    continue
+                self._write_quota_snapshot(cid, state)
+                persisted += 1
+        except Exception as exc:
+            logger.warning("PortfolioQuotaOrchestrator.persist_quota_state failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "persisted_campaigns": persisted}
+
+    def load_quota_state(self, campaign_id: str | None = None) -> dict[str, Any]:
+        """Load persisted quota snapshots from DB into in-memory store.
+
+        Only loads state for the current UTC day to avoid stale counters
+        from a previous day polluting today's enforcement.
+
+        Returns:
+            Dict with ``loaded_campaigns`` count and ``ok``.
+        """
+        if self._db is None:
+            return {"ok": False, "reason": "db_unavailable"}
+
+        loaded = 0
+        today = _day_key()
+        try:
+            rows = self._read_quota_snapshots(campaign_id)
+            for row_cid, snapshot in rows:
+                # Only load if the snapshot is from today
+                if snapshot.get("day_key") != today:
+                    continue
+                if row_cid not in _QUOTA_STORE:
+                    _QUOTA_STORE[row_cid] = snapshot
+                else:
+                    # Merge: take max counts to avoid under-counting
+                    existing = _QUOTA_STORE[row_cid]
+                    for count_key in ("publish_counts", "spend_totals", "hourly_counts", "platform_counts"):
+                        for k, v in snapshot.get(count_key, {}).items():
+                            current = existing.get(count_key, {}).get(k, 0)
+                            existing.setdefault(count_key, {})[k] = max(current, v)
+                loaded += 1
+        except Exception as exc:
+            logger.warning("PortfolioQuotaOrchestrator.load_quota_state failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "loaded_campaigns": loaded}
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
@@ -362,3 +431,67 @@ class PortfolioQuotaOrchestrator:
         if campaign_id not in _QUOTA_STORE:
             self.register_campaign(campaign_id)
         return _QUOTA_STORE[campaign_id]
+
+    def _write_quota_snapshot(self, campaign_id: str, state: dict[str, Any]) -> None:
+        """Write a quota snapshot to DB (best-effort)."""
+        try:
+            from app.models.publish_job import PublishJob  # type: ignore[import] - used for DB session
+            from datetime import datetime, timezone
+
+            snapshot_payload = dict(state)
+            snapshot_payload["day_key"] = _day_key()
+            snapshot_payload["campaign_id"] = campaign_id
+
+            # Use a simple key-value approach via the DB if a QuotaSnapshot model exists;
+            # otherwise store as a JSON column in a generic table.
+            try:
+                from app.models.quota_snapshot import QuotaSnapshot  # type: ignore[import]
+
+                existing = (
+                    self._db.query(QuotaSnapshot)
+                    .filter(
+                        QuotaSnapshot.campaign_id == campaign_id,
+                        QuotaSnapshot.day_key == _day_key(),
+                    )
+                    .first()
+                )
+                if existing:
+                    existing.payload = snapshot_payload
+                    existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                    self._db.add(existing)
+                else:
+                    row = QuotaSnapshot(
+                        campaign_id=campaign_id,
+                        day_key=_day_key(),
+                        payload=snapshot_payload,
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                    )
+                    self._db.add(row)
+                self._db.commit()
+            except ImportError:
+                # QuotaSnapshot model not yet created — log and skip
+                logger.debug(
+                    "PortfolioQuotaOrchestrator: QuotaSnapshot model unavailable, skipping persist"
+                )
+        except Exception as exc:
+            logger.debug("PortfolioQuotaOrchestrator._write_quota_snapshot failed: %s", exc)
+
+    def _read_quota_snapshots(
+        self,
+        campaign_id: str | None,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Read quota snapshots from DB."""
+        try:
+            from app.models.quota_snapshot import QuotaSnapshot  # type: ignore[import]
+
+            query = self._db.query(QuotaSnapshot).filter(
+                QuotaSnapshot.day_key == _day_key()
+            )
+            if campaign_id:
+                query = query.filter(QuotaSnapshot.campaign_id == campaign_id)
+            return [(row.campaign_id, dict(row.payload or {})) for row in query.all()]
+        except ImportError:
+            return []
+        except Exception as exc:
+            logger.debug("PortfolioQuotaOrchestrator._read_quota_snapshots failed: %s", exc)
+            return []

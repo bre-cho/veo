@@ -270,6 +270,124 @@ class MultiEpisodeIdentityGovernor:
             del _SERIES_REGISTRY[series_id]
 
     # ------------------------------------------------------------------
+    # DB persistence helpers
+    # ------------------------------------------------------------------
+
+    def persist_to_db(self, series_id: str, avatar_id: str) -> dict[str, Any]:
+        """Persist all in-memory episode records for (series_id, avatar_id) to DB.
+
+        Upserts one EpisodeMemory row per episode with
+        ``memory_type="identity_governance"``.
+
+        Returns:
+            Dict with ``persisted_count`` and ``ok``.
+        """
+        if self._db is None:
+            return {"ok": False, "reason": "db_unavailable"}
+        episodes = self._get_episodes(series_id, avatar_id)
+        if not episodes:
+            return {"ok": True, "persisted_count": 0}
+
+        persisted = 0
+        try:
+            from app.models.episode_memory import EpisodeMemory  # type: ignore[import]
+            from datetime import datetime, timezone
+
+            for ep in episodes:
+                ep_num = ep["episode_number"]
+                payload = dict(ep)
+                # Convert embedding to list for JSON serialisation
+                if "embedding" in payload and hasattr(payload["embedding"], "tolist"):
+                    payload["embedding"] = payload["embedding"].tolist()
+
+                existing = (
+                    self._db.query(EpisodeMemory)
+                    .filter(
+                        EpisodeMemory.series_id == series_id,
+                        EpisodeMemory.episode_number == ep_num,
+                        EpisodeMemory.memory_type == "identity_governance",
+                    )
+                    .first()
+                )
+                if existing:
+                    existing.payload = payload
+                    existing.avatar_id = avatar_id
+                    self._db.add(existing)
+                else:
+                    row = EpisodeMemory(
+                        series_id=series_id,
+                        avatar_id=avatar_id,
+                        episode_number=ep_num,
+                        memory_type="identity_governance",
+                        payload=payload,
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                    )
+                    self._db.add(row)
+                persisted += 1
+
+            self._db.commit()
+        except Exception as exc:
+            logger.debug(
+                "MultiEpisodeIdentityGovernor.persist_to_db failed series=%s avatar=%s: %s",
+                series_id,
+                avatar_id,
+                exc,
+            )
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "persisted_count": persisted}
+
+    def load_from_db(self, series_id: str, avatar_id: str) -> dict[str, Any]:
+        """Load identity governance records from DB into in-memory registry.
+
+        Supplements in-memory state with any DB records not already loaded.
+
+        Returns:
+            Dict with ``loaded_count`` and ``ok``.
+        """
+        if self._db is None:
+            return {"ok": False, "reason": "db_unavailable"}
+        loaded = 0
+        try:
+            from app.models.episode_memory import EpisodeMemory  # type: ignore[import]
+
+            rows = (
+                self._db.query(EpisodeMemory)
+                .filter(
+                    EpisodeMemory.series_id == series_id,
+                    EpisodeMemory.memory_type == "identity_governance",
+                )
+                .order_by(EpisodeMemory.episode_number)
+                .all()
+            )
+            if not rows:
+                return {"ok": True, "loaded_count": 0}
+
+            existing_ep_nums = {
+                ep["episode_number"]
+                for ep in self._get_episodes(series_id, avatar_id)
+            }
+
+            for row in rows:
+                payload = dict(row.payload or {})
+                ep_num = int(payload.get("episode_number") or row.episode_number)
+                if ep_num not in existing_ep_nums:
+                    _SERIES_REGISTRY.setdefault(series_id, {}).setdefault(avatar_id, [])
+                    _SERIES_REGISTRY[series_id][avatar_id].append(payload)
+                    loaded += 1
+
+        except Exception as exc:
+            logger.debug(
+                "MultiEpisodeIdentityGovernor.load_from_db failed series=%s avatar=%s: %s",
+                series_id,
+                avatar_id,
+                exc,
+            )
+            return {"ok": False, "error": str(exc)}
+
+        return {"ok": True, "loaded_count": loaded}
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 

@@ -164,11 +164,18 @@ class NarrativeArcDirector:
             "created_at": time.time(),
         }
         _ARC_REGISTRY[series_id] = arc
+        # Persist to DB when session is available
+        self._persist_arc_to_db(arc)
         return arc
 
     def get_arc(self, series_id: str) -> dict[str, Any] | None:
-        """Return the arc plan for a series, or None if not found."""
-        return _ARC_REGISTRY.get(series_id)
+        """Return the arc plan for a series.
+
+        Checks in-memory registry first; falls back to DB when not found.
+        """
+        if series_id in _ARC_REGISTRY:
+            return _ARC_REGISTRY[series_id]
+        return self._load_arc_from_db(series_id)
 
     # ------------------------------------------------------------------
     # Performance-driven next-episode synthesis
@@ -190,6 +197,7 @@ class NarrativeArcDirector:
         - Hook intensity and pacing weights
         - Dominant scene goals
         - Style evolution hints
+        - Winning scene graph injection (shot-level guidance from top graphs)
 
         Args:
             series_id: The series to plan the next episode for.
@@ -203,9 +211,10 @@ class NarrativeArcDirector:
         Returns:
             Dict with ``series_id``, ``next_episode_number``,
             ``recommended_phase``, ``scene_composition``,
-            ``style_evolution``, and ``performance_insights``.
+            ``style_evolution``, ``performance_insights``,
+            and ``winning_shot_guidance`` (from CinematicMemoryStore / WinningSceneGraphStore).
         """
-        arc = _ARC_REGISTRY.get(series_id)
+        arc = self.get_arc(series_id)
         next_ep = episode_number or (len(completed_episodes) + 1)
 
         # Performance insights from completed episodes
@@ -238,6 +247,13 @@ class NarrativeArcDirector:
             next_ep=next_ep,
         )
 
+        # Winning shot guidance from CinematicMemoryStore and WinningSceneGraphStore
+        winning_shot_guidance = self._get_winning_shot_guidance(series_id, platform)
+
+        # Inject winning graph scene sequence into scene_composition when available
+        if winning_shot_guidance.get("winning_scene_sequence"):
+            scene_composition["winning_scene_sequence"] = winning_shot_guidance["winning_scene_sequence"]
+
         return {
             "series_id": series_id,
             "next_episode_number": next_ep,
@@ -246,6 +262,7 @@ class NarrativeArcDirector:
             "style_evolution": style_evolution,
             "performance_insights": perf_insights,
             "arc_type": arc.get("arc_type") if arc else "inferred",
+            "winning_shot_guidance": winning_shot_guidance,
         }
 
     # ------------------------------------------------------------------
@@ -507,3 +524,111 @@ class NarrativeArcDirector:
         if confidence >= _NARRATIVE_WINNER_MIN_CONFIDENCE:
             return "a" if mean_a > mean_b else "b"
         return None
+
+    # ------------------------------------------------------------------
+    # DB persistence helpers (full-power arc persistence)
+    # ------------------------------------------------------------------
+
+    def _persist_arc_to_db(self, arc: dict[str, Any]) -> None:
+        """Persist an arc plan to the DB via EpisodeMemory rows (best-effort).
+
+        Stores the arc as a single EpisodeMemory record with
+        ``memory_type="narrative_arc"`` and the full arc dict as payload.
+        """
+        if self._db is None:
+            return
+        try:
+            from app.models.episode_memory import EpisodeMemory  # type: ignore[import]
+            from datetime import datetime, timezone
+
+            # Upsert: remove existing arc record for this series_id before inserting
+            existing = (
+                self._db.query(EpisodeMemory)
+                .filter(
+                    EpisodeMemory.series_id == arc["series_id"],
+                    EpisodeMemory.memory_type == "narrative_arc",
+                )
+                .first()
+            )
+            if existing:
+                existing.payload = arc
+                existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                self._db.add(existing)
+            else:
+                row = EpisodeMemory(
+                    series_id=arc["series_id"],
+                    episode_number=0,  # 0 signals series-level record
+                    memory_type="narrative_arc",
+                    payload=arc,
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                )
+                self._db.add(row)
+            self._db.commit()
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector._persist_arc_to_db failed: %s", exc)
+
+    def _load_arc_from_db(self, series_id: str) -> dict[str, Any] | None:
+        """Load an arc plan from the DB and populate the in-memory registry."""
+        if self._db is None:
+            return None
+        try:
+            from app.models.episode_memory import EpisodeMemory  # type: ignore[import]
+
+            row = (
+                self._db.query(EpisodeMemory)
+                .filter(
+                    EpisodeMemory.series_id == series_id,
+                    EpisodeMemory.memory_type == "narrative_arc",
+                )
+                .first()
+            )
+            if row and row.payload:
+                arc = dict(row.payload)
+                _ARC_REGISTRY[series_id] = arc
+                return arc
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector._load_arc_from_db failed: %s", exc)
+        return None
+
+    def _get_winning_shot_guidance(
+        self,
+        series_id: str,
+        platform: str | None,
+    ) -> dict[str, Any]:
+        """Return winning shot / scene guidance from CinematicMemoryStore and WinningSceneGraphStore.
+
+        Combines:
+        1. Top-N winning scene sequence from WinningSceneGraphStore (global).
+        2. Per-goal shot config from CinematicMemoryStore (series-level).
+
+        Returns:
+            Dict with ``winning_scene_sequence``, ``per_goal_shot_config``,
+            ``source``.
+        """
+        winning_scene_sequence: list[dict] | None = None
+        per_goal_shot_config: dict[str, Any] = {}
+
+        # WinningSceneGraphStore: top graph for this platform
+        try:
+            from app.services.storyboard.winning_scene_graph_store import WinningSceneGraphStore
+            graph_store = WinningSceneGraphStore(db=self._db)
+            top_graphs = graph_store.get_top_graphs(platform=platform, limit=1)
+            if top_graphs:
+                winning_scene_sequence = top_graphs[0].get("scene_sequence")
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector: WinningSceneGraphStore lookup failed: %s", exc)
+
+        # CinematicMemoryStore: per-goal shot configs
+        try:
+            from app.services.storyboard.cinematic_memory_store import CinematicMemoryStore
+            cinematic_store = CinematicMemoryStore(db=self._db)
+            analytics = cinematic_store.get_series_shot_analytics(series_id)
+            per_goal_shot_config = analytics.get("per_goal_best_config", {})
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector: CinematicMemoryStore lookup failed: %s", exc)
+
+        return {
+            "winning_scene_sequence": winning_scene_sequence,
+            "per_goal_shot_config": per_goal_shot_config,
+            "source": "cinematic_memory+winning_graph",
+        }
