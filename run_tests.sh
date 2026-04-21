@@ -54,15 +54,49 @@ run_e2e_gate() {
   echo "══════════════════════════════════════════════════════"
   echo " E2E  TypeScript compile + Playwright @smoke  [BLOCKER]"
   echo "══════════════════════════════════════════════════════"
+  cd "$ROOT_DIR"
+
+  cp backend/.env.example backend/.env.dev || true
+  export BACKEND_SCHEMA_BOOTSTRAP="${BACKEND_SCHEMA_BOOTSTRAP:-metadata-create-all}"
+
+  # E2E smoke specs call backend APIs directly; ensure runtime services are up.
+  docker compose up -d postgres redis minio minio-init api worker
+
+  for _ in $(seq 1 80); do
+    if curl -fsS http://localhost:8000/healthz >/dev/null; then
+      break
+    fi
+    sleep 3
+  done
+  curl -fsS http://localhost:8000/healthz >/dev/null || {
+    docker compose down -v || true
+    fail "E2E runtime stack failed health check"
+  }
+
   cd "$ROOT_DIR/e2e"
 
+  # Ensure local toolchain exists so npx resolves project binaries only.
+  npm ci --no-audit --no-fund || {
+    docker compose down -v || true
+    fail "E2E dependency install failed"
+  }
+
   # Step 1: TypeScript compile – hard failure
-  npx tsc -p tsconfig.json --noEmit || fail "E2E TypeScript compile failed – fix type errors before merging"
+  npx --no-install tsc -p tsconfig.json --noEmit || {
+    docker compose down -v || true
+    fail "E2E TypeScript compile failed – fix type errors before merging"
+  }
 
   # Step 2: Playwright smoke specs – hard failure
   # Use --grep to target specs tagged @smoke; pass --reporter=list for clean CI output.
   npx playwright test --grep "@smoke" --reporter=list \
-    || fail "E2E Playwright smoke specs failed – fix failing specs before merging"
+    || {
+      docker compose down -v || true
+      fail "E2E Playwright smoke specs failed – fix failing specs before merging"
+    }
+
+  cd "$ROOT_DIR"
+  docker compose down -v || true
 
   ok "E2E gate passed"
 }
