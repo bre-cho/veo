@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Default inter-platform delay (seconds) between sequential publishes
-_INTER_PLATFORM_DELAY_SEC = float(2.0)
+_INTER_PLATFORM_DELAY_SEC = 2.0
 # Platforms ordered for "youtube_first" sequencing strategy
 _YOUTUBE_FIRST_ORDER = ["youtube", "shorts", "tiktok", "reels", "instagram", "meta", "facebook"]
 
@@ -355,7 +355,7 @@ class ProviderChoreographyEngine:
 
             # Determine retry delay based on error type
             delay_sec = self._retry_delay_for_error(error_type, retry_num)
-            strategy = classifier._strategy(error_type, platform)
+            strategy = FailureClassifier.get_strategy_for_error_type(error_type, platform)
 
             schedule.append({
                 "job_id": job_id,

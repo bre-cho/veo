@@ -269,11 +269,20 @@ _register_celery_task()
 # ---------------------------------------------------------------------------
 
 # Minimum quality score required to promote a new render as canonical
-_QUALITY_GATE_THRESHOLD = float(os.environ.get("CANONICAL_QUALITY_GATE", "0.75"))
+try:
+    _QUALITY_GATE_THRESHOLD = float(os.environ.get("CANONICAL_QUALITY_GATE", "0.75"))
+except (ValueError, TypeError):
+    _QUALITY_GATE_THRESHOLD = 0.75
 # Minimum cosine similarity improvement to force a canonical refresh
-_EMBEDDING_IMPROVEMENT_THRESHOLD = float(os.environ.get("CANONICAL_EMBED_IMPROVE", "0.05"))
+try:
+    _EMBEDDING_IMPROVEMENT_THRESHOLD = float(os.environ.get("CANONICAL_EMBED_IMPROVE", "0.05"))
+except (ValueError, TypeError):
+    _EMBEDDING_IMPROVEMENT_THRESHOLD = 0.05
 # Maximum age (days) before canonical is considered stale regardless of quality
-_POLICY_MAX_STALE_DAYS = int(os.environ.get("CANONICAL_POLICY_MAX_STALE_DAYS", "14"))
+try:
+    _POLICY_MAX_STALE_DAYS = int(os.environ.get("CANONICAL_POLICY_MAX_STALE_DAYS", "14"))
+except (ValueError, TypeError):
+    _POLICY_MAX_STALE_DAYS = 14
 
 
 class AutoCanonicalMaintenancePolicy:

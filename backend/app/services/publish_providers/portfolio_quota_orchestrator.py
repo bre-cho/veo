@@ -47,6 +47,9 @@ _DEFAULT_HOURLY_RATE_LIMIT = 3
 # Overage alert threshold: alert when utilisation ≥ this fraction
 _OVERAGE_ALERT_THRESHOLD = 0.85
 
+# Quota counter dict-keys (single source of truth for persistence merge)
+_QUOTA_COUNT_KEYS = ("publish_counts", "spend_totals", "hourly_counts", "platform_counts")
+
 # In-memory store: {campaign_id → quota_state}
 _QUOTA_STORE: dict[str, dict[str, Any]] = {}
 
@@ -411,7 +414,7 @@ class PortfolioQuotaOrchestrator:
                 else:
                     # Merge: take max counts to avoid under-counting
                     existing = _QUOTA_STORE[row_cid]
-                    for count_key in ("publish_counts", "spend_totals", "hourly_counts", "platform_counts"):
+                    for count_key in _QUOTA_COUNT_KEYS:
                         for k, v in snapshot.get(count_key, {}).items():
                             current = existing.get(count_key, {}).get(k, 0)
                             existing.setdefault(count_key, {})[k] = max(current, v)

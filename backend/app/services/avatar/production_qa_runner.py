@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Minimum quality score to update the canonical reference after full video QA
 _VIDEO_QA_CANONICAL_UPDATE_THRESHOLD = 0.75
 # Status values for jobs that need QA
-_PENDING_STATUSES = frozenset({"identity_review", "completed", "published"})
+_PENDING_STATUSES = frozenset({"identity_review", "completed"})
 # Maximum full video QA failures before quarantining an avatar
 _MAX_VIDEO_QA_FAILURES = 5
 
