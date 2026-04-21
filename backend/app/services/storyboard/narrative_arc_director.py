@@ -222,6 +222,25 @@ class NarrativeArcDirector:
             completed_episodes, learning_store, platform
         )
 
+        # Inject CinematicMemoryStore shot analytics for series-level enrichment
+        shot_analytics: dict[str, Any] = {}
+        try:
+            from app.services.storyboard.cinematic_memory_store import CinematicMemoryStore
+            cinematic = CinematicMemoryStore(db=self._db)
+            shot_analytics = cinematic.get_series_shot_analytics(series_id)
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector: shot analytics failed: %s", exc)
+
+        # Inject winner weight profile from VariantHistoryService for conversion signal
+        winner_profile: dict[str, Any] = {}
+        try:
+            if self._db is not None:
+                from app.services.variant_history_service import VariantHistoryService
+                vhs = VariantHistoryService()
+                winner_profile = vhs.get_winner_weight_profile(self._db, series_id)
+        except Exception as exc:
+            logger.debug("NarrativeArcDirector: winner profile failed: %s", exc)
+
         # Determine recommended phase
         if arc:
             ep_plans = arc.get("episode_plans", [])
@@ -239,6 +258,8 @@ class NarrativeArcDirector:
             phase_rec=phase_rec,
             perf_insights=perf_insights,
             platform=platform,
+            shot_analytics=shot_analytics,
+            winner_profile=winner_profile,
         )
 
         # Style evolution hint
@@ -263,6 +284,8 @@ class NarrativeArcDirector:
             "performance_insights": perf_insights,
             "arc_type": arc.get("arc_type") if arc else "inferred",
             "winning_shot_guidance": winning_shot_guidance,
+            "shot_analytics": shot_analytics,
+            "winner_profile": winner_profile,
         }
 
     # ------------------------------------------------------------------
@@ -423,6 +446,8 @@ class NarrativeArcDirector:
         phase_rec: dict[str, Any],
         perf_insights: dict[str, Any],
         platform: str | None,
+        shot_analytics: dict[str, Any] | None = None,
+        winner_profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Blend arc phase recommendation with performance signal."""
         dominant_goals = list(phase_rec.get("dominant_goals", ["hook", "body", "cta"]))
@@ -445,6 +470,28 @@ class NarrativeArcDirector:
             if "cta" not in dominant_goals:
                 dominant_goals.append("cta")
 
+        # Scene asset strategy: hint from shot analytics top asset bundle
+        _analytics = shot_analytics or {}
+        scene_asset_strategy: dict[str, Any] = {
+            "top_asset_bundle": _analytics.get("top_asset_bundle"),
+            "retention_best_config": _analytics.get("retention_best_config"),
+        }
+
+        # Shot config strategy: preferred shot config from winner profile
+        _winner = winner_profile or {}
+        shot_config_strategy: dict[str, Any] = {
+            "platform": _winner.get("platform"),
+            "recommended_rollout_stage": _winner.get("recommended_rollout_stage"),
+            "segment_key": _winner.get("segment_key"),
+        }
+
+        # Continuity constraints: don't violate arc phase ordering
+        continuity_constraints = {
+            "arc_phase": phase_rec.get("phase"),
+            "enforce_hook_first": platform and platform.lower() in ("tiktok", "reels", "shorts"),
+            "min_hook_intensity": round(hook_intensity * 0.8, 2),
+        }
+
         return {
             "dominant_goals": dominant_goals,
             "hook_intensity": round(hook_intensity, 2),
@@ -455,6 +502,9 @@ class NarrativeArcDirector:
                 "body": 0.9,
                 "cta": round(min(1.0 + cta_emphasis * 0.5, 1.8), 2),
             },
+            "scene_asset_strategy": scene_asset_strategy,
+            "shot_config_strategy": shot_config_strategy,
+            "continuity_constraints": continuity_constraints,
         }
 
     @staticmethod
@@ -619,6 +669,7 @@ class NarrativeArcDirector:
             logger.debug("NarrativeArcDirector: WinningSceneGraphStore lookup failed: %s", exc)
 
         # CinematicMemoryStore: per-goal shot configs
+        analytics: dict[str, Any] = {}
         try:
             from app.services.storyboard.cinematic_memory_store import CinematicMemoryStore
             cinematic_store = CinematicMemoryStore(db=self._db)
@@ -631,4 +682,9 @@ class NarrativeArcDirector:
             "winning_scene_sequence": winning_scene_sequence,
             "per_goal_shot_config": per_goal_shot_config,
             "source": "cinematic_memory+winning_graph",
+            "recommended_asset_bundle": analytics.get("top_asset_bundle") if per_goal_shot_config else None,
+            "retention_safe_transition_style": (
+                (analytics.get("retention_best_config") or {}).get("transition")
+                if per_goal_shot_config else None
+            ),
         }

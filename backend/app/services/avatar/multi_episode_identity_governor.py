@@ -92,6 +92,9 @@ class MultiEpisodeIdentityGovernor:
         embedding: list[float],
         render_url: str | None = None,
         quality_score: float | None = None,
+        reference_revision: str | None = None,
+        qa_status: str | None = None,
+        extraction_source: str | None = None,
     ) -> dict[str, Any]:
         """Record the avatar's identity embedding for a completed episode.
 
@@ -102,6 +105,9 @@ class MultiEpisodeIdentityGovernor:
             embedding: Per-episode mean embedding extracted from the render.
             render_url: Optional URL of the render output.
             quality_score: Optional quality score ∈ [0, 1].
+            reference_revision: Optional canonical reference revision used during this render.
+            qa_status: Optional QA status string (e.g. "passed", "failed", "manual_review").
+            extraction_source: Source of the embedding extraction (e.g. "model", "opencv", "stub").
 
         Returns:
             Dict with ``recorded``, ``series_id``, ``episode_number``.
@@ -111,6 +117,9 @@ class MultiEpisodeIdentityGovernor:
             "embedding": embedding,
             "render_url": render_url,
             "quality_score": quality_score,
+            "reference_revision": reference_revision,
+            "qa_status": qa_status,
+            "extraction_source": extraction_source,
             "recorded_at": time.time(),
         }
         _SERIES_REGISTRY.setdefault(series_id, {}).setdefault(avatar_id, [])
@@ -148,10 +157,55 @@ class MultiEpisodeIdentityGovernor:
         embeddings = [ep["embedding"] for ep in episodes if ep.get("embedding")]
         if not embeddings:
             return 1.0
-
         baseline = _mean_embedding(embeddings)
         sims = [_cosine_similarity(baseline, emb) for emb in embeddings]
         return round(sum(sims) / len(sims), 4)
+
+    def score_series_consistency(
+        self,
+        series_id: str,
+        avatar_id: str,
+    ) -> dict[str, Any]:
+        """Compute cross-episode identity consistency with trend analysis.
+
+        Returns:
+            Dict with ``consistency_score``, ``trend`` ("improving"|"stable"|"degrading"),
+            ``episode_count``.
+        """
+        episodes = sorted(
+            self._get_episodes(series_id, avatar_id),
+            key=lambda e: e["episode_number"],
+        )
+        if len(episodes) < _MIN_EPISODES_FOR_GOVERNANCE:
+            return {"consistency_score": 1.0, "trend": "stable", "episode_count": len(episodes)}
+
+        embeddings = [ep["embedding"] for ep in episodes if ep.get("embedding")]
+        if not embeddings:
+            return {"consistency_score": 1.0, "trend": "stable", "episode_count": len(episodes)}
+
+        baseline = _mean_embedding(embeddings)
+        sims = [_cosine_similarity(baseline, ep["embedding"]) for ep in episodes if ep.get("embedding")]
+        consistency_score = round(sum(sims) / len(sims), 4)
+
+        # Trend: compare similarity in first vs second half
+        half = len(sims) // 2
+        if half > 0:
+            first_mean = sum(sims[:half]) / half
+            second_mean = sum(sims[half:]) / max(len(sims) - half, 1)
+            if second_mean > first_mean + 0.02:
+                trend = "improving"
+            elif second_mean < first_mean - 0.02:
+                trend = "degrading"
+            else:
+                trend = "stable"
+        else:
+            trend = "stable"
+
+        return {
+            "consistency_score": consistency_score,
+            "trend": trend,
+            "episode_count": len(episodes),
+        }
 
     def detect_identity_regression(
         self,
@@ -234,6 +288,7 @@ class MultiEpisodeIdentityGovernor:
                 drifted.append(ep["episode_number"])
 
         series_score = self.score_series_identity(series_id, avatar_id)
+        consistency_info = self.score_series_consistency(series_id, avatar_id)
         drift_fraction = round(len(drifted) / max(episode_count, 1), 4)
         stable = series_score >= _EPISODE_DRIFT_THRESHOLD and drift_fraction <= _MAX_DRIFT_FRACTION
 
@@ -258,6 +313,7 @@ class MultiEpisodeIdentityGovernor:
             "drift_fraction": drift_fraction,
             "per_episode_scores": per_ep_scores,
             "recommendation": rec,
+            "trend": consistency_info.get("trend", "stable"),
         }
 
     def clear_series(self, series_id: str, avatar_id: str | None = None) -> None:

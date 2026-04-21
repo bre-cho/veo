@@ -193,6 +193,55 @@ class GrowthOptimizationOrchestrator:
         remaining = int((budget_constraint or {}).get("remaining", daily_limit))
         feasible = scored[:remaining] if remaining < len(scored) else scored
 
+        # --- Policy simulation gate (runs before building allocation plan) ---
+        policy_blocked = False
+        policy_simulation_result: dict[str, Any] = {}
+        try:
+            from app.services.publish_providers.policy_simulation_engine import PolicySimulationEngine
+            sim_engine = PolicySimulationEngine()
+            quota_sim = sim_engine.simulate_quota(
+                campaign_id=campaign_id,
+                platform=eff_platform or "unknown",
+                publish_count=len(feasible),
+            )
+            budget_sim = sim_engine.simulate_budget(
+                campaign_id=campaign_id,
+                requested_spend=float(budget_constraint.get("remaining", 1.0) if budget_constraint else 1.0),
+            )
+            policy_simulation_result = {"quota": quota_sim, "budget": budget_sim}
+            if not quota_sim.get("feasible", True) or not budget_sim.get("feasible", True):
+                policy_blocked = True
+        except Exception as _sim_exc:
+            logger.debug("GrowthOptimizationOrchestrator: policy simulation failed: %s", _sim_exc)
+
+        if policy_blocked:
+            return {
+                "campaign_id": campaign_id,
+                "platform": eff_platform,
+                "market_code": market_code,
+                "goal": goal,
+                "decision_context": resolved_ctx,
+                "objectives_used": effective_objectives,
+                "ranking_method": ranking_method,
+                "feasible": False,
+                "blocked_by_policy": True,
+                "policy_simulation_result": policy_simulation_result,
+                "allocation_plan": [],
+                "ranked_candidates": scored,
+                "budget_summary": {
+                    "daily_limit": daily_limit,
+                    "remaining": remaining,
+                    "total_candidates": len(candidates),
+                    "feasible_count": 0,
+                },
+                "top_pick": None,
+                "funnel_summary": self._build_funnel_summary(
+                    candidates=candidates, feasible=[], budget_constraint=budget_constraint,
+                    platform=eff_platform, goal=goal, decision_context=resolved_ctx,
+                ),
+                "attribution_summary": {},
+            }
+
         score_key = "blended_score" if ranking_method == "model_driven" else "composite_score"
         total_score = sum(c.get(score_key, 0.0) for c in feasible) or 1.0
 
@@ -232,7 +281,25 @@ class GrowthOptimizationOrchestrator:
                     model="time_decay",
                 )
                 attribution_summary = attr_result
-                # Blend attribution credit into allocation plan
+
+                # Pull funnel signals from campaign funnel report
+                funnel_signals: dict[str, float] = {}
+                try:
+                    funnel_report = self._attribution_service.get_campaign_funnel_report(
+                        campaign_id=campaign_id,
+                        window_days=attribution_window_days,
+                    )
+                    for vid_entry in funnel_report.get("items", []):
+                        vid = str(vid_entry.get("video_id") or vid_entry.get("variant_id") or "")
+                        if vid:
+                            assist = float(vid_entry.get("assist_credit", 0.0))
+                            conv = float(vid_entry.get("conversion_credit", 0.0))
+                            dropoff_penalty = 0.05 if vid_entry.get("dropoff_stage") == "hook" else 0.0
+                            funnel_signals[vid] = round(0.5 * assist + 0.5 * conv - dropoff_penalty, 4)
+                except Exception:
+                    pass
+
+                # Blend attribution credit + funnel signals into allocation plan
                 attr_credits: dict[str, float] = {}
                 for a in attr_result.get("attributions", []):
                     vid = a.get("video_id") or a.get("variant_id")
@@ -242,12 +309,16 @@ class GrowthOptimizationOrchestrator:
                 for item in allocation_plan:
                     key = str(item.get("video_id") or item.get("variant_id") or "")
                     credit_share = round(attr_credits.get(key, 0.0) / total_credit, 4)
+                    funnel_mult = 1.0 + funnel_signals.get(key, 0.0)
                     item["attribution_credit_share"] = credit_share
-                    # Re-blend budget_share with attribution credit
+                    item["funnel_multiplier"] = round(funnel_mult, 4)
+                    # Re-blend budget_share with attribution credit and funnel signal
                     if credit_share > 0:
                         item["blended_score"] = round(
-                            0.80 * (item.get("blended_score") or item.get("composite_score", 0.0))
-                            + 0.20 * credit_share,
+                            (
+                                0.75 * (item.get("blended_score") or item.get("composite_score", 0.0))
+                                + 0.25 * credit_share
+                            ) * funnel_mult,
                             4,
                         )
             except Exception as exc:
@@ -284,13 +355,14 @@ class GrowthOptimizationOrchestrator:
         Args:
             campaign_budgets: List of dicts with ``campaign_id``, ``platform``,
                 ``current_budget`` (float), and optionally ``conversion_score``,
-                ``ctr``, ``roas``.
+                ``ctr``, ``roas``, ``quota_headroom``.
             performance_history: Optional list of historical performance records
                 keyed by ``campaign_id`` and ``platform``.
 
         Returns:
             Dict with ``reallocations`` (list of {campaign_id, platform,
-            new_budget, delta, reason}), ``total_budget``, and ``portfolio_score``.
+            new_budget, delta, reason, risk_adjusted_share, simulated_feasible_share}),
+            ``total_budget``, and ``portfolio_score``.
         """
         if not campaign_budgets:
             return {"reallocations": [], "total_budget": 0.0, "portfolio_score": 0.0}
@@ -329,24 +401,70 @@ class GrowthOptimizationOrchestrator:
                 + 0.10 * min(explicit_roas / _PORTFOLIO_ROAS_NORMALIZER, 1.0),
                 4,
             )
-            scored_campaigns.append({**c, "_portfolio_score": composite})
 
-        # Soft-max allocation: score-proportional budget shares
+            # Risk adjustment: penalise campaigns with low quota headroom
+            quota_headroom = float(c.get("quota_headroom", 1.0))  # fraction remaining [0,1]
+            budget_efficiency = float(c.get("budget_efficiency", explicit_conv))
+            expected_conv_gain = float(c.get("expected_conversion_gain", explicit_conv))
+
+            # Normalise per-campaign score by expected_conversion_gain, budget_efficiency,
+            # and portfolio_quota_headroom as requested by spec
+            risk_composite = round(
+                composite
+                * min(1.0, max(0.0, quota_headroom))
+                * min(1.0, max(0.1, budget_efficiency))
+                * (0.7 + 0.3 * min(1.0, expected_conv_gain)),
+                4,
+            )
+
+            scored_campaigns.append({
+                **c,
+                "_portfolio_score": composite,
+                "_risk_score": risk_composite,
+                "_quota_headroom": quota_headroom,
+            })
+
+        # Risk-adjusted share normalization
         total_score = sum(c["_portfolio_score"] for c in scored_campaigns) or 1.0
+        total_risk = sum(c["_risk_score"] for c in scored_campaigns) or 1.0
         reallocations: list[dict[str, Any]] = []
         portfolio_score = round(total_score / len(scored_campaigns), 4)
 
+        # Simulate PortfolioQuotaOrchestrator headroom if available
+        simulated_feasible_cache: dict[str, float] = {}
+        try:
+            from app.services.publish_providers.portfolio_quota_orchestrator import PortfolioQuotaOrchestrator
+            quota_orch = PortfolioQuotaOrchestrator(db=self._db)
+            for c in scored_campaigns:
+                cid = str(c.get("campaign_id", ""))
+                plat = str(c.get("platform") or "")
+                check = quota_orch.check_quota(campaign_id=cid, platform=plat or None)
+                rem = check.get("quota_remaining", {})
+                daily_rem = float(rem.get("daily_publishes", 1))
+                plat_rem = float(rem.get("platform") or daily_rem)
+                simulated_feasible_cache[cid] = min(daily_rem, plat_rem)
+        except Exception:
+            pass
+
         for c in scored_campaigns:
+            cid = str(c.get("campaign_id", ""))
             share = c["_portfolio_score"] / total_score
-            new_budget = round(total_budget * share, 2)
+            risk_share = c["_risk_score"] / total_risk
+            new_budget = round(total_budget * risk_share, 2)
             delta = round(new_budget - float(c.get("current_budget", 0.0)), 2)
+            sim_feasible = simulated_feasible_cache.get(cid, 1.0)
             reallocations.append({
-                "campaign_id": c.get("campaign_id"),
+                "campaign_id": cid,
                 "platform": c.get("platform"),
                 "current_budget": c.get("current_budget"),
                 "new_budget": new_budget,
                 "budget_delta": delta,
                 "portfolio_score": c["_portfolio_score"],
+                "risk_adjusted_share": round(risk_share, 4),
+                "simulated_feasible_share": round(
+                    min(1.0, sim_feasible / max(float(total_budget / max(len(scored_campaigns), 1)), 1.0)),
+                    4,
+                ),
                 "reason": (
                     "increased" if delta > 0 else ("decreased" if delta < 0 else "unchanged")
                 ),

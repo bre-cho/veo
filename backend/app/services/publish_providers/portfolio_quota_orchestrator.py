@@ -238,7 +238,9 @@ class PortfolioQuotaOrchestrator:
         Remaining slots are distributed proportionally to remaining headroom.
 
         Returns:
-            Dict mapping campaign_id → additional_slots allocated.
+            Dict mapping campaign_id → additional_slots allocated (integers only).
+            For advisory hints (deferrals, platform shifts) use
+            ``rebalance_portfolio_with_advisory()``.
         """
         day = _day_key()
         headrooms: dict[str, int] = {}
@@ -254,7 +256,6 @@ class PortfolioQuotaOrchestrator:
         allocated = 0
         for cid in campaign_ids:
             share = round(total_remaining_publishes * headrooms[cid] / total_headroom)
-            # Cap at the campaign's headroom
             share = min(share, headrooms[cid])
             allocation[cid] = share
             allocated += share
@@ -265,7 +266,59 @@ class PortfolioQuotaOrchestrator:
             top = max(headrooms, key=lambda c: headrooms[c])
             allocation[top] = allocation.get(top, 0) + leftover
 
-        return allocation
+        return dict(allocation)
+
+    def rebalance_portfolio_with_advisory(
+        self,
+        campaign_ids: list[str],
+        total_remaining_publishes: int,
+    ) -> dict[str, Any]:
+        """Like rebalance_portfolio() but also returns advisory deferral / platform-shift hints.
+
+        Returns:
+            Dict mapping campaign_id → additional_slots allocated, plus
+            ``recommended_deferrals`` (campaigns to defer) and
+            ``recommended_platform_shift`` (platform oversubscription hints).
+        """
+        allocation = self.rebalance_portfolio(campaign_ids, total_remaining_publishes)
+        day = _day_key()
+
+        # Recommended deferrals: campaigns at or above their limit
+        recommended_deferrals: list[str] = []
+        for cid in campaign_ids:
+            state = self._get_or_init(cid)
+            daily_count = state["publish_counts"].get(day, 0)
+            daily_limit = state["daily_publish_limit"]
+            if daily_count >= daily_limit:
+                recommended_deferrals.append(cid)
+
+        # Recommended platform shift: oversubscribed platforms
+        platform_counts_by_plat: dict[str, int] = {}
+        platform_limits_by_plat: dict[str, int] = {}
+        for cid in campaign_ids:
+            state = _QUOTA_STORE.get(cid, {})
+            pq: dict = state.get("platform_quotas", {})
+            pc: dict = state.get("platform_counts", {})
+            for plat, limit in pq.items():
+                pk = f"{day}:{plat}"
+                count = pc.get(pk, 0)
+                platform_counts_by_plat[plat] = platform_counts_by_plat.get(plat, 0) + count
+                platform_limits_by_plat[plat] = platform_limits_by_plat.get(plat, 0) + limit
+        recommended_platform_shift: list[dict[str, Any]] = [
+            {
+                "platform": plat,
+                "utilisation": round(platform_counts_by_plat[plat] / max(platform_limits_by_plat[plat], 1), 4),
+                "suggestion": "shift_to_lower_utilisation_platform",
+            }
+            for plat in platform_counts_by_plat
+            if platform_counts_by_plat[plat] / max(platform_limits_by_plat.get(plat, 1), 1) >= _OVERAGE_ALERT_THRESHOLD
+        ]
+
+        return {
+            **allocation,
+            "recommended_deferrals": recommended_deferrals,
+            "recommended_platform_shift": recommended_platform_shift,
+        }
 
     # ------------------------------------------------------------------
     # Overage alerting

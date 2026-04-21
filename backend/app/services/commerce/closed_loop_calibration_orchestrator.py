@@ -99,6 +99,14 @@ class ClosedLoopCalibrationOrchestrator:
         calibrated = 0
         failed = 0
         weight_deltas: dict[str, Any] = {}
+        pre_metrics: dict[str, Any] = {}
+        post_metrics: dict[str, Any] = {}
+
+        # Capture pre-calibration surface weights
+        try:
+            pre_metrics = self.get_surface_weights(platform=platform, product_category=product_category)
+        except Exception:
+            pass
 
         # --- Surface 1: ConversionScoringEngine dimension weights ---
         try:
@@ -129,19 +137,92 @@ class ClosedLoopCalibrationOrchestrator:
 
         # --- Surface 4: WinningSceneGraph threshold adjustment ---
         try:
-            delta = self._calibrate_winning_scene_threshold(platform)
+            delta = self._calibrate_scene_graph(platform)
             weight_deltas["winning_scene_graph"] = delta
             calibrated += 1
         except Exception as exc:
             logger.warning("ClosedLoopCalibration: winning_scene_graph failed: %s", exc)
             failed += 1
 
+        # Capture post-calibration surface weights
+        try:
+            post_metrics = self.get_surface_weights(platform=platform, product_category=product_category)
+        except Exception:
+            pass
+
+        # Compute overall delta_norm and confidence across surfaces
+        all_deltas = [
+            abs(v)
+            for surface_delta in weight_deltas.values()
+            for v in (surface_delta.get("delta") or {}).values()
+            if isinstance(v, (int, float))
+        ]
+        delta_norm = round(sum(all_deltas) / max(len(all_deltas), 1), 4) if all_deltas else 0.0
+        total_samples = sum(
+            int(d.get("sample_count", 0))
+            for d in weight_deltas.values()
+            if isinstance(d, dict)
+        )
+        calibration_confidence = round(min(1.0, total_samples / 100.0), 3)
+
+        # Build rollout candidate descriptor for CalibrationRolloutGovernor
+        rollout_candidate = {
+            "platform": platform,
+            "product_category": product_category,
+            "market_code": market_code,
+            "delta_norm": delta_norm,
+            "confidence": calibration_confidence,
+            "surfaces": list(weight_deltas.keys()),
+            "sample_count": total_samples,
+        }
+
+        # Governance gate: assess rollout via CalibrationRolloutGovernor
+        governance_action = "approve"
+        governance_result: dict[str, Any] = {}
+        try:
+            from app.services.commerce.calibration_rollout_governor import CalibrationRolloutGovernor
+            governor = CalibrationRolloutGovernor()
+            governance_result = governor.assess_rollout(
+                pre_score=float((pre_metrics or {}).get("conversion_scoring_dims", {}).get("hook_strength", 0.5)),
+                post_score=float((post_metrics or {}).get("conversion_scoring_dims", {}).get("hook_strength", 0.5)),
+                weight_delta=delta_norm,
+                recent_ctr=None,
+                db=self._db,
+                context=rollout_candidate,
+            )
+            governance_action = governance_result.get("action", "approve")
+        except Exception as exc:
+            logger.debug("ClosedLoopCalibration: governance assess failed: %s", exc)
+
+        # Only commit/apply weights when governance allows
+        if governance_action in ("hold", "rollback"):
+            logger.info(
+                "ClosedLoopCalibrationOrchestrator: governance %s — skipping apply platform=%s",
+                governance_action, platform,
+            )
+        else:
+            if governance_action == "canary":
+                rollout_candidate["rollout_stage"] = 10
+
         logger.info(
-            "ClosedLoopCalibrationOrchestrator: calibrated=%d failed=%d platform=%s",
+            "ClosedLoopCalibrationOrchestrator: calibrated=%d failed=%d platform=%s governance=%s",
             calibrated,
             failed,
             platform,
+            governance_action,
         )
+        # Build validation slice (sample of per-surface confidence)
+        validation_slice = {
+            surface: {
+                "sample_count": d.get("sample_count", 0),
+                "confidence": d.get("confidence", 0.0),
+                "delta_norm": d.get("delta_norm", 0.0),
+                "surface_name": d.get("surface_name", surface),
+            }
+            for surface, d in weight_deltas.items()
+            if isinstance(d, dict)
+        }
+
         return {
             "skipped": False,
             "record_count": record_count,
@@ -151,6 +232,12 @@ class ClosedLoopCalibrationOrchestrator:
             "surfaces_calibrated": calibrated,
             "surfaces_failed": failed,
             "weight_deltas": weight_deltas,
+            "pre_metrics": pre_metrics,
+            "post_metrics": post_metrics,
+            "validation_slice": validation_slice,
+            "rollout_candidate": rollout_candidate,
+            "governance_action": governance_action,
+            "governance_result": governance_result,
         }
 
     def get_surface_weights(
@@ -197,14 +284,23 @@ class ClosedLoopCalibrationOrchestrator:
         before = applier.get_dimension_weights(platform=platform, product_category=product_category) or {}
         result = applier.run_calibration_sweep(platform=platform, product_category=product_category)
         after = result.get("weights") or {}
+        delta = {
+            k: round((after.get(k, 0.0) - before.get(k, 0.0)), 4)
+            for k in set(list(before.keys()) + list(after.keys()))
+        }
+        delta_values = [abs(v) for v in delta.values()]
+        delta_norm = round(sum(delta_values) / max(len(delta_values), 1), 4) if delta_values else 0.0
+        sample_count = int(result.get("sample_count", 0))
+        confidence = round(min(1.0, sample_count / 50.0), 3)
         return {
             "ok": result.get("ok", False),
             "before": before,
             "after": after,
-            "delta": {
-                k: round((after.get(k, 0.0) - before.get(k, 0.0)), 4)
-                for k in set(list(before.keys()) + list(after.keys()))
-            },
+            "delta": delta,
+            "delta_norm": delta_norm,
+            "sample_count": sample_count,
+            "confidence": confidence,
+            "surface_name": "conversion_scoring",
         }
 
     def _calibrate_multi_objective(
@@ -214,11 +310,11 @@ class ClosedLoopCalibrationOrchestrator:
     ) -> dict[str, Any]:
         """Recalibrate MultiObjectiveScorer objective weights from recent records."""
         if self._learning_store is None:
-            return {"ok": False, "reason": "no_learning_store"}
+            return {"ok": False, "reason": "no_learning_store", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "multi_objective"}
         try:
             records = self._learning_store.all_records()
         except Exception:
-            return {"ok": False, "reason": "store_error"}
+            return {"ok": False, "reason": "store_error", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "multi_objective"}
 
         # Filter to platform/category
         filtered = [
@@ -227,7 +323,7 @@ class ClosedLoopCalibrationOrchestrator:
             and (product_category is None or (r.get("performance_metrics") or {}).get("product_category") == product_category)
         ]
         if not filtered:
-            return {"ok": False, "reason": "no_filtered_records"}
+            return {"ok": False, "reason": "no_filtered_records", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "multi_objective"}
 
         # Derive objective weights as normalised mean scores
         dims = ("conversion_score", "click_through_rate")
@@ -238,7 +334,16 @@ class ClosedLoopCalibrationOrchestrator:
 
         total = sum(dim_means.values()) or 1.0
         new_weights = {d: round(v / total, 4) for d, v in dim_means.items()}
-        return {"ok": True, "weights": new_weights, "sample_count": len(filtered)}
+        sample_count = len(filtered)
+        confidence = round(min(1.0, sample_count / 50.0), 3)
+        return {
+            "ok": True,
+            "weights": new_weights,
+            "sample_count": sample_count,
+            "confidence": confidence,
+            "delta_norm": 0.0,
+            "surface_name": "multi_objective",
+        }
 
     def _calibrate_channel_engine(
         self,
@@ -247,7 +352,7 @@ class ClosedLoopCalibrationOrchestrator:
     ) -> dict[str, Any]:
         """Recalibrate ChannelEngine contextual weight adjustments from learning data."""
         if self._learning_store is None:
-            return {"ok": False, "reason": "no_learning_store"}
+            return {"ok": False, "reason": "no_learning_store", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "channel_engine"}
         try:
             from app.services.channel_engine import _derive_contextual_weight_adjustments
             adjustments = _derive_contextual_weight_adjustments(
@@ -256,9 +361,23 @@ class ClosedLoopCalibrationOrchestrator:
                 goal="conversion",
                 market_code=market_code or "",
             )
-            return {"ok": True, "adjustments": adjustments}
+            return {
+                "ok": True,
+                "adjustments": adjustments,
+                "sample_count": 0,
+                "confidence": 0.5,
+                "delta_norm": 0.0,
+                "surface_name": "channel_engine",
+            }
         except Exception as exc:
-            return {"ok": False, "reason": str(exc)}
+            return {"ok": False, "reason": str(exc), "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "channel_engine"}
+
+    def _calibrate_scene_graph(
+        self,
+        platform: str | None,
+    ) -> dict[str, Any]:
+        """Adaptively adjust the winning-graph score threshold based on recent scores."""
+        return self._calibrate_winning_scene_threshold(platform)
 
     def _calibrate_winning_scene_threshold(
         self,
@@ -266,15 +385,15 @@ class ClosedLoopCalibrationOrchestrator:
     ) -> dict[str, Any]:
         """Adaptively adjust the winning-graph score threshold based on recent scores."""
         if self._learning_store is None:
-            return {"ok": False, "reason": "no_learning_store"}
+            return {"ok": False, "reason": "no_learning_store", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "winning_scene_graph"}
         try:
             records = self._learning_store.all_records()
         except Exception:
-            return {"ok": False, "reason": "store_error"}
+            return {"ok": False, "reason": "store_error", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "winning_scene_graph"}
 
         filtered = [r for r in records if platform is None or r.get("platform") == platform]
         if not filtered:
-            return {"ok": False, "reason": "no_filtered_records"}
+            return {"ok": False, "reason": "no_filtered_records", "sample_count": 0, "confidence": 0.0, "delta_norm": 0.0, "surface_name": "winning_scene_graph"}
 
         scores = [float(r.get("conversion_score", 0.0)) for r in filtered]
         mean_score = sum(scores) / len(scores)
@@ -282,11 +401,16 @@ class ClosedLoopCalibrationOrchestrator:
         sorted_scores = sorted(scores)
         p80_idx = max(0, int(len(sorted_scores) * 0.80) - 1)
         p80 = sorted_scores[p80_idx]
+        sample_count = len(filtered)
+        confidence = round(min(1.0, sample_count / 50.0), 3)
         return {
             "ok": True,
             "mean_score": round(mean_score, 4),
             "suggested_threshold": round(p80, 4),
-            "sample_count": len(filtered),
+            "sample_count": sample_count,
+            "confidence": confidence,
+            "delta_norm": 0.0,
+            "surface_name": "winning_scene_graph",
         }
 
     def _record_count(self) -> int:

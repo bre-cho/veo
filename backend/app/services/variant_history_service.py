@@ -158,21 +158,139 @@ class VariantHistoryService:
         """Return scoring weight profile from the winner's context.
 
         Extracts ``winner_score_breakdown`` from the top-scoring record and
-        returns it as a weight dict.  Falls back to an empty dict when no
-        winner record exists.
+        returns it as a weight dict, enriched with calibration readiness and
+        rollout stage guidance.
         """
         rows = self.list_variants(db, experiment_id)
         if not rows:
             return {}
         best = rows[0]
         breakdown: dict[str, Any] = best.winner_score_breakdown or {}
-        # Normalise to a flat weight dict (strip nested structures if present)
         weights: dict[str, Any] = {}
         for k, v in breakdown.items():
             if isinstance(v, (int, float)):
                 weights[k] = float(v)
-        # Always include conversion context
         weights.setdefault("experiment_id", experiment_id)
         weights.setdefault("platform", best.platform)
         weights.setdefault("product_category", best.product_category)
+
+        # Calibration readiness: ready when winner is sufficient and has a breakdown
+        ctx: dict[str, Any] = dict(best.context or {})
+        winner_sufficient = bool(ctx.get("winner_sufficient", False))
+        winner_confidence = float(ctx.get("winner_confidence", 0.0))
+        sample_count = int(ctx.get("winner_sample_count", 0))
+        calibration_ready = winner_sufficient and bool(weights) and winner_confidence >= 0.5
+
+        # Segment key: platform + product_category for downstream calibration lookup
+        segment_key = f"{best.platform or 'all'}|{best.product_category or 'all'}"
+
+        # Recommended rollout stage based on confidence
+        if winner_confidence >= 0.9:
+            recommended_rollout_stage = 100
+        elif winner_confidence >= 0.75:
+            recommended_rollout_stage = 50
+        elif winner_confidence >= 0.5:
+            recommended_rollout_stage = 10
+        else:
+            recommended_rollout_stage = 0
+
+        weights["calibration_ready"] = calibration_ready
+        weights["recommended_rollout_stage"] = recommended_rollout_stage
+        weights["segment_key"] = segment_key
+        weights["winner_confidence"] = winner_confidence
+        weights["sample_count"] = sample_count
         return weights
+
+    def get_experiment_summary(
+        self,
+        db: Session,
+        experiment_id: str,
+    ) -> dict[str, Any]:
+        """Return a summary of an experiment including variant scores and winner.
+
+        Returns:
+            Dict with ``experiment_id``, ``variant_count``, ``winner_id``,
+            ``winner_score``, ``avg_score``, ``sufficiency``.
+        """
+        rows = self.list_variants(db, experiment_id)
+        if not rows:
+            return {"experiment_id": experiment_id, "variant_count": 0}
+
+        sufficiency = self._sufficiency_policy.evaluate(rows)
+        scores = [
+            float(r.actual_conversion_score)
+            for r in rows
+            if r.actual_conversion_score is not None
+        ]
+        avg_score = round(sum(scores) / len(scores), 4) if scores else 0.0
+        winner = rows[0]  # already sorted by score desc
+        return {
+            "experiment_id": experiment_id,
+            "variant_count": len(rows),
+            "winner_id": str(winner.id),
+            "winner_score": float(winner.actual_conversion_score or winner.winner_score or 0.0),
+            "avg_score": avg_score,
+            "sufficiency": sufficiency,
+        }
+
+    def get_winner_confidence(
+        self,
+        db: Session,
+        experiment_id: str,
+        max_age_days: int = 30,
+    ) -> dict[str, Any]:
+        """Return winner confidence with staleness decay and distribution penalty.
+
+        Args:
+            experiment_id: The experiment to evaluate.
+            max_age_days: Data older than this is considered stale (confidence decayed).
+
+        Returns:
+            Dict with ``confidence``, ``decay_applied``, ``distribution_penalty``,
+            ``effective_confidence``.
+        """
+        rows = self.list_variants(db, experiment_id)
+        if not rows:
+            return {"confidence": 0.0, "decay_applied": 0.0, "distribution_penalty": 0.0, "effective_confidence": 0.0}
+
+        sufficiency = self._sufficiency_policy.evaluate(rows)
+        base_confidence = float(sufficiency["confidence_score"])
+
+        # Staleness decay: penalise if latest record is older than max_age_days
+        decay = 0.0
+        try:
+            latest_ts: datetime | None = None
+            for r in rows:
+                ts = getattr(r, "recorded_at", None) or getattr(r, "created_at", None)
+                if ts is not None:
+                    if latest_ts is None or ts > latest_ts:
+                        latest_ts = ts
+            if latest_ts is not None:
+                age_days = (_now() - latest_ts).days
+                if age_days > max_age_days:
+                    decay = round(min(0.5, (age_days - max_age_days) / max(max_age_days, 1) * 0.3), 3)
+        except Exception:
+            pass
+
+        # Distribution penalty: penalise heavily skewed variant distributions
+        distribution_penalty = 0.0
+        try:
+            scored_rows = [r for r in rows if r.actual_conversion_score is not None]
+            if len(scored_rows) >= 2:
+                scores = [float(r.actual_conversion_score) for r in scored_rows]  # type: ignore[arg-type]
+                score_max = max(scores)
+                score_sum = sum(scores) or 1.0
+                top_share = score_max / score_sum
+                # If one variant takes >80% of the score mass, apply penalty
+                if top_share > 0.80:
+                    distribution_penalty = round(min(0.3, (top_share - 0.80) * 1.5), 3)
+        except Exception:
+            pass
+
+        effective_confidence = round(max(0.0, base_confidence - decay - distribution_penalty), 3)
+        return {
+            "confidence": base_confidence,
+            "decay_applied": decay,
+            "distribution_penalty": distribution_penalty,
+            "effective_confidence": effective_confidence,
+        }
