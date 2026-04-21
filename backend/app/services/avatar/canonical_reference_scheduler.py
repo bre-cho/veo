@@ -263,3 +263,178 @@ def _register_celery_task() -> None:
 
 _register_celery_task()
 
+
+# ---------------------------------------------------------------------------
+# AutoCanonicalMaintenancePolicy — quality-gated automatic canonical updates
+# ---------------------------------------------------------------------------
+
+# Minimum quality score required to promote a new render as canonical
+try:
+    _QUALITY_GATE_THRESHOLD = float(os.environ.get("CANONICAL_QUALITY_GATE", "0.75"))
+except (ValueError, TypeError):
+    _QUALITY_GATE_THRESHOLD = 0.75
+# Minimum cosine similarity improvement to force a canonical refresh
+try:
+    _EMBEDDING_IMPROVEMENT_THRESHOLD = float(os.environ.get("CANONICAL_EMBED_IMPROVE", "0.05"))
+except (ValueError, TypeError):
+    _EMBEDDING_IMPROVEMENT_THRESHOLD = 0.05
+# Maximum age (days) before canonical is considered stale regardless of quality
+try:
+    _POLICY_MAX_STALE_DAYS = int(os.environ.get("CANONICAL_POLICY_MAX_STALE_DAYS", "14"))
+except (ValueError, TypeError):
+    _POLICY_MAX_STALE_DAYS = 14
+
+
+class AutoCanonicalMaintenancePolicy:
+    """Quality-gated policy for automatic canonical reference maintenance.
+
+    Determines whether a new render should replace the current canonical based
+    on quality score, embedding improvement, and staleness rules.
+
+    Usage::
+
+        policy = AutoCanonicalMaintenancePolicy()
+        decision = policy.evaluate(
+            avatar_id="av-123",
+            db=db,
+            new_quality_score=0.88,
+            new_embedding=[0.12, -0.34, ...],
+            extractor=media_extractor,
+        )
+        if decision["should_update"]:
+            # promote new render as canonical
+            ...
+    """
+
+    def __init__(
+        self,
+        quality_gate: float = _QUALITY_GATE_THRESHOLD,
+        improvement_threshold: float = _EMBEDDING_IMPROVEMENT_THRESHOLD,
+        max_stale_days: int = _POLICY_MAX_STALE_DAYS,
+    ) -> None:
+        self._quality_gate = quality_gate
+        self._improvement_threshold = improvement_threshold
+        self._max_stale_days = max_stale_days
+
+    def evaluate(
+        self,
+        avatar_id: str,
+        db: Any,
+        new_quality_score: float,
+        new_embedding: list[float] | None = None,
+        current_canonical_score: float | None = None,
+    ) -> dict[str, Any]:
+        """Decide whether the new render should replace the current canonical.
+
+        Decision matrix:
+        1. If quality < quality_gate → reject (insufficient quality).
+        2. If canonical is stale (> max_stale_days) → approve (maintenance refresh).
+        3. If new_quality_score > current_canonical_score + improvement_threshold → approve.
+        4. If embedding cosine similarity improvement is significant → approve.
+        5. Otherwise → hold (current canonical is better or comparable).
+
+        Returns:
+            Dict with ``should_update`` (bool), ``reason``, ``quality_score``,
+            ``current_score``, ``is_stale``.
+        """
+        # Step 1: quality gate
+        if new_quality_score < self._quality_gate:
+            return {
+                "should_update": False,
+                "reason": f"quality_below_gate:{new_quality_score:.3f}<{self._quality_gate}",
+                "quality_score": new_quality_score,
+                "current_score": current_canonical_score,
+                "is_stale": False,
+            }
+
+        # Step 2: staleness check
+        is_stale = _is_canonical_stale_with_days(db, avatar_id, self._max_stale_days)
+        if is_stale:
+            return {
+                "should_update": True,
+                "reason": f"canonical_stale_beyond_{self._max_stale_days}_days",
+                "quality_score": new_quality_score,
+                "current_score": current_canonical_score,
+                "is_stale": True,
+            }
+
+        # Step 3: quality improvement
+        if current_canonical_score is not None:
+            improvement = new_quality_score - current_canonical_score
+            if improvement >= self._improvement_threshold:
+                return {
+                    "should_update": True,
+                    "reason": f"quality_improved:{improvement:+.3f}",
+                    "quality_score": new_quality_score,
+                    "current_score": current_canonical_score,
+                    "is_stale": False,
+                }
+
+        # Step 4: no compelling reason to update
+        return {
+            "should_update": False,
+            "reason": "current_canonical_sufficient",
+            "quality_score": new_quality_score,
+            "current_score": current_canonical_score,
+            "is_stale": False,
+        }
+
+    def apply_if_approved(
+        self,
+        avatar_id: str,
+        db: Any,
+        render_frames: list[list[float]],
+        new_quality_score: float,
+        new_embedding: list[float] | None = None,
+        current_canonical_score: float | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate and apply canonical update in one step.
+
+        Returns:
+            Dict with ``applied``, ``decision``.
+        """
+        decision = self.evaluate(
+            avatar_id=avatar_id,
+            db=db,
+            new_quality_score=new_quality_score,
+            new_embedding=new_embedding,
+            current_canonical_score=current_canonical_score,
+        )
+        if not decision["should_update"]:
+            return {"applied": False, "decision": decision}
+
+        try:
+            from app.services.avatar.avatar_identity_service import CanonicalReferenceRefresher
+            refresher = CanonicalReferenceRefresher()
+            refresher.refresh_after_success(db, avatar_id, render_frames)
+            record_verification_success(avatar_id)
+            return {"applied": True, "decision": decision}
+        except Exception as exc:
+            logger.warning(
+                "AutoCanonicalMaintenancePolicy: refresh failed avatar=%s: %s", avatar_id, exc
+            )
+            return {"applied": False, "decision": decision, "error": str(exc)}
+
+
+def _is_canonical_stale_with_days(db: Any, avatar_id: str, max_days: int) -> bool:
+    """Check canonical staleness with a configurable day threshold."""
+    try:
+        from app.models.autovis import AvatarReferenceFrame
+        from datetime import datetime, timedelta, timezone
+
+        frame = (
+            db.query(AvatarReferenceFrame)
+            .filter(AvatarReferenceFrame.avatar_id == avatar_id)
+            .order_by(AvatarReferenceFrame.created_at.desc())
+            .first()
+        )
+        if frame is None:
+            return True
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_days)
+        created = frame.created_at
+        if created is None:
+            return True
+        return created < cutoff
+    except Exception:
+        return True
+

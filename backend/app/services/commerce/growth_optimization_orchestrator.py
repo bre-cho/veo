@@ -47,9 +47,11 @@ class GrowthOptimizationOrchestrator:
         self,
         db: "Session | None" = None,
         learning_store: Any | None = None,
+        attribution_service: Any | None = None,
     ) -> None:
         self._db = db
         self._learning_store = learning_store
+        self._attribution_service = attribution_service
 
     def optimize(
         self,
@@ -62,6 +64,7 @@ class GrowthOptimizationOrchestrator:
         market_code: str | None = None,
         goal: str | None = None,
         use_model_ranking: bool = True,
+        attribution_window_days: int = 7,
     ) -> dict[str, Any]:
         """Return a ranked allocation plan for a campaign's variant candidates.
 
@@ -91,6 +94,7 @@ class GrowthOptimizationOrchestrator:
             - ``allocation_plan``: list of {video_id, score, budget_share}
             - ``ranking_method``: "model_driven" or "linear_weighted"
             - ``funnel_summary``: joint creative × conversion × budget funnel breakdown
+            - ``attribution_summary``: multi-touch attribution credit breakdown (when available)
         """
         from app.services.commerce.multi_objective_scorer import MultiObjectiveScorer
         from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
@@ -183,6 +187,38 @@ class GrowthOptimizationOrchestrator:
             goal=goal,
         )
 
+        # --- Attribution summary (multi-touch credit breakdown) ---
+        attribution_summary: dict[str, Any] = {}
+        if self._attribution_service is not None:
+            try:
+                attr_result = self._attribution_service.attribute_conversion(
+                    conversion_event={"timestamp": __import__("time").time(), "value": 1.0},
+                    campaign_id=campaign_id,
+                    window_days=attribution_window_days,
+                    model="time_decay",
+                )
+                attribution_summary = attr_result
+                # Blend attribution credit into allocation plan
+                attr_credits: dict[str, float] = {}
+                for a in attr_result.get("attributions", []):
+                    vid = a.get("video_id") or a.get("variant_id")
+                    if vid:
+                        attr_credits[str(vid)] = float(a.get("credit", 0.0))
+                total_credit = sum(attr_credits.values()) or 1.0
+                for item in allocation_plan:
+                    key = str(item.get("video_id") or item.get("variant_id") or "")
+                    credit_share = round(attr_credits.get(key, 0.0) / total_credit, 4)
+                    item["attribution_credit_share"] = credit_share
+                    # Re-blend budget_share with attribution credit
+                    if credit_share > 0:
+                        item["blended_score"] = round(
+                            0.80 * (item.get("blended_score") or item.get("composite_score", 0.0))
+                            + 0.20 * credit_share,
+                            4,
+                        )
+            except Exception as exc:
+                logger.debug("GrowthOptimizationOrchestrator: attribution failed: %s", exc)
+
         return {
             "campaign_id": campaign_id,
             "platform": platform,
@@ -200,6 +236,7 @@ class GrowthOptimizationOrchestrator:
             "top_pick": feasible[0] if feasible else None,
             "allocation_plan": allocation_plan,
             "funnel_summary": funnel_summary,
+            "attribution_summary": attribution_summary,
         }
 
     # ------------------------------------------------------------------

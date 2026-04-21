@@ -121,8 +121,8 @@ class FailureClassifier:
         return None
 
     @staticmethod
-    def _strategy(error_type: str, platform: str) -> str:
-        """Return the recommended recovery strategy for an error type."""
+    def get_strategy_for_error_type(error_type: str, platform: str) -> str:
+        """Public API: return the recommended recovery strategy for an error type."""
         _STRATEGIES: dict[str, str] = {
             "auth_expired": "refresh_oauth_then_retry",
             "quota_exceeded": "defer_24h",
@@ -136,6 +136,11 @@ class FailureClassifier:
             "unknown": "escalate_to_human_review",
         }
         return _STRATEGIES.get(error_type, "escalate_to_human_review")
+
+    @staticmethod
+    def _strategy(error_type: str, platform: str) -> str:
+        """Return the recommended recovery strategy for an error type."""
+        return FailureClassifier.get_strategy_for_error_type(error_type, platform)
 
 
 class PlatformRecoveryWorkflow:

@@ -331,6 +331,130 @@ _REGION_CONTENT_MATRIX: dict[str, dict[str, str]] = {
         "health_claims": "review",
         "crypto": "review",
     },
+    # United Kingdom
+    "GB": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+        "data_collection": "review",  # UK GDPR
+    },
+    # Japan
+    "JP": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "review",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # South Korea
+    "KR": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "review",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # India
+    "IN": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Brazil
+    "BR": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Indonesia
+    "ID": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "blocked",
+        "tobacco": "review",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Thailand
+    "TH": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Malaysia
+    "MY": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Canada
+    "CA": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+        "data_collection": "review",  # PIPEDA
+    },
+    # Germany
+    "DE": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "blocked",
+        "crypto": "review",
+        "data_collection": "review",  # GDPR + BDSG
+        "hate_speech": "blocked",   # German NetzDG
+    },
 }
 
 # Content type keywords for auto-detection
@@ -343,6 +467,11 @@ _CONTENT_TYPE_KEYWORDS: dict[str, list[str]] = {
     "financial_advice": ["invest", "stock", "forex", "trading", "financial advice", "returns"],
     "health_claims": ["cure", "treat", "diagnose", "heal", "medical", "clinically proven"],
     "crypto": ["bitcoin", "crypto", "nft", "blockchain", "defi", "token"],
+    "vpn": ["vpn", "virtual private network", "bypass firewall"],
+    "data_collection": ["collect data", "personal data", "user tracking", "analytics"],
+    "hate_speech": ["hate", "discrimination", "racist", "xenophobia"],
+    "diet_supplement": ["weight loss supplement", "fat burner", "diet pill", "slimming"],
+    "influencer_marketing": ["paid partnership", "sponsored", "ad", "#ad", "collab"],
 }
 
 
