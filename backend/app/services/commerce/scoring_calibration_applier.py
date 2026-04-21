@@ -89,7 +89,10 @@ class ScoringCalibrationApplier:
                     product_category,
                 )
                 return None
-            self.last_r2 = row.r_squared if hasattr(row, "r_squared") else None
+            try:
+                self.last_r2 = row.r_squared
+            except AttributeError:
+                self.last_r2 = None
             return row.weights
         except Exception as exc:
             logger.debug("ScoringCalibrationApplier.get_dimension_weights failed: %s", exc)

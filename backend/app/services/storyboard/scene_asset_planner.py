@@ -105,7 +105,10 @@ class SceneAssetPlanner:
                         "render_urls": render_inventory.get(asset_type, []),
                         "available": asset_type in render_inventory and bool(render_inventory[asset_type]),
                     }
-                inventory[asset_type]["scenes"].append(int(scene_idx))
+                try:
+                    inventory[asset_type]["scenes"].append(int(scene_idx))
+                except (ValueError, TypeError):
+                    inventory[asset_type]["scenes"].append(scene_idx)
         return inventory
 
     # ------------------------------------------------------------------

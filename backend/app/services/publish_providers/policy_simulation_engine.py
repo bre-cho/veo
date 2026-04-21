@@ -53,6 +53,19 @@ _CANARY_CTR_DROP_THRESHOLD = 0.05
 _CANARY_CONV_DROP_THRESHOLD = 0.03
 
 
+# Sensitive content keywords used in dry_run_publish compliance check.
+# Extend this list to broaden the keyword-based compliance filter.
+_DRY_RUN_SENSITIVE_KEYWORDS = (
+    "adult", "explicit", "18+", "nsfw", "nude", "gambling", "cannabis",
+)
+
+# Platform-specific title length limits for preflight validation
+_TITLE_LENGTH_LIMITS: dict[str, int] = {
+    "youtube": 100,
+    "shorts": 100,
+    "tiktok": 150,
+}
+
 class PolicySimulationEngine:
     """Simulate publish policies before deploying to production."""
 
@@ -317,16 +330,14 @@ class PolicySimulationEngine:
 
             issues: list[str] = []
             # Basic adult/sensitive keyword check
-            _SENSITIVE = ("adult", "explicit", "18+", "nsfw", "nude", "gambling", "cannabis")
-            if any(kw in content for kw in _SENSITIVE):
+            if any(kw in content for kw in _DRY_RUN_SENSITIVE_KEYWORDS):
                 issues.append("sensitive_content_keyword")
 
             # Platform-specific title length check
             platform = str(job.get("platform", "")).lower()
-            if platform in ("youtube", "shorts") and len(title) > 100:
-                issues.append("title_too_long_youtube")
-            elif platform == "tiktok" and len(title) > 150:
-                issues.append("title_too_long_tiktok")
+            title_limit = _TITLE_LENGTH_LIMITS.get(platform)
+            if title_limit is not None and len(title) > title_limit:
+                issues.append(f"title_too_long_{platform}")
 
             if issues:
                 blocked_jobs.append(idx)

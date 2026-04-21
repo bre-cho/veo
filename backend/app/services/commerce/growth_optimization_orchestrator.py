@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 _PORTFOLIO_DAILY_PLATFORM_LIMIT = int(
     os.environ.get("PORTFOLIO_DAILY_PLATFORM_LIMIT", "100")
 )
+# Maximum expected ROAS for portfolio normalization (ROAS is mapped to [0, 1])
+_PORTFOLIO_ROAS_NORMALIZER = 5.0
 
 
 class GrowthOptimizationOrchestrator:
@@ -324,7 +326,7 @@ class GrowthOptimizationOrchestrator:
                 0.40 * explicit_conv
                 + 0.30 * hist_conv
                 + 0.20 * explicit_ctr
-                + 0.10 * min(explicit_roas / 5.0, 1.0),  # normalise ROAS to [0,1]
+                + 0.10 * min(explicit_roas / _PORTFOLIO_ROAS_NORMALIZER, 1.0),
                 4,
             )
             scored_campaigns.append({**c, "_portfolio_score": composite})

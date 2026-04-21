@@ -32,6 +32,13 @@ _PLATFORM_INTENT_SIGNALS: dict[str, float] = {
     "instagram": 0.78,
 }
 
+# Funnel stage → copy signal keywords for fit scoring
+_FUNNEL_AWARENESS_SIGNALS = ("imagine", "story", "what if", "discover", "?")
+_FUNNEL_AWARENESS_PENALTY_SIGNALS = ("buy", "order", "purchase", "claim")
+_FUNNEL_CONSIDERATION_SIGNALS = ("review", "compare", "trusted", "proven", "vs", "better")
+_FUNNEL_CONVERSION_SIGNALS = ("buy", "tap", "start", "claim", "order", "shop", "now", "today")
+_FUNNEL_RETENTION_SIGNALS = ("exclusive", "loyalty", "member", "community", "thank")
+
 # Funnel stage → score multiplier applied to overall composite score
 _FUNNEL_STAGE_MULTIPLIERS: dict[str, float] = {
     "awareness": 0.85,   # early stage: penalise hard-sell signals
@@ -113,7 +120,7 @@ class ConversionScoringEngine:
 
         if calibrated_weights:
             # Confidence weight: scale by how reliable calibration is (R²-based)
-            r2 = calibration_r2 if calibration_r2 is not None else 1.0
+            r2 = calibration_r2 if calibration_r2 is not None else 0.5
             confidence = max(0.0, min(1.0, r2))
             # Blend calibrated weights with equal-weight fallback proportionally to R²
             n = len(dimensions)
@@ -166,23 +173,23 @@ class ConversionScoringEngine:
         stage = funnel_stage.lower()
         if stage == "awareness":
             # Awareness: storytelling, problem framing — penalise hard sell
-            has_story = any(w in text for w in ("imagine", "story", "what if", "discover", "?"))
-            has_hard_sell = any(w in text for w in ("buy", "order", "purchase", "claim"))
+            has_story = any(w in text for w in _FUNNEL_AWARENESS_SIGNALS)
+            has_hard_sell = any(w in text for w in _FUNNEL_AWARENESS_PENALTY_SIGNALS)
             score = 0.80 if has_story else 0.65
             if has_hard_sell:
                 score = max(score - 0.10, 0.50)
             return score
         if stage == "consideration":
             # Consideration: features, comparison, social proof
-            has_proof = any(w in text for w in ("review", "compare", "trusted", "proven", "vs", "better"))
+            has_proof = any(w in text for w in _FUNNEL_CONSIDERATION_SIGNALS)
             return 0.82 if has_proof else 0.68
         if stage == "conversion":
             # Conversion: CTA urgency, offer
-            has_cta = any(w in text for w in ("buy", "tap", "start", "claim", "order", "shop", "now", "today"))
+            has_cta = any(w in text for w in _FUNNEL_CONVERSION_SIGNALS)
             return 0.88 if has_cta else 0.60
         if stage == "retention":
             # Retention: loyalty, community, value
-            has_retention = any(w in text for w in ("exclusive", "loyalty", "member", "community", "thank"))
+            has_retention = any(w in text for w in _FUNNEL_RETENTION_SIGNALS)
             return 0.80 if has_retention else 0.65
         return 0.68
 

@@ -153,7 +153,7 @@ class CalibrationRolloutGovernor:
 
         ctr_drop: float | None = None
         if pre_ctr is not None and post_ctr is not None and pre_ctr > 0:
-            ctr_drop = round((pre_ctr - post_ctr) / pre_ctr, 4)  # relative drop
+            ctr_drop = round((pre_ctr - post_ctr) / max(pre_ctr, 1e-9), 4)  # relative drop
 
         # --- KPI regression checks (immediate rollback) ---
         conv_regression = score_delta is not None and score_delta <= -_MAX_SCORE_LOSS

@@ -196,7 +196,7 @@ class CinematicMemoryStore:
         dim_value_weights: dict[str, dict[str, float]] = {dim: {} for dim in _SHOT_DIMS}
         total_weight = 0.0
         for s in shots:
-            w = float(s.get("conversion_outcome", 0.5))
+            w = float(s.get("conversion_outcome", 0.0))
             total_weight += w
             for dim in _SHOT_DIMS:
                 val = s.get(dim)
