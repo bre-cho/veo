@@ -276,7 +276,7 @@ class NarrativeArcDirector:
             "created_at": time.time(),
         }
         _EXPERIMENT_REGISTRY[exp_id] = experiment
-        return {k: v for k, v in experiment.items() if k != "variant_a" or k != "variant_b"}
+        return {k: v for k, v in experiment.items() if k not in ("variant_a", "variant_b")}
 
     def record_episode_outcome(
         self,
