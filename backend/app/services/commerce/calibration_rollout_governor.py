@@ -107,6 +107,7 @@ class CalibrationRolloutGovernor:
         self._db = db
         self._learning_store = learning_store
         self._max_safe_delta = max_safe_delta
+        self._load_persisted_state()
 
     # ------------------------------------------------------------------
     # Primary governance API
@@ -170,7 +171,13 @@ class CalibrationRolloutGovernor:
                 f"KPI regression detected ({', '.join(kpi_detail)}). "
                 "Reverting to last approved weights."
             )
-            self._do_rollback(ctx_key, platform, product_category)
+            self._do_rollback(
+                ctx_key,
+                platform,
+                product_category,
+                rollback_reason=reason,
+                rollback_source="assess_rollout",
+            )
             canary_pct = None
 
         elif max_delta > self._max_safe_delta:
@@ -198,7 +205,12 @@ class CalibrationRolloutGovernor:
                 f"Score improved {score_delta:+.4f} ≥ {_MIN_SCORE_GAIN}. "
                 "Calibration approved and applied."
             )
-            self._record_approved_weights(ctx_key, proposed_delta)
+            self._record_approved_weights(
+                ctx_key,
+                proposed_delta,
+                platform=platform,
+                product_category=product_category,
+            )
             canary_pct = None
 
         else:
@@ -207,7 +219,12 @@ class CalibrationRolloutGovernor:
                 "Delta within safe range and no significant regression. "
                 "Approved with monitoring."
             )
-            self._record_approved_weights(ctx_key, proposed_delta)
+            self._record_approved_weights(
+                ctx_key,
+                proposed_delta,
+                platform=platform,
+                product_category=product_category,
+            )
             canary_pct = None
 
         decision = {
@@ -222,7 +239,7 @@ class CalibrationRolloutGovernor:
             "context": {"platform": platform, "product_category": product_category},
             "decided_at": time.time(),
         }
-        self._append_history(ctx_key, decision)
+        self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
 
         logger.info(
             "CalibrationRolloutGovernor: action=%s platform=%s max_delta=%.4f "
@@ -265,6 +282,32 @@ class CalibrationRolloutGovernor:
         records_at_stage_start = canary.get("records_at_stage_start", 0)
         pre_score = canary.get("pre_score", 0.5)
         pre_ctr = canary.get("pre_ctr")
+
+        simulation = self._simulate_canary_gate(
+            pre_score=pre_score,
+            recent_score=self._recent_avg_score(platform, product_category),
+            pre_ctr=pre_ctr,
+            recent_ctr=self._recent_avg_ctr(platform, product_category),
+            canary_pct=current_pct,
+        )
+        if not simulation.get("feasible", True):
+            _CANARY_STATE.pop(ctx_key, None)
+            self._do_rollback(
+                ctx_key,
+                platform,
+                product_category,
+                rollback_reason="canary_simulation_failed",
+                rollback_source="advance_canary",
+            )
+            decision = {
+                "action": "rollback",
+                "canary_pct": current_pct,
+                "reason": "Canary simulation failed policy gate.",
+                "simulation": simulation,
+                "decided_at": time.time(),
+            }
+            self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
+            return decision
 
         # How many records have arrived since stage start?
         current_records = self._recent_record_count(platform, product_category)
@@ -310,7 +353,13 @@ class CalibrationRolloutGovernor:
                 kpi_detail.append(f"CTR drop {ctr_drop:.1%}")
             # Abort canary — rollback
             del _CANARY_STATE[ctx_key]
-            self._do_rollback(ctx_key, platform, product_category)
+            self._do_rollback(
+                ctx_key,
+                platform,
+                product_category,
+                rollback_reason=f"canary_kpi_failure_{current_pct}",
+                rollback_source="advance_canary",
+            )
             decision = {
                 "action": "rollback",
                 "canary_pct": current_pct,
@@ -318,7 +367,28 @@ class CalibrationRolloutGovernor:
                 "kpi_snapshot": kpi_snapshot,
                 "decided_at": time.time(),
             }
-            self._append_history(ctx_key, decision)
+            self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
+            return decision
+
+        healthy_stages = int(canary.get("healthy_stages", 0)) + 1
+        _CANARY_STATE[ctx_key]["healthy_stages"] = healthy_stages
+        if healthy_stages >= 2:
+            _CANARY_STATE.pop(ctx_key, None)
+            self._record_approved_weights(
+                ctx_key,
+                canary.get("proposed_delta", {}),
+                platform=platform,
+                product_category=product_category,
+                canary_stage=100,
+            )
+            decision = {
+                "action": "complete",
+                "canary_pct": 100,
+                "reason": "KPIs healthy across 2 consecutive canary stages — auto-approved to 100%.",
+                "kpi_snapshot": kpi_snapshot,
+                "decided_at": time.time(),
+            }
+            self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
             return decision
 
         # Advance to next stage
@@ -326,7 +396,13 @@ class CalibrationRolloutGovernor:
         if next_stage_idx >= len(_CANARY_STAGES):
             # Reached 100 % — complete canary, full approve
             del _CANARY_STATE[ctx_key]
-            self._record_approved_weights(ctx_key, canary.get("proposed_delta", {}))
+            self._record_approved_weights(
+                ctx_key,
+                canary.get("proposed_delta", {}),
+                platform=platform,
+                product_category=product_category,
+                canary_stage=100,
+            )
             decision = {
                 "action": "complete",
                 "canary_pct": 100,
@@ -334,7 +410,7 @@ class CalibrationRolloutGovernor:
                 "kpi_snapshot": kpi_snapshot,
                 "decided_at": time.time(),
             }
-            self._append_history(ctx_key, decision)
+            self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
             return decision
 
         next_pct = _CANARY_STAGES[next_stage_idx]
@@ -349,7 +425,7 @@ class CalibrationRolloutGovernor:
             "kpi_snapshot": kpi_snapshot,
             "decided_at": time.time(),
         }
-        self._append_history(ctx_key, decision)
+        self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
         return decision
 
     def get_canary_status(
@@ -416,7 +492,13 @@ class CalibrationRolloutGovernor:
             reason = (
                 f"Held calibration re-evaluated: score regressed {score_delta:+.4f}. Rolling back."
             )
-            self._do_rollback(ctx_key, platform, product_category)
+            self._do_rollback(
+                ctx_key,
+                platform,
+                product_category,
+                rollback_reason=reason,
+                rollback_source="re_evaluate_held",
+            )
         elif score_delta >= _MIN_SCORE_GAIN:
             action = "approve"
             reason = (
@@ -436,7 +518,7 @@ class CalibrationRolloutGovernor:
             "context": {"platform": platform, "product_category": product_category},
             "decided_at": time.time(),
         }
-        self._append_history(ctx_key, decision)
+        self._append_history(ctx_key, decision, platform=platform, product_category=product_category)
         return decision
 
     def governance_report(
@@ -498,9 +580,14 @@ class CalibrationRolloutGovernor:
         ctx_key: tuple[str, str],
         platform: str | None,
         product_category: str | None,
+        rollback_reason: str | None = None,
+        rollback_source: str | None = None,
     ) -> None:
         """Attempt to restore last approved weights via ScoringCalibrationApplier."""
         saved = _APPROVED_WEIGHTS.get(ctx_key)
+        reverted_to_revision = None
+        if saved:
+            reverted_to_revision = str(saved.get("approved_at") or "")
         if saved and self._db is not None:
             try:
                 from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
@@ -513,23 +600,73 @@ class CalibrationRolloutGovernor:
                 )
             except Exception as exc:
                 logger.warning("CalibrationRolloutGovernor: rollback sweep failed: %s", exc)
+        self._persist_rollout_record(
+            ctx_key=ctx_key,
+            platform=platform,
+            product_category=product_category,
+            action="rollback",
+            canary_stage=None,
+            approved_weights=saved,
+            rollback_source=rollback_source,
+            rollback_reason=rollback_reason,
+            reverted_to_revision=reverted_to_revision,
+            payload={
+                "event_type": "governance_learning_event",
+                "rollback_source": rollback_source,
+                "rollback_reason": rollback_reason,
+                "reverted_to_revision": reverted_to_revision,
+            },
+        )
 
-    @staticmethod
     def _record_approved_weights(
+        self,
         ctx_key: tuple[str, str],
         proposed_delta: dict[str, Any],
+        platform: str | None = None,
+        product_category: str | None = None,
+        canary_stage: int | None = None,
     ) -> None:
-        _APPROVED_WEIGHTS[ctx_key] = {
+        approved = {
             "delta_snapshot": proposed_delta,
             "approved_at": time.time(),
         }
+        _APPROVED_WEIGHTS[ctx_key] = approved
+        self._persist_rollout_record(
+            ctx_key=ctx_key,
+            platform=platform,
+            product_category=product_category,
+            action="approve",
+            canary_stage=canary_stage,
+            approved_weights=approved,
+            rollback_source=None,
+            rollback_reason=None,
+            reverted_to_revision=None,
+            payload={"approved_weights": approved},
+        )
 
-    @staticmethod
-    def _append_history(ctx_key: tuple[str, str], decision: dict[str, Any]) -> None:
+    def _append_history(
+        self,
+        ctx_key: tuple[str, str],
+        decision: dict[str, Any],
+        platform: str | None = None,
+        product_category: str | None = None,
+    ) -> None:
         _ROLLOUT_HISTORY.setdefault(ctx_key, [])
         _ROLLOUT_HISTORY[ctx_key].append(decision)
         if len(_ROLLOUT_HISTORY[ctx_key]) > _MAX_HISTORY:
             _ROLLOUT_HISTORY[ctx_key] = _ROLLOUT_HISTORY[ctx_key][-_MAX_HISTORY:]
+        self._persist_rollout_record(
+            ctx_key=ctx_key,
+            platform=platform,
+            product_category=product_category,
+            action=str(decision.get("action", "unknown")),
+            canary_stage=decision.get("canary_pct"),
+            approved_weights=_APPROVED_WEIGHTS.get(ctx_key),
+            rollback_source=decision.get("rollback_source"),
+            rollback_reason=decision.get("rollback_reason") or decision.get("reason"),
+            reverted_to_revision=decision.get("reverted_to_revision"),
+            payload=decision,
+        )
 
     def _init_canary(
         self,
@@ -544,12 +681,122 @@ class CalibrationRolloutGovernor:
             "proposed_delta": proposed_delta,
             "pre_score": pre_score if pre_score is not None else 0.5,
             "pre_ctr": pre_ctr,
+            "healthy_stages": 0,
             "records_at_stage_start": self._recent_record_count(
                 ctx_key[0] if ctx_key[0] != "*" else None,
                 ctx_key[1] if ctx_key[1] != "*" else None,
             ),
             "started_at": time.time(),
         }
+
+    @staticmethod
+    def _ctx_key_str(ctx_key: tuple[str, str]) -> str:
+        return f"{ctx_key[0]}::{ctx_key[1]}"
+
+    def _persist_rollout_record(
+        self,
+        *,
+        ctx_key: tuple[str, str],
+        platform: str | None,
+        product_category: str | None,
+        action: str,
+        canary_stage: int | None,
+        approved_weights: dict[str, Any] | None,
+        rollback_source: str | None,
+        rollback_reason: str | None,
+        reverted_to_revision: str | None,
+        payload: dict[str, Any],
+    ) -> None:
+        if self._db is None:
+            return
+        try:
+            from app.models.calibration_rollout_record import CalibrationRolloutRecord
+
+            row = CalibrationRolloutRecord(
+                context_key=self._ctx_key_str(ctx_key),
+                platform=platform,
+                product_category=product_category,
+                action=action,
+                canary_stage=canary_stage,
+                approved_weights=approved_weights,
+                rollback_source=rollback_source,
+                rollback_reason=rollback_reason,
+                reverted_to_revision=reverted_to_revision,
+                context={"platform": platform, "product_category": product_category},
+                payload=payload,
+            )
+            self._db.add(row)
+            self._db.commit()
+        except Exception as exc:
+            logger.debug("CalibrationRolloutGovernor: persist rollout record failed: %s", exc)
+            try:
+                self._db.rollback()
+            except Exception:
+                pass
+
+    def _load_persisted_state(self) -> None:
+        if self._db is None:
+            return
+        try:
+            from app.models.calibration_rollout_record import CalibrationRolloutRecord
+
+            rows = (
+                self._db.query(CalibrationRolloutRecord)
+                .order_by(CalibrationRolloutRecord.created_at.desc())
+                .limit(300)
+                .all()
+            )
+            for row in reversed(rows):
+                platform = row.platform or "*"
+                product_category = row.product_category or "*"
+                ctx_key = (platform, product_category)
+                if row.payload:
+                    _ROLLOUT_HISTORY.setdefault(ctx_key, [])
+                    _ROLLOUT_HISTORY[ctx_key].append(dict(row.payload))
+                    _ROLLOUT_HISTORY[ctx_key] = _ROLLOUT_HISTORY[ctx_key][-_MAX_HISTORY:]
+                if row.approved_weights:
+                    _APPROVED_WEIGHTS[ctx_key] = dict(row.approved_weights)
+                if row.action == "canary" and row.canary_stage:
+                    _CANARY_STATE[ctx_key] = {
+                        "stage_idx": max(0, _CANARY_STAGES.index(row.canary_stage) if row.canary_stage in _CANARY_STAGES else 0),
+                        "proposed_delta": (row.approved_weights or {}).get("delta_snapshot", {}),
+                        "pre_score": (row.payload or {}).get("pre_score", 0.5),
+                        "pre_ctr": (row.payload or {}).get("pre_ctr"),
+                        "records_at_stage_start": self._recent_record_count(
+                            platform if platform != "*" else None,
+                            product_category if product_category != "*" else None,
+                        ),
+                        "started_at": (row.payload or {}).get("decided_at", time.time()),
+                        "healthy_stages": int((row.payload or {}).get("healthy_stages", 0)),
+                    }
+        except Exception as exc:
+            logger.debug("CalibrationRolloutGovernor: failed loading persisted state: %s", exc)
+
+    @staticmethod
+    def _simulate_canary_gate(
+        *,
+        pre_score: float,
+        recent_score: float,
+        pre_ctr: float | None,
+        recent_ctr: float,
+        canary_pct: int,
+    ) -> dict[str, Any]:
+        try:
+            from app.services.publish_providers.policy_simulation_engine import PolicySimulationEngine
+
+            sim = PolicySimulationEngine()
+            result = sim.simulate_canary_rollout(
+                pre_score=pre_score,
+                score_trajectory=[recent_score],
+                pre_ctr=pre_ctr,
+                ctr_trajectory=[recent_ctr] if pre_ctr is not None else None,
+                conversion_trajectory=[recent_score],
+                budget_trajectory=[float(canary_pct)],
+            )
+            feasible = result.get("final_action") != "rollback"
+            return {"feasible": feasible, "result": result}
+        except Exception:
+            return {"feasible": True, "result": {}}
 
     def _recent_avg_score(
         self,

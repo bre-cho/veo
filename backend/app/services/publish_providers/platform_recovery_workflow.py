@@ -30,6 +30,23 @@ _MAX_RETRIES = 3
 _RETRY_INTERVALS = [300, 900, 3600]
 
 # ---------------------------------------------------------------------------
+# Unified recovery strategy table (single source of truth)
+# ---------------------------------------------------------------------------
+_RECOVERY_STRATEGY_TABLE: dict[str, str] = {
+    "auth_expired": "refresh_oauth_then_retry",
+    "quota_exceeded": "defer_24h",
+    "content_rejected": "flag_for_review",
+    "content_policy": "flag_for_review",
+    "network_error": "immediate_retry",
+    "rate_limited": "backoff_retry",
+    "token_expired": "token_refresh_retry",
+    "policy_violation": "resubmit_with_modified_content",
+    "account_restricted": "escalate_account_ops",
+    "reinit_session": "reinit_upload_session",
+    "unknown": "escalate_to_human_review",
+}
+
+# ---------------------------------------------------------------------------
 # Phase 3.5: Error classification taxonomy
 # ---------------------------------------------------------------------------
 
@@ -123,19 +140,7 @@ class FailureClassifier:
     @staticmethod
     def get_strategy_for_error_type(error_type: str, platform: str) -> str:
         """Public API: return the recommended recovery strategy for an error type."""
-        _STRATEGIES: dict[str, str] = {
-            "auth_expired": "refresh_oauth_then_retry",
-            "quota_exceeded": "defer_24h",
-            "content_rejected": "flag_for_review",
-            "content_policy": "flag_for_review",
-            "network_error": "immediate_retry",
-            "rate_limited": "backoff_retry",
-            "token_expired": "token_refresh_retry",
-            "policy_violation": "resubmit_with_modified_content",
-            "account_restricted": "escalate_account_ops",
-            "unknown": "escalate_to_human_review",
-        }
-        return _STRATEGIES.get(error_type, "escalate_to_human_review")
+        return _RECOVERY_STRATEGY_TABLE.get(error_type, "escalate_to_human_review")
 
     @staticmethod
     def _strategy(error_type: str, platform: str) -> str:
@@ -216,19 +221,100 @@ class PlatformRecoveryWorkflow:
             logger.warning("PlatformRecoveryWorkflow.recover failed job_id=%s: %s", job.id, exc)
             result = {"recovered": False, "platform": platform, "job_id": job.id}
 
-        # Update recovery_metadata
+        # Update recovery_metadata via helper
+        self._persist_recovery_metadata(
+            db=db,
+            job=job,
+            recovery_meta=recovery_meta,
+            result=result,
+            next_retry_at=next_retry_at,
+            stage_label=stage_label,
+            error_type=error_type,
+            attempt_count=attempt_count,
+        )
+
+        return {**result, "attempt_count": attempt_count, "recovery_metadata": recovery_meta}
+
+    def replay_recovery(
+        self,
+        db: "Session",
+        job: "PublishJob",
+    ) -> dict[str, Any]:
+        """Replay recovery from the most recent recovery_metadata snapshot.
+
+        Allows re-running recovery without re-classifying the error: reads
+        ``error_type`` and ``last_recovery_strategy`` from the persisted
+        ``recovery_metadata`` and routes to the correct platform handler.
+
+        Returns:
+            Same shape as ``recover()`` with ``replayed=True``.
+        """
+        error_log = dict(job.error_log or {})
+        recovery_meta = dict(error_log.get("recovery_metadata", {}))
+        error_type = recovery_meta.get("error_type", "unknown")
+        attempt_count = int(recovery_meta.get("attempt_count", 0))
+        platform = (job.platform or "").lower()
+
+        logger.info(
+            "PlatformRecoveryWorkflow.replay_recovery job_id=%s platform=%s error_type=%s attempt=%d",
+            job.id, platform, error_type, attempt_count,
+        )
+
+        # Re-route using persisted error_type (avoids re-classification)
+        result: dict[str, Any] = {}
+        try:
+            if platform in ("youtube", "shorts"):
+                result = self._recover_youtube(db, job, attempt_count=attempt_count + 1, error_type=error_type)
+            elif platform == "tiktok":
+                result = self._recover_tiktok(db, job, attempt_count=attempt_count + 1, error_type=error_type)
+            elif platform in ("meta", "reels", "instagram", "facebook"):
+                result = self._recover_meta(db, job, attempt_count=attempt_count + 1, error_type=error_type)
+            else:
+                result = {"recovered": False, "platform": platform, "job_id": job.id}
+        except Exception as exc:
+            logger.warning("PlatformRecoveryWorkflow.replay_recovery failed job_id=%s: %s", job.id, exc)
+            result = {"recovered": False, "platform": platform, "job_id": job.id}
+
+        new_attempt = attempt_count + 1
+        next_retry_at = time.time() + _RETRY_INTERVALS[min(new_attempt - 1, len(_RETRY_INTERVALS) - 1)]
+        stage_label = f"replay_{new_attempt}"
+        self._persist_recovery_metadata(
+            db=db,
+            job=job,
+            recovery_meta=recovery_meta,
+            result=result,
+            next_retry_at=next_retry_at,
+            stage_label=stage_label,
+            error_type=error_type,
+            attempt_count=new_attempt,
+        )
+        return {**result, "replayed": True, "attempt_count": new_attempt, "recovery_metadata": recovery_meta}
+
+    @staticmethod
+    def _persist_recovery_metadata(
+        db: "Session",
+        job: "PublishJob",
+        recovery_meta: dict[str, Any],
+        result: dict[str, Any],
+        next_retry_at: float,
+        stage_label: str,
+        error_type: str,
+        attempt_count: int,
+    ) -> None:
+        """Write standardised recovery_metadata fields back to the job's error_log."""
         recovery_meta["attempt_count"] = attempt_count
         recovery_meta["last_recovery_strategy"] = result.get("strategy", "unknown")
         recovery_meta["next_retry_at"] = next_retry_at
+        recovery_meta["recovery_stage"] = stage_label
         recovery_meta["stage"] = stage_label
+        recovery_meta["last_error_type"] = error_type
         recovery_meta["error_type"] = error_type
+        recovery_meta["strategy_revision"] = attempt_count
         error_log = dict(job.error_log or {})
         error_log["recovery_metadata"] = recovery_meta
         job.error_log = error_log
         db.add(job)
         db.commit()
-
-        return {**result, "attempt_count": attempt_count, "recovery_metadata": recovery_meta}
 
     # ------------------------------------------------------------------
     # Platform handlers (Phase 3.5: error_type-aware routing)

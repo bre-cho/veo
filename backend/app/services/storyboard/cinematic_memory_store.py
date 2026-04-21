@@ -109,9 +109,14 @@ class CinematicMemoryStore:
             "transition_style": shot_data.get("transition_style", "hard_cut"),
             "pacing_outcome": shot_data.get("pacing_outcome", "moderate"),
             "conversion_outcome": float(shot_data.get("conversion_outcome", 0.5)),
+            "retention_outcome": float(shot_data.get("retention_outcome", 0.0)),
             "hook_pattern": shot_data.get("hook_pattern"),
             "scene_goal": shot_data.get("scene_goal"),
             "platform": shot_data.get("platform"),
+            "asset_ids": list(shot_data.get("asset_ids") or []),
+            "render_job_id": shot_data.get("render_job_id"),
+            "watch_time_bucket": shot_data.get("watch_time_bucket"),
+            "scene_pattern_id": shot_data.get("scene_pattern_id"),
             "recorded_at": time.time(),
         }
 
@@ -192,16 +197,27 @@ class CinematicMemoryStore:
                 "source": "default_fallback",
             }
 
-        # Outcome-weighted voting: accumulate weight per (dimension, value) pair
+        # Outcome-weighted voting: blend conversion + retention + platform/goal fit
         dim_value_weights: dict[str, dict[str, float]] = {dim: {} for dim in _SHOT_DIMS}
         total_weight = 0.0
+        asset_counter: Counter[str] = Counter()
         for s in shots:
-            w = float(s.get("conversion_outcome", 0.0))
+            conversion_weight = float(s.get("conversion_outcome", 0.0))
+            retention_weight = float(s.get("retention_outcome", 0.0))
+            context_bias = 1.0
+            if platform and s.get("platform") == platform:
+                context_bias += 0.15
+            if scene_goal and s.get("scene_goal") == scene_goal:
+                context_bias += 0.15
+            w = (conversion_weight * 0.7 + retention_weight * 0.3) * context_bias
             total_weight += w
             for dim in _SHOT_DIMS:
                 val = s.get(dim)
                 if val:
                     dim_value_weights[dim][val] = dim_value_weights[dim].get(val, 0.0) + w
+            for aid in list(s.get("asset_ids") or []):
+                if aid:
+                    asset_counter[str(aid)] += 1
 
         recommendation: dict[str, Any] = {}
         for dim in _SHOT_DIMS:
@@ -224,6 +240,8 @@ class CinematicMemoryStore:
             "avg_conversion": avg_conversion,
             "sample_count": len(shots),
             "source": "outcome_weighted",
+            "asset_plan_hint": asset_counter.most_common(3),
+            "render_style_hint": recommendation.get("lighting_scheme"),
         })
         return recommendation
 
@@ -264,6 +282,36 @@ class CinematicMemoryStore:
             "top_shot_type": top_shot_type,
             "top_lighting": top_lighting,
             "per_goal_best_config": per_goal,
+            "top_asset_bundle": Counter(
+                tuple(sorted(s.get("asset_ids") or []))
+                for s in winning
+                if s.get("asset_ids")
+            ).most_common(1)[0][0] if winning and any(s.get("asset_ids") for s in winning) else None,
+            "top_transition_by_goal": {
+                g: Counter(
+                    (x.get("transition_style") for x in shots if x.get("scene_goal") == g and x.get("transition_style"))
+                ).most_common(1)[0][0]
+                for g in goals
+                if any(x.get("scene_goal") == g and x.get("transition_style") for x in shots)
+            },
+            "retention_best_config": self._top_by_metric(shots, metric="retention_outcome"),
+            "raw_shots": shots[-50:],
+        }
+
+    @staticmethod
+    def _top_by_metric(
+        shots: list[dict[str, Any]],
+        metric: str,
+    ) -> dict[str, Any] | None:
+        if not shots:
+            return None
+        best = max(shots, key=lambda s: float(s.get(metric, 0.0)))
+        return {
+            "shot_type": best.get("shot_type"),
+            "lighting_scheme": best.get("lighting_scheme"),
+            "transition_style": best.get("transition_style"),
+            "pacing_outcome": best.get("pacing_outcome"),
+            metric: float(best.get(metric, 0.0)),
         }
 
     # ------------------------------------------------------------------

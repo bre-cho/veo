@@ -171,10 +171,30 @@ class StoryboardEngine:
         # from winning-scene performance data.
         scene_pacing_boosts: dict[str, float] = {}
         hook_pacing_boost = 0.0
+        recommended_shot_config: dict[str, Any] | None = None
+        shot_records: list[dict[str, Any]] = []
+        series_id = str(
+            (episode_memory or {}).get("series_id")
+            or (preview_payload or {}).get("series_id")
+            or "default"
+        )
+        try:
+            from app.services.storyboard.cinematic_memory_store import CinematicMemoryStore
+
+            cinematic_store = CinematicMemoryStore(db=_db_ctx)
+            shot_analytics = cinematic_store.get_series_shot_analytics(series_id=series_id)
+            shot_records = list((shot_analytics or {}).get("raw_shots") or [])
+            recommended_shot_config = cinematic_store.recommend_shot_config(
+                series_id=series_id,
+                scene_goal=content_goal or None,
+                platform=platform,
+            )
+        except Exception:
+            recommended_shot_config = None
         if learning_store is not None:
             try:
                 scene_pacing_boosts = _derive_all_scene_pacing_boosts(
-                    learning_store, platform=platform
+                    learning_store, platform=platform, shot_records=shot_records
                 )
                 hook_pacing_boost = scene_pacing_boosts.get("hook", 0.0)
             except Exception:
@@ -258,6 +278,15 @@ class StoryboardEngine:
                     metadata=scene_meta,
                 )
             )
+            if recommended_shot_config:
+                meta = dict(scenes[-1].metadata or {})
+                meta["shot_config_strategy"] = {
+                    "shot_type": recommended_shot_config.get("shot_type"),
+                    "lighting_scheme": recommended_shot_config.get("lighting_scheme"),
+                    "transition_style": recommended_shot_config.get("transition_style"),
+                    "pacing_outcome": recommended_shot_config.get("pacing_outcome"),
+                }
+                scenes[-1].metadata = meta
 
         # Reorder scenes to optimise hook → build-up → CTA flow when needed
         scenes = self._optimise_scene_flow(scenes, grammar, conversion_mode)
@@ -281,6 +310,7 @@ class StoryboardEngine:
             "hook_pacing_boost": hook_pacing_boost,
             "scene_pacing_boosts": scene_pacing_boosts,
             "winning_graph_used": winning_graph_used,
+            "recommended_shot_config": recommended_shot_config,
         }
 
         storyboard_id = str(uuid.uuid4())
@@ -295,7 +325,31 @@ class StoryboardEngine:
                     storyboard_id=storyboard_id, scenes=scenes, summary=summary
                 )
                 # Pass db so planner can JOIN with RenderJob inventory
-                asset_plan = planner.plan_assets(response_for_planner, avatar_id, db=_db_ctx)
+                asset_plan = planner.plan_assets(
+                    response_for_planner,
+                    avatar_id,
+                    db=_db_ctx,
+                    asset_inventory=summary.get("asset_inventory"),
+                    render_history=shot_records,
+                    winning_shot_config=recommended_shot_config,
+                )
+                scene_assets = asset_plan.get("scene_assets", {})
+                for scene in scenes:
+                    scene_plan = scene_assets.get(str(scene.scene_index), {})
+                    meta = dict(scene.metadata or {})
+                    meta["scene_asset_strategy"] = {
+                        "required_assets": scene_plan.get("required_assets", []),
+                        "optional_assets": scene_plan.get("optional_assets", []),
+                        "reuse_assets": scene_plan.get("reuse_assets", []),
+                        "missing_assets": scene_plan.get("missing_assets", []),
+                    }
+                    meta["continuity_constraints"] = {
+                        "transition_hint": scene.transition_hint,
+                        "retention_safe_transition_style": (
+                            (recommended_shot_config or {}).get("transition_style")
+                        ),
+                    }
+                    scene.metadata = meta
             except Exception:
                 asset_plan = None
 
@@ -969,6 +1023,7 @@ def _derive_all_scene_pacing_boosts(
     learning_store: "PerformanceLearningEngine",
     platform: str | None,
     db: Any = None,
+    shot_records: list[dict[str, Any]] | None = None,
 ) -> dict[str, float]:
     """Return outcome-informed pacing boosts for all scene goal types.
 
@@ -1067,6 +1122,23 @@ def _derive_all_scene_pacing_boosts(
                         boosts[goal] = boosts.get(goal, 0.0) + pattern_boost
             except Exception:
                 pass
+
+    # ── Shot-retention/platform bias ───────────────────────────────────────
+    shot_records = shot_records or []
+    for shot in shot_records:
+        goal = str(shot.get("scene_goal") or "")
+        if not goal:
+            continue
+        retention = float(shot.get("retention_outcome") or 0.0)
+        watch_bucket = str(shot.get("watch_time_bucket") or "")
+        plat = str(shot.get("platform") or "")
+        bias = retention * 0.08
+        if watch_bucket in ("high", "90_100", "75_90"):
+            bias += 0.03
+        if platform and plat and plat == platform:
+            bias += 0.02
+        if bias > 0:
+            boosts[goal] = boosts.get(goal, 0.0) + bias
 
     # ── Cap each boost at its maximum ──────────────────────────────────────
     capped: dict[str, float] = {

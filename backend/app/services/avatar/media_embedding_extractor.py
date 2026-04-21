@@ -13,6 +13,11 @@ from typing import Any
 
 _MODEL_ENDPOINT = os.environ.get("MEDIA_EMBEDDING_MODEL_ENDPOINT", "")
 _EMBEDDING_DIM = 128
+_OPENCV_MIN_QUALITY = 0.25
+
+
+class ExtractionFallbackRequired(RuntimeError):
+    """Raised when local extraction cannot proceed and caller must decide fallback."""
 
 
 def _stub_embedding(data: bytes) -> list[float]:
@@ -124,6 +129,12 @@ class MediaEmbeddingExtractor:
 
     def __init__(self) -> None:
         self._local_sampler = LocalFrameSampler()
+        self._last_extraction: dict[str, Any] = {
+            "extraction_source": "stub",
+            "quality_score_cap": 0.4,
+            "needs_reverification": True,
+            "quality_score": 0.4,
+        }
 
     def extract(
         self,
@@ -145,18 +156,41 @@ class MediaEmbeddingExtractor:
         if _MODEL_ENDPOINT:
             try:
                 emb = self._model_extract(media_path_or_url, n_frames)
+                self._last_extraction = {
+                    "extraction_source": "model",
+                    "quality_score_cap": 1.0,
+                    "needs_reverification": False,
+                    "quality_score": 1.0,
+                }
                 return emb, 1.0  # quality not available from model API
             except Exception:
                 pass
 
         # Use LocalFrameSampler (PIL-based, no GPU required)
         try:
-            return self._local_extract(media_path_or_url, n_frames)
+            emb, q, source = self._local_extract(media_path_or_url, n_frames)
+            self._last_extraction = {
+                "extraction_source": source,
+                "quality_score_cap": 1.0,
+                "needs_reverification": False,
+                "quality_score": q,
+            }
+            return emb, q
         except Exception:
             pass
 
         # Final fallback: SHA-256 stub
-        return self._stub_extract(media_path_or_url, n_frames), 0.5
+        quality = 0.4
+        self._last_extraction = {
+            "extraction_source": "stub",
+            "quality_score_cap": 0.4,
+            "needs_reverification": True,
+            "quality_score": quality,
+        }
+        return self._stub_extract(media_path_or_url, n_frames), quality
+
+    def get_last_extraction_info(self) -> dict[str, Any]:
+        return dict(self._last_extraction)
 
     def _frame_embedding(self, frame_data: bytes) -> list[float]:
         """Compute embedding for a single frame's raw bytes."""
@@ -173,7 +207,7 @@ class MediaEmbeddingExtractor:
 
     def _local_extract(
         self, media_path_or_url: str, n_frames: int
-    ) -> tuple[list[float], float]:
+    ) -> tuple[list[float], float, str]:
         """Extract using LocalFrameSampler (PIL-based)."""
         path_lower = media_path_or_url.lower()
         is_video = any(path_lower.endswith(ext) for ext in (".mp4", ".mov", ".avi", ".webm"))
@@ -182,22 +216,16 @@ class MediaEmbeddingExtractor:
             # Sample n_frames by loading the first frame from the video path
             # when opencv is available; otherwise fall back to thumbnail approach.
             try:
-                return self._opencv_extract(media_path_or_url, n_frames)
-            except Exception:
-                pass
-            # Fallback: create multiple stub-like embeddings via LocalFrameSampler
-            # by treating the path as an image source for each frame
-            frame_embeddings: list[list[float]] = []
-            qualities: list[float] = []
-            for i in range(n_frames):
-                frame_source = f"{media_path_or_url}:frame:{i}"
-                emb, q = self._local_sampler.extract_image(frame_source)
-                frame_embeddings.append(emb)
-                qualities.append(q)
-            return self._average_embeddings(frame_embeddings), round(sum(qualities) / len(qualities), 4)
+                emb, q = self._opencv_extract(media_path_or_url, n_frames)
+                return emb, q, "opencv"
+            except Exception as exc:
+                raise ExtractionFallbackRequired(
+                    f"video_extract_failed:{media_path_or_url}"
+                ) from exc
 
         # Single image
-        return self._local_sampler.extract_image(media_path_or_url)
+        emb, q = self._local_sampler.extract_image(media_path_or_url)
+        return emb, q, "local_sampler"
 
     def _opencv_extract(
         self, video_path: str, n_frames: int
@@ -209,7 +237,13 @@ class MediaEmbeddingExtractor:
 
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
-        indices = [int(i * total_frames / n_frames) for i in range(n_frames)]
+        if n_frames <= 1:
+            indices = [max(0, total_frames // 2)]
+        else:
+            indices = [
+                min(total_frames - 1, int(round(i * (total_frames - 1) / (n_frames - 1))))
+                for i in range(n_frames)
+            ]
 
         frame_embeddings: list[list[float]] = []
         qualities: list[float] = []
@@ -231,6 +265,8 @@ class MediaEmbeddingExtractor:
                 tmp_path = tmp.name
             try:
                 emb, q = tmp_sampler.extract_image(tmp_path)
+                if q < _OPENCV_MIN_QUALITY:
+                    continue
                 frame_embeddings.append(emb)
                 qualities.append(q)
             finally:
@@ -312,4 +348,3 @@ class MediaEmbeddingExtractor:
         avg = [sum(e[i] for e in embeddings) / n for i in range(_EMBEDDING_DIM)]
         norm = math.sqrt(sum(x * x for x in avg)) or 1.0
         return [round(x / norm, 6) for x in avg]
-

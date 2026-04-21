@@ -60,6 +60,7 @@ class ConversionScoringEngine:
         product_category: str | None = None,
         platform: str | None = None,
         funnel_stage: str | None = None,
+        campaign_id: str | None = None,
         calibration_store: "Any | None" = None,
     ) -> dict[str, Any]:
         text = " ".join(
@@ -99,6 +100,13 @@ class ConversionScoringEngine:
             "platform_fit": platform_fit,
             "funnel_stage_fit": funnel_stage_fit,
         }
+
+        # Campaign-fit: reward when variant explicitly references campaign context
+        campaign_fit: float | None = None
+        if campaign_id:
+            cid_lower = str(campaign_id).lower()
+            campaign_fit = 0.85 if cid_lower in text or "campaign" in text else 0.65
+            dimensions["campaign_fit"] = campaign_fit
 
         # Load calibration weights.  When calibration is available, enforce its
         # use.  When absent, log a warning and fall back to equal weights.
@@ -159,6 +167,8 @@ class ConversionScoringEngine:
             "calibration_confidence": round(confidence, 3),
             "funnel_stage": funnel_stage,
             "funnel_multiplier": funnel_multiplier,
+            "campaign_id": campaign_id,
+            "campaign_fit": campaign_fit,
         }
 
     # ------------------------------------------------------------------
@@ -249,6 +259,9 @@ class ConversionScoringEngine:
         variant_type: str,
         product_category: str | None = None,
         platform: str | None = None,
+        persona_id: str | None = None,
+        campaign_id: str | None = None,
+        funnel_stage: str | None = None,
         db: "Any | None" = None,
     ) -> float:
         """Compute an EWMA-based score adjustment from historical outcomes.
@@ -282,9 +295,20 @@ class ConversionScoringEngine:
                 query = query.filter(VariantRunRecord.platform == platform)
             rows = query.all()
 
-            # Filter to rows whose winning variant matches the requested type
+            # Filter to rows whose winning variant matches the requested type,
+            # and apply persona_id / campaign_id / funnel_stage context filters
             relevant_scores: list[float] = []
             for row in rows:
+                ctx = dict(row.context or {})
+                # persona_id filter via context
+                if persona_id and ctx.get("persona_id") not in (None, persona_id):
+                    continue
+                # campaign_id filter via context
+                if campaign_id and ctx.get("campaign_id") not in (None, str(campaign_id)):
+                    continue
+                # funnel_stage filter via context
+                if funnel_stage and ctx.get("funnel_stage") not in (None, funnel_stage):
+                    continue
                 winner_idx = row.winner_variant_index
                 variants = row.variants or []
                 winning_v = next(
@@ -331,7 +355,8 @@ class ConversionScoringEngine:
         db: "Any",
         platform: str | None = None,
         product_category: str | None = None,
-    ) -> dict[str, float]:
+        funnel_stage: str | None = None,
+    ) -> dict[str, Any]:
         """Compute optimal scoring weights from historical conversion data.
 
         Uses least-squares linear regression over ``VariantRunRecord`` rows
@@ -339,10 +364,18 @@ class ConversionScoringEngine:
         available the computed weights are persisted to ``ScoringCalibration``
         and returned.
 
-        Returns the calibrated weights dict (or the static defaults when
-        insufficient data is available).
+        Performs segment-level calibration keyed by
+        ``(platform, product_category, funnel_stage)`` in addition to the
+        combined calibration.
+
+        Returns a dict with:
+        - ``weights``: calibrated weight dict
+        - ``segment_key``: str identifying the calibration segment
+        - ``n_records``: int — records used
+        - ``fit_quality``: float — R² of the fit
         """
         defaults = {d: round(1.0 / len(cls._DIMENSION_NAMES), 4) for d in cls._DIMENSION_NAMES}
+        segment_key = f"{platform or 'all'}|{product_category or 'all'}|{funnel_stage or 'all'}"
         try:
             from app.models.variant_run_record import VariantRunRecord
             from app.models.scoring_calibration import ScoringCalibration
@@ -357,8 +390,15 @@ class ConversionScoringEngine:
                 query = query.filter(VariantRunRecord.product_category == product_category)
             rows = query.all()
 
+            # Segment-level filter by funnel_stage (stored in context JSON)
+            if funnel_stage:
+                rows = [
+                    r for r in rows
+                    if (dict(r.context or {})).get("funnel_stage") == funnel_stage
+                ]
+
             if len(rows) < cls._CALIBRATION_MIN_RECORDS:
-                return defaults
+                return {"weights": defaults, "segment_key": segment_key, "n_records": len(rows), "fit_quality": 0.0}
 
             # Build X (feature matrix) and y (target) from winner variants
             X: list[list[float]] = []
@@ -377,11 +417,10 @@ class ConversionScoringEngine:
                 y.append(float(row.actual_conversion_score))
 
             if len(X) < cls._CALIBRATION_MIN_RECORDS:
-                return defaults
+                return {"weights": defaults, "segment_key": segment_key, "n_records": len(X), "fit_quality": 0.0}
 
             # Ordinary least squares: w = (X^T X)^{-1} X^T y
             n = len(cls._DIMENSION_NAMES)
-            # Compute X^T X
             XtX = [[0.0] * n for _ in range(n)]
             Xty = [0.0] * n
             for xi, yi in zip(X, y):
@@ -390,11 +429,9 @@ class ConversionScoringEngine:
                     for j in range(n):
                         XtX[i][j] += xi[i] * xi[j]
 
-            # Simple Cholesky-free solve via normalised gradient approach
-            # (avoids numpy dependency; good enough for n=8)
             w = _solve_lstsq(XtX, Xty, n)
             if w is None:
-                return defaults
+                return {"weights": defaults, "segment_key": segment_key, "n_records": len(X), "fit_quality": 0.0}
 
             # Normalise weights to [0.05, 0.4] range and sum to 1
             total_w = sum(abs(wi) for wi in w) or 1.0
@@ -402,7 +439,6 @@ class ConversionScoringEngine:
                 d: max(0.05, min(0.40, round(abs(w[i]) / total_w, 4)))
                 for i, d in enumerate(cls._DIMENSION_NAMES)
             }
-            # Re-normalise to 1
             cw_sum = sum(calibrated.values())
             calibrated = {k: round(v / cw_sum, 4) for k, v in calibrated.items()}
 
@@ -413,7 +449,7 @@ class ConversionScoringEngine:
             ss_res = sum((yi - yh) ** 2 for yi, yh in zip(y, y_hat))
             r_sq = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 0 else 0.0
 
-            # Persist calibration
+            # Persist calibration (keyed by platform + product_category + funnel_stage)
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             existing = (
                 db.query(ScoringCalibration)
@@ -439,9 +475,14 @@ class ConversionScoringEngine:
                     calibrated_at=now,
                 ))
             db.commit()
-            return calibrated
+            return {
+                "weights": calibrated,
+                "segment_key": segment_key,
+                "n_records": len(X),
+                "fit_quality": r_sq,
+            }
         except Exception:
-            return defaults
+            return {"weights": defaults, "segment_key": segment_key, "n_records": 0, "fit_quality": 0.0}
 
     @classmethod
     def load_calibrated_weights(

@@ -217,6 +217,8 @@ class PolicySimulationEngine:
         score_trajectory: list[float],
         pre_ctr: float | None = None,
         ctr_trajectory: list[float] | None = None,
+        conversion_trajectory: list[float] | None = None,
+        budget_trajectory: list[float] | None = None,
     ) -> dict[str, Any]:
         """Simulate a 3-stage canary rollout (10% → 30% → 100%) against KPI trajectories.
 
@@ -240,9 +242,13 @@ class PolicySimulationEngine:
         stages: list[dict[str, Any]] = []
         rollback_at: int | None = None
 
+        conv_traj = conversion_trajectory or score_trajectory
+        budget_traj = budget_trajectory or [float(s) for s in _CANARY_STAGES]
         for i, stage_pct in enumerate(_CANARY_STAGES):
             score_at = score_trajectory[i] if i < len(score_trajectory) else pre_score
             conv_delta = score_at - pre_score
+            conv_at = conv_traj[i] if i < len(conv_traj) else score_at
+            budget_at = budget_traj[i] if i < len(budget_traj) else float(stage_pct)
 
             ctr_drop: float | None = None
             if pre_ctr and ctr_trajectory and i < len(ctr_trajectory):
@@ -266,6 +272,8 @@ class PolicySimulationEngine:
             stages.append({
                 "stage_pct": stage_pct,
                 "projected_conversion_score": round(score_at, 4),
+                "projected_conversion_trajectory": round(conv_at, 4),
+                "projected_budget_trajectory": round(budget_at, 4),
                 "conversion_delta": round(conv_delta, 4),
                 "projected_ctr_drop": round(ctr_drop, 4) if ctr_drop is not None else None,
                 "kpi_ok": kpi_ok,
@@ -312,6 +320,7 @@ class PolicySimulationEngine:
             - ``quota_result``: result of ``simulate_quota()``.
             - ``compliance_checks``: list of per-job compliance notes.
             - ``blocked_jobs``: list of job indices that would be blocked.
+            - ``blocking_rules`` / ``warning_rules`` / ``platform_specific_risks``
         """
         quota_result = self.simulate_quota(
             jobs=jobs,
@@ -321,6 +330,9 @@ class PolicySimulationEngine:
 
         compliance_checks: list[dict[str, Any]] = []
         blocked_jobs: list[int] = []
+        blocking_rules: list[str] = []
+        warning_rules: list[str] = []
+        platform_specific_risks: dict[str, list[str]] = {}
 
         for idx, job in enumerate(jobs):
             title = str(job.get("title", "")).lower()
@@ -341,6 +353,15 @@ class PolicySimulationEngine:
 
             if issues:
                 blocked_jobs.append(idx)
+                blocking_rules.extend(issues)
+            if platform in ("youtube", "tiktok", "meta", "facebook", "reels", "instagram"):
+                platform_specific_risks.setdefault(platform, [])
+                if f"title_too_long_{platform}" in issues:
+                    platform_specific_risks[platform].append("title_policy_risk")
+                if "sensitive_content_keyword" in issues:
+                    platform_specific_risks[platform].append("compliance_policy_risk")
+                if not issues:
+                    warning_rules.append(f"{platform}_manual_precheck_recommended")
 
             compliance_checks.append({
                 "job_index": idx,
@@ -364,5 +385,8 @@ class PolicySimulationEngine:
             "quota_result": quota_result,
             "compliance_checks": compliance_checks,
             "blocked_jobs": blocked_jobs,
+            "blocking_rules": sorted(set(blocking_rules)),
+            "warning_rules": sorted(set(warning_rules)),
+            "platform_specific_risks": platform_specific_risks,
             "jobs_checked": len(jobs),
         }
