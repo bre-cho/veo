@@ -38,6 +38,7 @@ class ConversionScoringEngine:
         persona: str | None = None,
         product_category: str | None = None,
         platform: str | None = None,
+        calibration_store: "Any | None" = None,
     ) -> dict[str, Any]:
         text = " ".join(
             [
@@ -62,23 +63,41 @@ class ConversionScoringEngine:
         # New dimension: platform_fit
         platform_fit = self._score_platform_fit(text, platform)
 
-        score = round(
-            (hook_strength + clarity + trust + cta_quality + market_fit
-             + persona_fit + product_category_fit + platform_fit) / 8,
-            3,
-        )
+        dimensions = {
+            "hook_strength": hook_strength,
+            "clarity": clarity,
+            "trust": trust,
+            "cta_quality": cta_quality,
+            "market_fit": market_fit,
+            "persona_fit": persona_fit,
+            "product_category_fit": product_category_fit,
+            "platform_fit": platform_fit,
+        }
+
+        # Apply calibrated weights when a calibration_store is provided;
+        # fall back to equal-weight average otherwise.
+        calibrated_weights: dict[str, float] | None = None
+        if calibration_store is not None:
+            try:
+                calibrated_weights = calibration_store.get_dimension_weights(
+                    platform=platform, product_category=product_category
+                )
+            except Exception:
+                calibrated_weights = None
+
+        if calibrated_weights:
+            score = round(
+                sum(calibrated_weights.get(k, 1.0 / len(dimensions)) * v
+                    for k, v in dimensions.items()),
+                3,
+            )
+        else:
+            score = round(sum(dimensions.values()) / len(dimensions), 3)
+
         return {
             "score": score,
-            "details": {
-                "hook_strength": round(hook_strength, 3),
-                "clarity": round(clarity, 3),
-                "trust": round(trust, 3),
-                "cta_quality": round(cta_quality, 3),
-                "market_fit": round(market_fit, 3),
-                "persona_fit": round(persona_fit, 3),
-                "product_category_fit": round(product_category_fit, 3),
-                "platform_fit": round(platform_fit, 3),
-            },
+            "details": {k: round(v, 3) for k, v in dimensions.items()},
+            "calibrated": calibrated_weights is not None,
         }
 
     # ------------------------------------------------------------------

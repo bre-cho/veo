@@ -41,6 +41,7 @@ def generate_storyboard(
         use_winning_graph=use_winning_graph,
         include_asset_plan=include_asset_plan,
         avatar_id=avatar_id,
+        db=db,
     )
 
 
@@ -67,7 +68,12 @@ class ContinuityResponse(BaseModel):
 
 
 @router.post("/continuity", response_model=ContinuityResponse)
-def plan_continuity(req: ContinuityRequest, db: Session = Depends(get_db)) -> ContinuityResponse:
+def plan_continuity(
+    req: ContinuityRequest,
+    include_asset_plan: bool = Query(default=False),
+    avatar_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> ContinuityResponse:
     """Generate the next episode storyboard with continuity hints from the previous one."""
     hints = _continuity_planner.plan_continuity(req.prev_storyboard, req.next_script)
 
@@ -85,6 +91,9 @@ def plan_continuity(req: ContinuityRequest, db: Session = Depends(get_db)) -> Co
         episode_memory=episode_memory,
         platform=platform,
         learning_store=learning_store,
+        include_asset_plan=include_asset_plan,
+        avatar_id=avatar_id,
+        db=db,
     )
 
     if req.save_episode_memory and req.series_id and req.episode_index is not None:

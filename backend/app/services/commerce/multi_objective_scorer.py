@@ -33,17 +33,37 @@ class MultiObjectiveScorer:
         "conversion": "conversion_score",
         "ctr": "click_through_rate",
         "roas": "_roas",  # special: read from performance_metrics
+        "budget_score": "_budget_score",  # special: budget remaining / daily limit ratio
     }
 
-    def __init__(self, objectives: dict[str, float]) -> None:
+    def __init__(
+        self,
+        objectives: dict[str, float],
+        calibration_store: "Any | None" = None,
+        platform: str | None = None,
+        product_category: str | None = None,
+    ) -> None:
         if not objectives:
             raise ValueError("objectives dict must not be empty")
-        total = sum(objectives.values())
+
+        # Apply calibration when a store is provided before normalising
+        effective_objectives = dict(objectives)
+        if calibration_store is not None:
+            try:
+                effective_objectives = calibration_store.get_objective_weights(
+                    base_objectives=objectives,
+                    platform=platform,
+                    product_category=product_category,
+                )
+            except Exception:
+                effective_objectives = dict(objectives)
+
+        total = sum(effective_objectives.values())
         if total <= 0:
             raise ValueError("objective weights must sum to a positive number")
         # Normalise weights to sum to 1.0
         self.objectives: dict[str, float] = {
-            k: round(v / total, 6) for k, v in objectives.items()
+            k: round(v / total, 6) for k, v in effective_objectives.items()
         }
 
     def score(self, record: dict[str, Any]) -> float:
@@ -86,6 +106,14 @@ class MultiObjectiveScorer:
             raw = float(metrics.get("roas", 0.5))
             # ROAS is often > 1; normalise assuming typical range [0, 10]
             return min(1.0, max(0.0, raw / 10.0))
+        if field == "_budget_score":
+            # budget_score: budget_remaining / budget_daily_limit; normalised to [0,1]
+            metrics = record.get("performance_metrics") or {}
+            remaining = float(metrics.get("budget_remaining", 1.0))
+            daily_limit = float(metrics.get("budget_daily_limit", 1.0))
+            if daily_limit <= 0:
+                return 0.5
+            return min(1.0, max(0.0, remaining / daily_limit))
         if field is not None:
             raw = float(record.get(field, 0.0))
             return min(1.0, max(0.0, raw))

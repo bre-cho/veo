@@ -141,3 +141,50 @@ def test_generate_plan_winner_has_highest_score(tmp_path) -> None:
     non_winners = [c for c in result.candidates if not c.winner_flag]
     assert all(winner.score_total >= c.score_total for c in non_winners)
 
+
+# ---------------------------------------------------------------------------
+# ChannelEngine.generate_plan() – budget_constraint
+# ---------------------------------------------------------------------------
+
+
+def test_budget_constraint_caps_series_plan() -> None:
+    engine = ChannelEngine()
+    req = ChannelPlanRequest(niche="fitness", days=7, posts_per_day=2)
+    # budget of 5 posts at default cost_per_post=1.0 → cap at 5 items
+    result = engine.generate_plan(req, budget_constraint=5.0)
+    assert len(result.series_plan) == 5
+    assert result.publish_queue_count == 5
+
+
+def test_budget_constraint_not_applied_when_none() -> None:
+    engine = ChannelEngine()
+    req = ChannelPlanRequest(niche="fitness", days=3, posts_per_day=2)
+    result = engine.generate_plan(req, budget_constraint=None)
+    assert len(result.series_plan) == 6  # 3 × 2 – no cap applied
+
+
+def test_budget_constraint_metadata_in_calendar_summary() -> None:
+    engine = ChannelEngine()
+    req = ChannelPlanRequest(niche="tech", days=5, posts_per_day=1)
+    result = engine.generate_plan(req, budget_constraint=3.0)
+    assert result.calendar_summary["budget_constraint"] == 3.0
+    assert result.calendar_summary["budget_posts_cap"] == 3
+    assert result.calendar_summary["budget_applied"] is True
+
+
+def test_budget_constraint_larger_than_plan_does_not_truncate() -> None:
+    engine = ChannelEngine()
+    req = ChannelPlanRequest(niche="beauty", days=2, posts_per_day=1)
+    result = engine.generate_plan(req, budget_constraint=100.0)
+    # 100 budget >> 2 posts; nothing should be truncated
+    assert len(result.series_plan) == 2
+    assert result.calendar_summary.get("budget_applied") is False
+
+
+def test_budget_constraint_zero_produces_empty_plan() -> None:
+    engine = ChannelEngine()
+    req = ChannelPlanRequest(niche="food", days=3, posts_per_day=2)
+    result = engine.generate_plan(req, budget_constraint=0.0)
+    assert len(result.series_plan) == 0
+    assert result.publish_queue_count == 0
+

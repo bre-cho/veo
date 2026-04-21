@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.schemas.avatar_commerce import (
     CommerceCTARequest,
     CommerceCTAResponse,
+    CommerceOptimizeRequest,
+    CommerceOptimizeResponse,
     CommerceRecommendAvatarRequest,
     CommerceRecommendAvatarResponse,
     CommerceRecommendTemplateRequest,
@@ -40,6 +42,7 @@ from app.schemas.storyboard import (
     TemplateIntelligenceResponse,
 )
 from app.services.analytics_action_service import AnalyticsActionService
+from app.services.channel_engine import ChannelEngine
 from app.services.commerce.avatar_recommendation_service import AvatarRecommendationService
 from app.services.commerce.combo_recommender import AvatarTemplateComboRecommender
 from app.services.commerce.content_goal_classifier import ContentGoalClassifier
@@ -72,6 +75,7 @@ _comparison_engine = ComparisonVideoEngine()
 _template_intel_svc = TemplateIntelligenceService()
 _combo_recommender = AvatarTemplateComboRecommender()
 _analytics_action_svc = AnalyticsActionService()
+_channel_engine = ChannelEngine()
 _learning_engine = PerformanceLearningEngine()
 
 
@@ -374,6 +378,50 @@ def learning_health():
     }
 
 
+@router.post("/optimize", response_model=CommerceOptimizeResponse)
+def optimize_channel_plan(req: CommerceOptimizeRequest):
+    """Generate an optimised channel plan respecting an optional budget constraint.
+
+    Accepts the same fields as a standard channel plan request plus:
+
+    - ``budget_constraint``: maximum total spend (in cost-per-post units).  When
+      provided, the returned series plan is capped to
+      ``floor(budget_constraint / cost_per_post)`` items.
+    - ``objectives``: optional multi-objective weight dict forwarded to
+      ``MultiObjectiveScorer`` for blended candidate scoring.
+    """
+    from app.schemas.channel import ChannelPlanRequest
+
+    plan_req = ChannelPlanRequest(
+        channel_name=req.channel_name,
+        niche=req.niche,
+        market_code=req.market_code,
+        goal=req.goal,
+        days=req.days,
+        posts_per_day=req.posts_per_day,
+        formats=req.formats,
+        project_id=req.project_id,
+        avatar_id=req.avatar_id,
+        product_id=req.product_id,
+        platform=req.platform,
+    )
+
+    result = _channel_engine.generate_plan(
+        plan_req,
+        learning_store=_learning_engine,
+        budget_constraint=req.budget_constraint,
+        objectives=req.objectives,
+    )
+    return CommerceOptimizeResponse(
+        plan_id=result.plan_id,
+        series_plan=[item.model_dump() for item in result.series_plan],
+        publish_queue_count=result.publish_queue_count,
+        calendar_summary=result.calendar_summary,
+        candidates=[c.model_dump() for c in result.candidates],
+        winner_candidate_id=result.winner_candidate_id,
+    )
+
+
 @router.get("/campaigns/{campaign_id}/attribution", response_model=dict)
 def campaign_attribution(campaign_id: str, window_days: int = 7, n_touch: int = 3):
     """Return multi-touch attribution for a campaign's most recent conversion."""
@@ -415,6 +463,76 @@ def campaign_bid_hint(campaign_id: str):
         "funnel_summary": funnel,
     }
 
+
+@router.post("/calibration/apply", response_model=dict)
+def apply_calibration(
+    platform: str | None = None,
+    product_category: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Trigger a manual calibration sweep for a platform/category combination.
+
+    Reads VariantRunRecord history, computes optimal dimension weights via
+    linear regression, persists them to ScoringCalibration, and returns
+    the new weight profile.
+    """
+    from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
+
+    applier = ScoringCalibrationApplier(db=db)
+    result = applier.run_calibration_sweep(
+        platform=platform,
+        product_category=product_category,
+    )
+    return result
+
+
+@router.post("/attribution/{campaign_id}/record", response_model=dict)
+def record_attribution_as_performance(
+    campaign_id: str,
+    conversion_value: float = 1.0,
+    window_days: int = 7,
+    n_touch: int = 3,
+    db: Session = Depends(get_db),
+):
+    """Attribute a conversion and feed the result back into PerformanceLearningEngine.
+
+    Each attributed touchpoint becomes a performance record tagged with
+    ``campaign_id``, which feeds ``_derive_contextual_weight_adjustments()``
+    in ChannelEngine automatically.
+    """
+    from app.services.commerce.campaign_attribution_service import CampaignAttributionService
+    import time
+
+    svc = CampaignAttributionService(learning_store=_learning_engine)
+    conversion_event: dict = {"timestamp": time.time(), "value": conversion_value}
+    attribution = svc.attribute_conversion(
+        conversion_event=conversion_event,
+        campaign_id=campaign_id,
+        window_days=window_days,
+        n_touch=n_touch,
+    )
+
+    engine = PerformanceLearningEngine(db=db)
+    records_written = 0
+    for touch in attribution.get("attributions", []):
+        try:
+            engine.record(
+                video_id=str(touch.get("video_id") or f"{campaign_id}_attr_{records_written}"),
+                hook_pattern=str(touch.get("hook_pattern") or "unknown"),
+                cta_pattern="attribution_touch",
+                template_family="attribution",
+                conversion_score=float(touch.get("credit", 0.5)),
+                campaign_id=campaign_id,
+            )
+            records_written += 1
+        except Exception:
+            pass
+
+    return {
+        "campaign_id": campaign_id,
+        "attribution": attribution,
+        "performance_records_written": records_written,
+    }
 
 
 @router.get("/intelligence/status", response_model=dict)
