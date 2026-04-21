@@ -16,6 +16,14 @@ Algorithm
    - Score regressed ≥ ``_MAX_SCORE_LOSS`` → rollback to previous weights
    - Otherwise → approve with monitoring flag
 
+Canary Rollout
+--------------
+Instead of a binary approve/block gate, large but acceptable calibrations
+are graduated through canary stages: 10 % → 30 % → 100 % traffic exposure.
+Each stage requires at least ``_CANARY_STAGE_MIN_RECORDS`` new outcome records
+before advancing.  KPI triggers (CTR drop or conversion drop beyond their
+respective thresholds) abort the canary and initiate a rollback at any stage.
+
 Usage::
 
     governor = CalibrationRolloutGovernor(db=db, learning_store=engine)
@@ -28,8 +36,9 @@ Usage::
         pre_score=0.52,
         post_score=0.57,
     )
-    # decision["action"]  → "approve" | "hold" | "rollback"
+    # decision["action"]  → "approve" | "canary" | "hold" | "rollback"
     # decision["reason"]  → human-readable explanation
+    # decision["canary_pct"] → 10 | 30 | 100 | None
 """
 from __future__ import annotations
 
@@ -54,14 +63,29 @@ _MIN_VALIDATION_RECORDS = 5
 # Maximum held calibrations kept in rollout history
 _MAX_HISTORY = 50
 
+# ---------------------------------------------------------------------------
+# Canary rollout thresholds
+# ---------------------------------------------------------------------------
+# Delta range that triggers a canary (between safe and hard-hold)
+_CANARY_MIN_DELTA = 0.10   # above this → start canary instead of direct approve
+# Canary stages: traffic percentages
+_CANARY_STAGES = (10, 30, 100)
+# Minimum records required at each canary stage before advancing
+_CANARY_STAGE_MIN_RECORDS = 3
+# KPI thresholds for rollback during canary
+_CANARY_CTR_DROP_THRESHOLD = 0.05    # relative CTR drop (5 %) triggers rollback
+_CANARY_CONV_DROP_THRESHOLD = 0.03   # absolute conversion score drop triggers rollback
+
 # In-memory rollout history: {(platform, product_category) → list[decision]}
 _ROLLOUT_HISTORY: dict[tuple[str, str], list[dict[str, Any]]] = {}
 # Snapshot of last-approved weights per context for rollback
 _APPROVED_WEIGHTS: dict[tuple[str, str], dict[str, Any]] = {}
+# Active canary state: {(platform, product_category) → canary_state_dict}
+_CANARY_STATE: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 class CalibrationRolloutGovernor:
-    """Govern calibration rollout decisions with hold/approve/rollback logic.
+    """Govern calibration rollout decisions with canary/hold/approve/rollback logic.
 
     Parameters
     ----------
@@ -95,8 +119,10 @@ class CalibrationRolloutGovernor:
         proposed_delta: dict[str, Any],
         pre_score: float | None = None,
         post_score: float | None = None,
+        pre_ctr: float | None = None,
+        post_ctr: float | None = None,
     ) -> dict[str, Any]:
-        """Assess whether to approve, hold, or rollback a calibration.
+        """Assess whether to approve, canary, hold, or rollback a calibration.
 
         Args:
             platform: Target platform for the calibration.
@@ -105,15 +131,17 @@ class CalibrationRolloutGovernor:
                 ``ClosedLoopCalibrationOrchestrator.run_full_calibration()``.
                 Format: {surface → {dimension → delta_float}}.
             pre_score: Mean conversion score *before* this calibration run.
-            post_score: Mean conversion score *after* this calibration run
-                (e.g. back-tested on validation set).
+            post_score: Mean conversion score *after* this calibration run.
+            pre_ctr: Mean CTR *before* this calibration run (optional).
+            post_ctr: Mean CTR *after* this calibration run (optional).
 
         Returns:
             Dict with:
-            - ``action``: "approve" | "hold" | "rollback"
+            - ``action``: "approve" | "canary" | "hold" | "rollback"
             - ``reason``: human-readable explanation
             - ``max_delta_observed``: largest absolute delta seen
             - ``score_delta``: post - pre (or None)
+            - ``canary_pct``: 10 | 30 | 100 | None — initial canary exposure
             - ``context``: {platform, product_category}
         """
         ctx_key = self._ctx_key(platform, product_category)
@@ -123,14 +151,28 @@ class CalibrationRolloutGovernor:
         if pre_score is not None and post_score is not None:
             score_delta = round(post_score - pre_score, 4)
 
-        # --- Decision logic ---
-        if score_delta is not None and score_delta <= -_MAX_SCORE_LOSS:
+        ctr_drop: float | None = None
+        if pre_ctr is not None and post_ctr is not None and pre_ctr > 0:
+            ctr_drop = round((pre_ctr - post_ctr) / max(pre_ctr, 1e-9), 4)  # relative drop
+
+        # --- KPI regression checks (immediate rollback) ---
+        conv_regression = score_delta is not None and score_delta <= -_MAX_SCORE_LOSS
+        ctr_regression = ctr_drop is not None and ctr_drop >= _CANARY_CTR_DROP_THRESHOLD
+
+        if conv_regression or ctr_regression:
             action = "rollback"
+            kpi_detail = []
+            if conv_regression:
+                kpi_detail.append(f"conversion {score_delta:+.4f}")
+            if ctr_regression:
+                kpi_detail.append(f"CTR drop {ctr_drop:.1%}")
             reason = (
-                f"Score regressed {score_delta:+.4f} (threshold -{_MAX_SCORE_LOSS}). "
+                f"KPI regression detected ({', '.join(kpi_detail)}). "
                 "Reverting to last approved weights."
             )
             self._do_rollback(ctx_key, platform, product_category)
+            canary_pct = None
+
         elif max_delta > self._max_safe_delta:
             action = "hold"
             reason = (
@@ -138,6 +180,18 @@ class CalibrationRolloutGovernor:
                 f"{self._max_safe_delta}. Holding for {_MIN_VALIDATION_RECORDS} "
                 "validation records before applying."
             )
+            canary_pct = None
+
+        elif max_delta >= _CANARY_MIN_DELTA:
+            # Delta is non-trivial — start canary rollout at 10 %
+            action = "canary"
+            canary_pct = _CANARY_STAGES[0]
+            reason = (
+                f"Max weight delta {max_delta:.4f} ≥ {_CANARY_MIN_DELTA}. "
+                f"Starting canary rollout at {canary_pct}% traffic."
+            )
+            self._init_canary(ctx_key, proposed_delta, pre_score, pre_ctr)
+
         elif score_delta is not None and score_delta >= _MIN_SCORE_GAIN:
             action = "approve"
             reason = (
@@ -145,6 +199,8 @@ class CalibrationRolloutGovernor:
                 "Calibration approved and applied."
             )
             self._record_approved_weights(ctx_key, proposed_delta)
+            canary_pct = None
+
         else:
             action = "approve"
             reason = (
@@ -152,27 +208,168 @@ class CalibrationRolloutGovernor:
                 "Approved with monitoring."
             )
             self._record_approved_weights(ctx_key, proposed_delta)
+            canary_pct = None
 
         decision = {
             "action": action,
             "reason": reason,
             "max_delta_observed": round(max_delta, 4),
             "score_delta": score_delta,
+            "ctr_drop": ctr_drop,
             "pre_score": pre_score,
             "post_score": post_score,
+            "canary_pct": canary_pct,
             "context": {"platform": platform, "product_category": product_category},
             "decided_at": time.time(),
         }
         self._append_history(ctx_key, decision)
 
         logger.info(
-            "CalibrationRolloutGovernor: action=%s platform=%s max_delta=%.4f score_delta=%s",
+            "CalibrationRolloutGovernor: action=%s platform=%s max_delta=%.4f "
+            "score_delta=%s canary_pct=%s",
             action,
             platform,
             max_delta,
             score_delta,
+            canary_pct,
         )
         return decision
+
+    # ------------------------------------------------------------------
+    # Canary advancement
+    # ------------------------------------------------------------------
+
+    def advance_canary(
+        self,
+        platform: str | None,
+        product_category: str | None,
+    ) -> dict[str, Any]:
+        """Attempt to advance the active canary to the next traffic stage.
+
+        Checks whether the current canary stage has accumulated enough new
+        records and that KPIs have not regressed.  Advances to the next stage
+        (10 % → 30 % → 100 %) or rolls back if KPIs fail.
+
+        Returns:
+            Dict with ``action`` ("advanced" | "rollback" | "complete" |
+            "no_canary" | "insufficient_records"), ``canary_pct``,
+            ``reason``, and ``kpi_snapshot``.
+        """
+        ctx_key = self._ctx_key(platform, product_category)
+        canary = _CANARY_STATE.get(ctx_key)
+        if not canary:
+            return {"action": "no_canary", "reason": "No active canary for this context."}
+
+        current_stage_idx = canary.get("stage_idx", 0)
+        current_pct = _CANARY_STAGES[current_stage_idx]
+        records_at_stage_start = canary.get("records_at_stage_start", 0)
+        pre_score = canary.get("pre_score", 0.5)
+        pre_ctr = canary.get("pre_ctr")
+
+        # How many records have arrived since stage start?
+        current_records = self._recent_record_count(platform, product_category)
+        new_records = current_records - records_at_stage_start
+
+        if new_records < _CANARY_STAGE_MIN_RECORDS:
+            return {
+                "action": "insufficient_records",
+                "canary_pct": current_pct,
+                "reason": (
+                    f"Need {_CANARY_STAGE_MIN_RECORDS} new records at stage "
+                    f"{current_pct}%; have {new_records}."
+                ),
+                "new_records": new_records,
+            }
+
+        # Check KPIs
+        recent_score = self._recent_avg_score(platform, product_category)
+        recent_ctr = self._recent_avg_ctr(platform, product_category)
+
+        conv_delta = recent_score - pre_score
+        ctr_drop: float | None = None
+        if pre_ctr is not None and pre_ctr > 0:
+            ctr_drop = (pre_ctr - recent_ctr) / pre_ctr
+
+        conv_regression = conv_delta <= -_CANARY_CONV_DROP_THRESHOLD
+        ctr_regression = ctr_drop is not None and ctr_drop >= _CANARY_CTR_DROP_THRESHOLD
+
+        kpi_snapshot = {
+            "pre_score": pre_score,
+            "recent_score": recent_score,
+            "conv_delta": round(conv_delta, 4),
+            "pre_ctr": pre_ctr,
+            "recent_ctr": recent_ctr,
+            "ctr_drop": round(ctr_drop, 4) if ctr_drop is not None else None,
+        }
+
+        if conv_regression or ctr_regression:
+            kpi_detail = []
+            if conv_regression:
+                kpi_detail.append(f"conversion delta {conv_delta:+.4f}")
+            if ctr_regression:
+                kpi_detail.append(f"CTR drop {ctr_drop:.1%}")
+            # Abort canary — rollback
+            del _CANARY_STATE[ctx_key]
+            self._do_rollback(ctx_key, platform, product_category)
+            decision = {
+                "action": "rollback",
+                "canary_pct": current_pct,
+                "reason": f"Canary KPI failure at {current_pct}%: {', '.join(kpi_detail)}.",
+                "kpi_snapshot": kpi_snapshot,
+                "decided_at": time.time(),
+            }
+            self._append_history(ctx_key, decision)
+            return decision
+
+        # Advance to next stage
+        next_stage_idx = current_stage_idx + 1
+        if next_stage_idx >= len(_CANARY_STAGES):
+            # Reached 100 % — complete canary, full approve
+            del _CANARY_STATE[ctx_key]
+            self._record_approved_weights(ctx_key, canary.get("proposed_delta", {}))
+            decision = {
+                "action": "complete",
+                "canary_pct": 100,
+                "reason": "Canary completed at 100% — calibration fully approved.",
+                "kpi_snapshot": kpi_snapshot,
+                "decided_at": time.time(),
+            }
+            self._append_history(ctx_key, decision)
+            return decision
+
+        next_pct = _CANARY_STAGES[next_stage_idx]
+        _CANARY_STATE[ctx_key]["stage_idx"] = next_stage_idx
+        _CANARY_STATE[ctx_key]["records_at_stage_start"] = current_records
+        decision = {
+            "action": "advanced",
+            "canary_pct": next_pct,
+            "reason": (
+                f"KPIs healthy at {current_pct}% — advancing canary to {next_pct}%."
+            ),
+            "kpi_snapshot": kpi_snapshot,
+            "decided_at": time.time(),
+        }
+        self._append_history(ctx_key, decision)
+        return decision
+
+    def get_canary_status(
+        self,
+        platform: str | None,
+        product_category: str | None,
+    ) -> dict[str, Any]:
+        """Return the current canary state for this context, or None if no canary."""
+        ctx_key = self._ctx_key(platform, product_category)
+        canary = _CANARY_STATE.get(ctx_key)
+        if not canary:
+            return {"active": False}
+        stage_idx = canary.get("stage_idx", 0)
+        return {
+            "active": True,
+            "canary_pct": _CANARY_STAGES[stage_idx],
+            "stage_idx": stage_idx,
+            "pre_score": canary.get("pre_score"),
+            "started_at": canary.get("started_at"),
+        }
 
     def re_evaluate_held(
         self,
@@ -334,6 +531,26 @@ class CalibrationRolloutGovernor:
         if len(_ROLLOUT_HISTORY[ctx_key]) > _MAX_HISTORY:
             _ROLLOUT_HISTORY[ctx_key] = _ROLLOUT_HISTORY[ctx_key][-_MAX_HISTORY:]
 
+    def _init_canary(
+        self,
+        ctx_key: tuple[str, str],
+        proposed_delta: dict[str, Any],
+        pre_score: float | None,
+        pre_ctr: float | None,
+    ) -> None:
+        """Initialise a new canary state at stage 0 (10 %)."""
+        _CANARY_STATE[ctx_key] = {
+            "stage_idx": 0,
+            "proposed_delta": proposed_delta,
+            "pre_score": pre_score if pre_score is not None else 0.5,
+            "pre_ctr": pre_ctr,
+            "records_at_stage_start": self._recent_record_count(
+                ctx_key[0] if ctx_key[0] != "*" else None,
+                ctx_key[1] if ctx_key[1] != "*" else None,
+            ),
+            "started_at": time.time(),
+        }
+
     def _recent_avg_score(
         self,
         platform: str | None,
@@ -354,6 +571,27 @@ class CalibrationRolloutGovernor:
             return round(sum(scores) / len(scores), 4)
         except Exception:
             return 0.5
+
+    def _recent_avg_ctr(
+        self,
+        platform: str | None,
+        product_category: str | None,
+    ) -> float:
+        """Return the mean recent CTR from the learning store."""
+        if self._learning_store is None:
+            return 0.0
+        try:
+            records = self._learning_store.all_records()
+            filtered = [
+                r for r in records
+                if (platform is None or r.get("platform") == platform)
+            ]
+            if not filtered:
+                return 0.0
+            ctrs = [float(r.get("click_through_rate", 0.0)) for r in filtered[-50:]]
+            return round(sum(ctrs) / len(ctrs), 4)
+        except Exception:
+            return 0.0
 
     def _recent_record_count(
         self,

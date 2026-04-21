@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 _PORTFOLIO_DAILY_PLATFORM_LIMIT = int(
     os.environ.get("PORTFOLIO_DAILY_PLATFORM_LIMIT", "100")
 )
+# Maximum expected ROAS for portfolio normalization (ROAS is mapped to [0, 1])
+_PORTFOLIO_ROAS_NORMALIZER = 5.0
 
 
 class GrowthOptimizationOrchestrator:
@@ -65,6 +67,7 @@ class GrowthOptimizationOrchestrator:
         goal: str | None = None,
         use_model_ranking: bool = True,
         attribution_window_days: int = 7,
+        decision_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return a ranked allocation plan for a campaign's variant candidates.
 
@@ -84,10 +87,16 @@ class GrowthOptimizationOrchestrator:
             goal: Content goal (e.g. "conversion", "awareness").
             use_model_ranking: When True (default), apply ``ModelDrivenRankingEngine``
                 on top of the composite score for a richer final ranking.
+            decision_context: Optional enrichment dict with keys such as
+                ``persona``, ``category``, ``funnel_stage``, ``platform``.
+                When provided, these override the top-level ``platform``/
+                ``product_category`` params for scoring purposes and are
+                propagated to the funnel summary.
 
         Returns:
             Dict with:
             - ``campaign_id``
+            - ``decision_context``: echo of the resolved decision context
             - ``ranked_candidates``: list of scored+ranked candidates
             - ``budget_summary``: remaining / limit / feasible_count
             - ``top_pick``: highest-scoring budget-feasible candidate
@@ -100,15 +109,39 @@ class GrowthOptimizationOrchestrator:
         from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
         from app.services.commerce.ranking_engine import ModelDrivenRankingEngine
 
+        # Resolve decision_context — merge provided fields with positional params
+        resolved_ctx = self._resolve_decision_context(
+            decision_context=decision_context,
+            platform=platform,
+            product_category=product_category,
+            goal=goal,
+        )
+        eff_platform = resolved_ctx.get("platform") or platform
+        eff_category = resolved_ctx.get("category") or product_category
+        eff_funnel = resolved_ctx.get("funnel_stage")
+
         base_objectives = objectives or {"conversion": 0.5, "ctr": 0.3, "roas": 0.2}
 
         # Apply calibration to objective weights when available
         calibration_applier = ScoringCalibrationApplier(db=self._db)
         effective_objectives = calibration_applier.get_objective_weights(
             base_objectives=base_objectives,
-            platform=platform,
-            product_category=product_category,
+            platform=eff_platform,
+            product_category=eff_category,
         )
+
+        # Funnel-stage objective boost: conversion stage → upweight conversion obj
+        if eff_funnel == "conversion":
+            effective_objectives["conversion"] = round(
+                effective_objectives.get("conversion", 0.5) * 1.20, 4
+            )
+        elif eff_funnel == "awareness":
+            effective_objectives["ctr"] = round(
+                effective_objectives.get("ctr", 0.3) * 1.15, 4
+            )
+        # Re-normalise after any boost
+        _total = sum(effective_objectives.values()) or 1.0
+        effective_objectives = {k: round(v / _total, 4) for k, v in effective_objectives.items()}
 
         # Enrich candidates with budget_score if budget_constraint provided
         enriched = self._enrich_with_budget_score(candidates, budget_constraint)
@@ -123,8 +156,8 @@ class GrowthOptimizationOrchestrator:
         scorer = MultiObjectiveScorer(
             effective_objectives,
             calibration_store=calibration_applier,
-            platform=platform,
-            product_category=product_category,
+            platform=eff_platform,
+            product_category=eff_category,
         )
         scored = scorer.score_candidates(enriched)
 
@@ -183,8 +216,9 @@ class GrowthOptimizationOrchestrator:
             candidates=candidates,
             feasible=feasible,
             budget_constraint=budget_constraint,
-            platform=platform,
+            platform=eff_platform,
             goal=goal,
+            decision_context=resolved_ctx,
         )
 
         # --- Attribution summary (multi-touch credit breakdown) ---
@@ -221,9 +255,10 @@ class GrowthOptimizationOrchestrator:
 
         return {
             "campaign_id": campaign_id,
-            "platform": platform,
+            "platform": eff_platform,
             "market_code": market_code,
             "goal": goal,
+            "decision_context": resolved_ctx,
             "objectives_used": effective_objectives,
             "ranking_method": ranking_method,
             "ranked_candidates": scored,
@@ -239,9 +274,123 @@ class GrowthOptimizationOrchestrator:
             "attribution_summary": attribution_summary,
         }
 
+    def optimize_portfolio(
+        self,
+        campaign_budgets: list[dict[str, Any]],
+        performance_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Reallocate budget across campaigns and platforms based on performance.
+
+        Args:
+            campaign_budgets: List of dicts with ``campaign_id``, ``platform``,
+                ``current_budget`` (float), and optionally ``conversion_score``,
+                ``ctr``, ``roas``.
+            performance_history: Optional list of historical performance records
+                keyed by ``campaign_id`` and ``platform``.
+
+        Returns:
+            Dict with ``reallocations`` (list of {campaign_id, platform,
+            new_budget, delta, reason}), ``total_budget``, and ``portfolio_score``.
+        """
+        if not campaign_budgets:
+            return {"reallocations": [], "total_budget": 0.0, "portfolio_score": 0.0}
+
+        total_budget = sum(float(c.get("current_budget", 0.0)) for c in campaign_budgets)
+
+        # Build performance scores per campaign
+        perf_map: dict[str, dict[str, float]] = {}
+        if performance_history:
+            for rec in performance_history:
+                cid = str(rec.get("campaign_id", ""))
+                if not cid:
+                    continue
+                perf_map.setdefault(cid, {"conversion_sum": 0.0, "count": 0.0})
+                perf_map[cid]["conversion_sum"] += float(rec.get("conversion_score", 0.0))
+                perf_map[cid]["count"] += 1.0
+
+        # Compute composite score per campaign: blend explicit score + history
+        scored_campaigns: list[dict[str, Any]] = []
+        for c in campaign_budgets:
+            cid = str(c.get("campaign_id", ""))
+            explicit_conv = float(c.get("conversion_score", 0.0))
+            explicit_ctr = float(c.get("ctr", 0.0))
+            explicit_roas = float(c.get("roas", 1.0))
+
+            hist = perf_map.get(cid)
+            hist_conv = (
+                hist["conversion_sum"] / max(hist["count"], 1) if hist else explicit_conv
+            )
+
+            # Composite: 40% conversion, 30% historical conversion, 20% CTR, 10% ROAS
+            composite = round(
+                0.40 * explicit_conv
+                + 0.30 * hist_conv
+                + 0.20 * explicit_ctr
+                + 0.10 * min(explicit_roas / _PORTFOLIO_ROAS_NORMALIZER, 1.0),
+                4,
+            )
+            scored_campaigns.append({**c, "_portfolio_score": composite})
+
+        # Soft-max allocation: score-proportional budget shares
+        total_score = sum(c["_portfolio_score"] for c in scored_campaigns) or 1.0
+        reallocations: list[dict[str, Any]] = []
+        portfolio_score = round(total_score / len(scored_campaigns), 4)
+
+        for c in scored_campaigns:
+            share = c["_portfolio_score"] / total_score
+            new_budget = round(total_budget * share, 2)
+            delta = round(new_budget - float(c.get("current_budget", 0.0)), 2)
+            reallocations.append({
+                "campaign_id": c.get("campaign_id"),
+                "platform": c.get("platform"),
+                "current_budget": c.get("current_budget"),
+                "new_budget": new_budget,
+                "budget_delta": delta,
+                "portfolio_score": c["_portfolio_score"],
+                "reason": (
+                    "increased" if delta > 0 else ("decreased" if delta < 0 else "unchanged")
+                ),
+            })
+
+        reallocations.sort(key=lambda x: x["portfolio_score"], reverse=True)
+        logger.info(
+            "GrowthOptimizationOrchestrator.optimize_portfolio: "
+            "%d campaigns total_budget=%.2f portfolio_score=%.4f",
+            len(campaign_budgets),
+            total_budget,
+            portfolio_score,
+        )
+        return {
+            "reallocations": reallocations,
+            "total_budget": total_budget,
+            "portfolio_score": portfolio_score,
+            "campaign_count": len(reallocations),
+        }
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_decision_context(
+        decision_context: dict[str, Any] | None,
+        platform: str | None,
+        product_category: str | None,
+        goal: str | None,
+    ) -> dict[str, Any]:
+        """Merge explicit decision_context with positional params.
+
+        decision_context keys: persona, category, platform, funnel_stage.
+        """
+        ctx: dict[str, Any] = {}
+        if decision_context:
+            ctx.update(decision_context)
+        ctx.setdefault("platform", platform)
+        ctx.setdefault("category", product_category)
+        ctx.setdefault("goal", goal)
+        ctx.setdefault("persona", None)
+        ctx.setdefault("funnel_stage", None)
+        return ctx
 
     def _build_funnel_summary(
         self,
@@ -250,6 +399,7 @@ class GrowthOptimizationOrchestrator:
         budget_constraint: dict[str, Any] | None,
         platform: str | None,
         goal: str | None,
+        decision_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build a joint creative × conversion × budget × platform funnel breakdown."""
         if not candidates:
@@ -271,6 +421,10 @@ class GrowthOptimizationOrchestrator:
             if c.get("platform") == platform or not c.get("platform")
         )
 
+        ctx = decision_context or {}
+        funnel_stage = ctx.get("funnel_stage")
+        persona = ctx.get("persona")
+
         return {
             "creative_diversity": len(hook_patterns),
             "avg_conversion_score": avg_conversion,
@@ -280,6 +434,8 @@ class GrowthOptimizationOrchestrator:
             "total_candidates": len(candidates),
             "platform_fit_count": platform_fit_count,
             "goal": goal,
+            "persona": persona,
+            "funnel_stage": funnel_stage,
             "funnel_stages": {
                 "creative": len(candidates),
                 "conversion_eligible": sum(1 for c in candidates if float(c.get("conversion_score", 0.0)) >= 0.5),

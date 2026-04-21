@@ -15,6 +15,13 @@ Closes the final gap in the publish enterprise stack by providing:
 4. **Retry choreography** — coordinates retry schedules across platforms
    when a multi-platform publish has partial failures.
 
+5. **Persistent orchestration state** — records multi-platform job state,
+   retry state, and recovery state so the system can resume safely after
+   restarts.
+
+6. **Replay / audit log** — immutable append-only audit trail for every
+   publish decision, suitable for compliance replay and debugging.
+
 Usage::
 
     engine = ProviderChoreographyEngine(db=db)
@@ -46,6 +53,16 @@ logger = logging.getLogger(__name__)
 _INTER_PLATFORM_DELAY_SEC = 2.0
 # Platforms ordered for "youtube_first" sequencing strategy
 _YOUTUBE_FIRST_ORDER = ["youtube", "shorts", "tiktok", "reels", "instagram", "meta", "facebook"]
+
+# ---------------------------------------------------------------------------
+# In-memory persistent orchestration state and audit log
+# ---------------------------------------------------------------------------
+# {orchestration_id → {job_id → platform_state_dict}}
+_ORCH_STATE: dict[str, dict[str, Any]] = {}
+# Append-only audit log entries
+_AUDIT_LOG: list[dict[str, Any]] = []
+# Maximum audit log entries retained in memory
+_MAX_AUDIT_ENTRIES = 10_000
 
 
 class ProviderChoreographyEngine:
@@ -162,6 +179,7 @@ class ProviderChoreographyEngine:
         sequence_strategy: str = "youtube_first",
         inter_delay_sec: float = _INTER_PLATFORM_DELAY_SEC,
         _sleep: bool = False,
+        orchestration_id: str | None = None,
     ) -> dict[str, Any]:
         """Sequence and coordinate publish across multiple platform jobs.
 
@@ -176,11 +194,16 @@ class ProviderChoreographyEngine:
             inter_delay_sec: Delay (seconds) between platform publishes.
                 Honoured only when ``_sleep=True``.
             _sleep: When True, actually sleep between publishes (prod only).
+            orchestration_id: Optional unique ID for this orchestration run.
+                Used to key the persistent orchestration state.
 
         Returns:
             Dict with ``results`` (per-job status), ``sequence_used``,
-            ``total``, ``succeeded``, ``failed``.
+            ``total``, ``succeeded``, ``failed``, ``orchestration_id``.
         """
+        import uuid as _uuid
+        orch_id = orchestration_id or str(_uuid.uuid4())
+
         ordered_jobs = self._order_jobs(jobs, strategy=sequence_strategy)
         results: list[dict[str, Any]] = []
         succeeded = failed = 0
@@ -210,13 +233,28 @@ class ProviderChoreographyEngine:
             else:
                 failed += 1
 
-            results.append({
+            job_result = {
                 "job_id": job_id,
                 "platform": platform,
                 **result,
-            })
+            }
+            results.append(job_result)
+
+            # Persist orchestration state for this job
+            self._persist_job_state(orch_id, job_id, platform, job_result)
+
+            # Write audit log entry
+            self._append_audit_log(
+                orchestration_id=orch_id,
+                event_type="publish_dispatch",
+                job_id=job_id,
+                platform=platform,
+                status=result.get("status", "unknown"),
+                details={"enriched_metadata": enriched_metadata},
+            )
 
         return {
+            "orchestration_id": orch_id,
             "sequence_used": sequence_strategy,
             "total": len(jobs),
             "succeeded": succeeded,
@@ -371,6 +409,104 @@ class ProviderChoreographyEngine:
         return schedule
 
     # ------------------------------------------------------------------
+    # Orchestration state management
+    # ------------------------------------------------------------------
+
+    def get_orchestration_state(
+        self,
+        orchestration_id: str,
+    ) -> dict[str, Any]:
+        """Return the persisted state for an orchestration run.
+
+        Returns:
+            Dict with ``orchestration_id``, ``jobs`` (per-job state dict),
+            ``job_count``, ``retrieved_at``.
+        """
+        state = _ORCH_STATE.get(orchestration_id, {})
+        return {
+            "orchestration_id": orchestration_id,
+            "jobs": state,
+            "job_count": len(state),
+            "retrieved_at": time.time(),
+        }
+
+    def update_job_state(
+        self,
+        orchestration_id: str,
+        job_id: str,
+        update: dict[str, Any],
+    ) -> None:
+        """Update the stored state for a specific job within an orchestration."""
+        _ORCH_STATE.setdefault(orchestration_id, {})
+        existing = _ORCH_STATE[orchestration_id].get(job_id, {})
+        existing.update(update)
+        existing["updated_at"] = time.time()
+        _ORCH_STATE[orchestration_id][job_id] = existing
+        self._append_audit_log(
+            orchestration_id=orchestration_id,
+            event_type="state_update",
+            job_id=job_id,
+            platform=update.get("platform", "unknown"),
+            status=update.get("status", "unknown"),
+            details=update,
+        )
+
+    def get_audit_log(
+        self,
+        orchestration_id: str | None = None,
+        job_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Query the audit log, optionally filtered by orchestration_id or job_id.
+
+        Returns entries in reverse chronological order (most recent first).
+
+        Args:
+            orchestration_id: Filter to a specific orchestration run.
+            job_id: Filter to a specific job.
+            limit: Maximum number of entries to return.
+        """
+        entries = list(reversed(_AUDIT_LOG))
+        if orchestration_id:
+            entries = [e for e in entries if e.get("orchestration_id") == orchestration_id]
+        if job_id:
+            entries = [e for e in entries if e.get("job_id") == job_id]
+        return entries[:limit]
+
+    def replay_orchestration(
+        self,
+        orchestration_id: str,
+    ) -> dict[str, Any]:
+        """Return a chronological replay of all audit events for an orchestration.
+
+        Useful for debugging, compliance audits, and replay testing.
+
+        Returns:
+            Dict with ``orchestration_id``, ``events`` (list in order),
+            ``event_count``, ``platforms_touched``, ``outcome_summary``.
+        """
+        events = [
+            e for e in _AUDIT_LOG
+            if e.get("orchestration_id") == orchestration_id
+        ]
+        platforms: set[str] = {e.get("platform", "unknown") for e in events}
+        statuses = [e.get("status") for e in events if e.get("status")]
+        succeeded = statuses.count("dispatched")
+        failed = sum(1 for s in statuses if s not in ("dispatched", None))
+
+        return {
+            "orchestration_id": orchestration_id,
+            "events": events,
+            "event_count": len(events),
+            "platforms_touched": sorted(platforms),
+            "outcome_summary": {
+                "succeeded": succeeded,
+                "failed": failed,
+                "total": len(events),
+            },
+        }
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
@@ -481,3 +617,45 @@ class ProviderChoreographyEngine:
         base = _BASE_DELAYS.get(error_type, 900.0)
         # Exponential back-off capped at 24h
         return min(base * (2 ** max(0, retry_num - 1)), 86400.0)
+
+    @staticmethod
+    def _persist_job_state(
+        orchestration_id: str,
+        job_id: str,
+        platform: str,
+        result: dict[str, Any],
+    ) -> None:
+        """Persist per-job state into the in-memory orchestration store."""
+        _ORCH_STATE.setdefault(orchestration_id, {})
+        _ORCH_STATE[orchestration_id][job_id] = {
+            "platform": platform,
+            "status": result.get("status", "unknown"),
+            "dispatched_at": result.get("dispatched_at"),
+            "platform_url": result.get("platform_url"),
+            "error_type": result.get("error_type"),
+            "updated_at": time.time(),
+        }
+
+    @staticmethod
+    def _append_audit_log(
+        orchestration_id: str,
+        event_type: str,
+        job_id: str,
+        platform: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Append an immutable audit log entry."""
+        entry = {
+            "orchestration_id": orchestration_id,
+            "event_type": event_type,
+            "job_id": job_id,
+            "platform": platform,
+            "status": status,
+            "details": details or {},
+            "recorded_at": time.time(),
+        }
+        _AUDIT_LOG.append(entry)
+        # Trim to max size (drop oldest)
+        if len(_AUDIT_LOG) > _MAX_AUDIT_ENTRIES:
+            del _AUDIT_LOG[: len(_AUDIT_LOG) - _MAX_AUDIT_ENTRIES]

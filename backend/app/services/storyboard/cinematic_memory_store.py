@@ -164,51 +164,66 @@ class CinematicMemoryStore:
     ) -> dict[str, Any]:
         """Recommend the optimal shot configuration for a given scene goal.
 
-        Derives recommendations from winning shots by taking the most common
-        value for each dimension among high-converting shots.
+        Uses outcome-weighted ranking: each shot's vote weight is proportional
+        to its ``conversion_outcome``, not just presence in the winning set.
+        This biases recommendations toward shot configs that produced the
+        *highest* conversions, not just those above a threshold.
 
         Returns:
             Dict with recommended ``shot_type``, ``lighting_scheme``,
             ``transition_style``, ``pacing_outcome``, ``confidence`` ∈ [0, 1],
-            and ``sample_count``.
+            ``avg_conversion``, and ``sample_count``.
         """
-        winning = self.get_winning_shots(
-            series_id=series_id,
-            platform=platform,
-            scene_goal=scene_goal,
-            top_n=50,
-        )
+        shots = _SHOT_STORE.get(series_id, [])
+        if platform:
+            shots = [s for s in shots if not s.get("platform") or s["platform"] == platform]
+        if scene_goal:
+            shots = [s for s in shots if not s.get("scene_goal") or s["scene_goal"] == scene_goal]
 
-        if len(winning) < _MIN_SHOTS_FOR_RECOMMENDATION:
+        if len(shots) < _MIN_SHOTS_FOR_RECOMMENDATION:
             return {
                 "shot_type": "medium",
                 "lighting_scheme": "natural",
                 "transition_style": "hard_cut",
                 "pacing_outcome": "moderate",
                 "confidence": 0.0,
-                "sample_count": len(winning),
+                "avg_conversion": 0.0,
+                "sample_count": len(shots),
                 "source": "default_fallback",
             }
 
+        # Outcome-weighted voting: accumulate weight per (dimension, value) pair
+        dim_value_weights: dict[str, dict[str, float]] = {dim: {} for dim in _SHOT_DIMS}
+        total_weight = 0.0
+        for s in shots:
+            w = float(s.get("conversion_outcome", 0.0))
+            total_weight += w
+            for dim in _SHOT_DIMS:
+                val = s.get(dim)
+                if val:
+                    dim_value_weights[dim][val] = dim_value_weights[dim].get(val, 0.0) + w
+
         recommendation: dict[str, Any] = {}
         for dim in _SHOT_DIMS:
-            values = [s[dim] for s in winning if s.get(dim)]
-            if values:
-                most_common, count = Counter(values).most_common(1)[0]
-                recommendation[dim] = most_common
+            vw = dim_value_weights[dim]
+            if vw:
+                best_val = max(vw.keys(), key=lambda v: vw[v])
+                recommendation[dim] = best_val
             else:
                 recommendation[dim] = "medium" if dim == "shot_type" else "natural"
 
-        # Confidence: fraction of shots that are above threshold
-        all_shots = _SHOT_STORE.get(series_id, [])
-        if scene_goal:
-            all_shots = [s for s in all_shots if not s.get("scene_goal") or s["scene_goal"] == scene_goal]
-        confidence = round(len(winning) / max(len(all_shots), 1), 4) if all_shots else 0.0
+        # Confidence: mean conversion weighted by sample coverage
+        avg_conversion = round(
+            sum(s["conversion_outcome"] for s in shots) / len(shots), 4
+        )
+        winning = [s for s in shots if s["conversion_outcome"] >= _WIN_CONVERSION_THRESHOLD]
+        confidence = round(len(winning) / max(len(shots), 1), 4)
 
         recommendation.update({
             "confidence": confidence,
-            "sample_count": len(winning),
-            "source": "cinematic_memory",
+            "avg_conversion": avg_conversion,
+            "sample_count": len(shots),
+            "source": "outcome_weighted",
         })
         return recommendation
 
