@@ -315,7 +315,36 @@ class StoryboardEngine:
         conversion_mode: str | None = None,
         content_goal: str | None = None,
         platform: str | None = None,
+        learning_store: "PerformanceLearningEngine | None" = None,
+        episode_memory: dict[str, Any] | None = None,
+        use_winning_graph: bool = False,
+        include_asset_plan: bool = False,
+        avatar_id: str | None = None,
+        db: Any | None = None,
     ) -> StoryboardResponse:
+        """Generate a storyboard from a channel-preview payload dict.
+
+        Extracts ``script_text`` from ``scenes`` or top-level key and delegates
+        to ``generate_from_script()``.
+
+        Args:
+            preview_payload: Dict produced by the channel preview flow.  Expected
+                keys: ``scenes`` (list), ``script_text``, ``conversion_mode``,
+                ``content_goal``, ``target_platform``.
+            conversion_mode: Override conversion mode (falls back to payload value).
+            content_goal: Override content goal (falls back to payload value).
+            platform: Override platform (falls back to ``target_platform`` in payload).
+            learning_store: Optional learning engine for outcome-driven pacing boosts
+                and winner-pattern injection.
+            episode_memory: Winning scene sequence and open loops from the previous
+                episode; used for continuity-aware pacing overrides.
+            use_winning_graph: When True, seed scene goals from the top-performing
+                winning scene graph for this platform.
+            include_asset_plan: When True (and ``avatar_id`` is provided), attach a
+                per-scene asset checklist to the response summary.
+            avatar_id: Avatar identifier used by the asset planner and render QA.
+            db: SQLAlchemy session forwarded to asset planner and scene graph store.
+        """
         scenes = preview_payload.get("scenes") or []
         text = "\n\n".join((scene.get("script_text") or "").strip() for scene in scenes if scene.get("script_text"))
         if not text:
@@ -326,6 +355,12 @@ class StoryboardEngine:
             content_goal=content_goal or preview_payload.get("content_goal"),
             preview_payload=preview_payload,
             platform=platform or preview_payload.get("target_platform"),
+            learning_store=learning_store,
+            episode_memory=episode_memory,
+            use_winning_graph=use_winning_graph,
+            include_asset_plan=include_asset_plan,
+            avatar_id=avatar_id,
+            db=db,
         )
 
     # backward compatibility

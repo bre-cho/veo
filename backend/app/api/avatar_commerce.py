@@ -15,6 +15,7 @@ from app.schemas.avatar_commerce import (
     CommerceRecommendTemplateResponse,
     ContentGoalClassifyRequest,
     ContentGoalClassifyResponse,
+    GrowthOptimizeRequest,
     ProductTemplateRouterRequest,
     ProductTemplateRouterResponse,
 )
@@ -484,6 +485,37 @@ def apply_calibration(
         product_category=product_category,
     )
     return result
+
+
+@router.post("/growth/optimize", response_model=dict)
+def growth_optimize(req: GrowthOptimizeRequest, db: Session = Depends(get_db)):
+    """Joint budget + creative + conversion optimizer for a campaign.
+
+    Combines ``MultiObjectiveScorer`` (with calibration), ``CampaignBudgetPolicy``
+    feasibility filter, and creative feedback boosts to return a ranked allocation
+    plan across variant candidates.
+
+    Returns:
+        - ``campaign_id``
+        - ``ranked_candidates``: scored and sorted candidate list
+        - ``budget_summary``: remaining / limit / feasible_count
+        - ``top_pick``: highest-scoring budget-feasible candidate
+        - ``allocation_plan``: per-candidate budget share and recommended publish count
+        - ``objectives_used``: effective objective weights (after calibration)
+    """
+    from app.services.commerce.growth_optimization_orchestrator import GrowthOptimizationOrchestrator
+
+    orchestrator = GrowthOptimizationOrchestrator(db=db, learning_store=_learning_engine)
+    return orchestrator.optimize(
+        campaign_id=req.campaign_id,
+        candidates=req.candidates,
+        objectives=req.objectives,
+        budget_constraint=req.budget_constraint,
+        platform=req.platform,
+        product_category=req.product_category,
+        market_code=req.market_code,
+        goal=req.goal,
+    )
 
 
 @router.post("/attribution/{campaign_id}/record", response_model=dict)

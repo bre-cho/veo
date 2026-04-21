@@ -307,6 +307,7 @@ class AvatarIdentityService:
         frame_results: list[dict[str, Any]] = []
         consistency_score: float = 1.0
         extraction_method: str = "provided"
+        extraction_failed: bool = False
 
         if frame_embeddings:
             # Use caller-supplied embeddings (fastest path)
@@ -329,15 +330,27 @@ class AvatarIdentityService:
                 frame_results = self.lock_frame_sequence(db, avatar_id, [mean_embedding])
                 scores = [r["cosine_similarity"] for r in frame_results]
                 consistency_score = round(sum(scores) / len(scores), 3) if scores else 1.0
-            except Exception:
-                # Extraction failed — fall back to static identity field
+            except Exception as _exc:
+                # Extraction failed — fall back to static identity field, but cap the
+                # score so the render is routed to identity_review instead of silently
+                # accepted.  Callers can inspect extraction_failed=True to handle this.
                 extraction_method = "identity_fallback"
+                extraction_failed = True
+                logger.warning(
+                    "verify_render_output: embedding extraction failed for avatar=%s url=%s — "
+                    "falling back to static identity score: %s",
+                    avatar_id, render_url, _exc,
+                )
                 identity = self.get_identity_vector(db, avatar_id)
-                consistency_score = round(
+                raw_score = (
                     identity.get("consistency_score", 1.0)
                     if isinstance(identity.get("consistency_score"), float)
-                    else 1.0,
-                    3,
+                    else 1.0
+                )
+                # Cap at just below _RENDER_CONSISTENCY_THRESHOLD so the action is
+                # always "identity_review" when we could not actually inspect the render.
+                consistency_score = round(
+                    min(raw_score, _RENDER_CONSISTENCY_THRESHOLD - 0.001), 3
                 )
         else:
             # No render URL provided: use static identity field as last resort
@@ -389,6 +402,7 @@ class AvatarIdentityService:
             "requires_review": action == "identity_review",
             "frame_results": frame_results,
             "extraction_method": extraction_method,
+            "extraction_failed": extraction_failed,
         }
 
     # ------------------------------------------------------------------

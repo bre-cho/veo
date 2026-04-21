@@ -370,6 +370,15 @@ class PublishReconciler:
                 job.status = "completed"
                 job.signal_status = "received"
                 db.add(job)
+                # Write-back to PerformanceLearningEngine so creative engines
+                # can use reconciled publish outcomes just like live publishes.
+                try:
+                    PublishScheduler._record_publish_outcome(job, db=db)
+                except Exception as _wb_exc:
+                    logger.debug(
+                        "Reconciler: learning write-back failed for job id=%s: %s",
+                        job.id, _wb_exc,
+                    )
                 logger.info("Reconciler: auto-closed confirmed published job id=%s", job.id)
             elif terminal == "failed":
                 job.signal_status = "stale"
