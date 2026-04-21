@@ -18,6 +18,7 @@ class ChannelPlanRequest(BaseModel):
     project_id: str | None = None
     avatar_id: str | None = None
     product_id: str | None = None
+    platform: str | None = None
 
 
 class ChannelPlanItem(BaseModel):

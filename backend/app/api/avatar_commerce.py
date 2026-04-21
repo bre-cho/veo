@@ -403,10 +403,8 @@ def optimize_channel_plan(req: CommerceOptimizeRequest):
         project_id=req.project_id,
         avatar_id=req.avatar_id,
         product_id=req.product_id,
+        platform=req.platform,
     )
-    # Attach platform so channel engine contextual scoring picks it up
-    if req.platform is not None:
-        object.__setattr__(plan_req, "platform", req.platform)
 
     result = _channel_engine.generate_plan(
         plan_req,
