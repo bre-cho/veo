@@ -13,6 +13,13 @@ from app.models.variant_run_record import VariantRunRecord
 # selection is considered statistically reliable.
 _MIN_WINNER_SAMPLES = 3
 
+# Rollout stage thresholds: (min_confidence, rollout_stage_pct)
+_ROLLOUT_STAGE_THRESHOLDS: list[tuple[float, int]] = [
+    (0.90, 100),
+    (0.75, 50),
+    (0.50, 10),
+]
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -185,14 +192,11 @@ class VariantHistoryService:
         segment_key = f"{best.platform or 'all'}|{best.product_category or 'all'}"
 
         # Recommended rollout stage based on confidence
-        if winner_confidence >= 0.9:
-            recommended_rollout_stage = 100
-        elif winner_confidence >= 0.75:
-            recommended_rollout_stage = 50
-        elif winner_confidence >= 0.5:
-            recommended_rollout_stage = 10
-        else:
-            recommended_rollout_stage = 0
+        recommended_rollout_stage = 0
+        for min_conf, stage in _ROLLOUT_STAGE_THRESHOLDS:
+            if winner_confidence >= min_conf:
+                recommended_rollout_stage = stage
+                break
 
         weights["calibration_ready"] = calibration_ready
         weights["recommended_rollout_stage"] = recommended_rollout_stage

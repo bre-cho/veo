@@ -304,15 +304,16 @@ class PortfolioQuotaOrchestrator:
                 count = pc.get(pk, 0)
                 platform_counts_by_plat[plat] = platform_counts_by_plat.get(plat, 0) + count
                 platform_limits_by_plat[plat] = platform_limits_by_plat.get(plat, 0) + limit
-        recommended_platform_shift: list[dict[str, Any]] = [
-            {
-                "platform": plat,
-                "utilisation": round(platform_counts_by_plat[plat] / max(platform_limits_by_plat[plat], 1), 4),
-                "suggestion": "shift_to_lower_utilisation_platform",
-            }
-            for plat in platform_counts_by_plat
-            if platform_counts_by_plat[plat] / max(platform_limits_by_plat.get(plat, 1), 1) >= _OVERAGE_ALERT_THRESHOLD
-        ]
+        recommended_platform_shift: list[dict[str, Any]] = []
+        for plat, total_count in platform_counts_by_plat.items():
+            total_limit = max(platform_limits_by_plat.get(plat, 1), 1)
+            utilisation = round(total_count / total_limit, 4)
+            if utilisation >= _OVERAGE_ALERT_THRESHOLD:
+                recommended_platform_shift.append({
+                    "platform": plat,
+                    "utilisation": utilisation,
+                    "suggestion": "shift_to_lower_utilisation_platform",
+                })
 
         return {
             **allocation,

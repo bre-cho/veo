@@ -37,6 +37,8 @@ _MAX_VIDEO_QA_FAILURES = 5
 
 # In-memory failure tracker: {avatar_id → failure_count}
 _VIDEO_QA_FAIL_COUNTS: dict[str, int] = {}
+# Failure count multiplier before scheduling a canonical refresh
+_CANONICAL_REFRESH_FAILURE_MULTIPLIER = 2
 
 
 class ProductionQARunner:
@@ -359,7 +361,7 @@ class ProductionQARunner:
             action = "quarantine"
             logger.warning("ProductionQARunner: quarantine avatar=%s fails=%d", avatar_id, fail_count)
             # Schedule canonical refresh when failure count is very high
-            if fail_count >= _MAX_VIDEO_QA_FAILURES * 2:
+            if fail_count >= _MAX_VIDEO_QA_FAILURES * _CANONICAL_REFRESH_FAILURE_MULTIPLIER:
                 canonical_refresh_scheduled = True
                 action = "canonical_refresh_scheduled"
                 logger.warning(

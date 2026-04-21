@@ -157,7 +157,7 @@ class ClosedLoopCalibrationOrchestrator:
             for v in (surface_delta.get("delta") or {}).values()
             if isinstance(v, (int, float))
         ]
-        delta_norm = round(sum(all_deltas) / max(len(all_deltas), 1), 4) if all_deltas else 0.0
+        delta_norm = round(sum(all_deltas) / len(all_deltas), 4) if all_deltas else 0.0
         total_samples = sum(
             int(d.get("sample_count", 0))
             for d in weight_deltas.values()
