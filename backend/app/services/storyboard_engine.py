@@ -315,6 +315,12 @@ class StoryboardEngine:
         conversion_mode: str | None = None,
         content_goal: str | None = None,
         platform: str | None = None,
+        learning_store: "PerformanceLearningEngine | None" = None,
+        episode_memory: dict[str, Any] | None = None,
+        use_winning_graph: bool = False,
+        include_asset_plan: bool = False,
+        avatar_id: str | None = None,
+        db: Any | None = None,
     ) -> StoryboardResponse:
         scenes = preview_payload.get("scenes") or []
         text = "\n\n".join((scene.get("script_text") or "").strip() for scene in scenes if scene.get("script_text"))
@@ -326,6 +332,12 @@ class StoryboardEngine:
             content_goal=content_goal or preview_payload.get("content_goal"),
             preview_payload=preview_payload,
             platform=platform or preview_payload.get("target_platform"),
+            learning_store=learning_store,
+            episode_memory=episode_memory,
+            use_winning_graph=use_winning_graph,
+            include_asset_plan=include_asset_plan,
+            avatar_id=avatar_id,
+            db=db,
         )
 
     # backward compatibility

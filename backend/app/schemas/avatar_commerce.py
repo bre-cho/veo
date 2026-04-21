@@ -83,3 +83,14 @@ class CommerceOptimizeResponse(BaseModel):
     calendar_summary: dict[str, Any] = {}
     candidates: list[Any] = []
     winner_candidate_id: Optional[str] = None
+
+
+class GrowthOptimizeRequest(BaseModel):
+    campaign_id: str
+    candidates: list[dict[str, Any]]
+    objectives: Optional[dict[str, float]] = None
+    budget_constraint: Optional[dict[str, Any]] = None
+    platform: Optional[str] = None
+    product_category: Optional[str] = None
+    market_code: Optional[str] = None
+    goal: Optional[str] = None

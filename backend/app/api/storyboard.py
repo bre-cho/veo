@@ -46,8 +46,27 @@ def generate_storyboard(
 
 
 @router.post("/from-preview", response_model=StoryboardResponse)
-def storyboard_from_preview(preview_payload: dict) -> StoryboardResponse:
-    return _engine.generate_from_preview(preview_payload)
+def storyboard_from_preview(
+    preview_payload: dict,
+    include_asset_plan: bool = Query(default=False),
+    use_winning_graph: bool = Query(default=False),
+    avatar_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> StoryboardResponse:
+    """Generate a storyboard from a preview payload.
+
+    Accepts the same enrichment query params as /generate:
+    ``include_asset_plan``, ``use_winning_graph``, and ``avatar_id``.
+    """
+    learning_store = PerformanceLearningEngine(db=db)
+    return _engine.generate_from_preview(
+        preview_payload,
+        learning_store=learning_store,
+        use_winning_graph=use_winning_graph,
+        include_asset_plan=include_asset_plan,
+        avatar_id=avatar_id,
+        db=db,
+    )
 
 
 # ---------------------------------------------------------------------------
