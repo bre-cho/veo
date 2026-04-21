@@ -61,6 +61,7 @@ class GrowthOptimizationOrchestrator:
         product_category: str | None = None,
         market_code: str | None = None,
         goal: str | None = None,
+        use_model_ranking: bool = True,
     ) -> dict[str, Any]:
         """Return a ranked allocation plan for a campaign's variant candidates.
 
@@ -78,6 +79,8 @@ class GrowthOptimizationOrchestrator:
             product_category: Product category for calibration lookup.
             market_code: Market code for contextual weight adjustments.
             goal: Content goal (e.g. "conversion", "awareness").
+            use_model_ranking: When True (default), apply ``ModelDrivenRankingEngine``
+                on top of the composite score for a richer final ranking.
 
         Returns:
             Dict with:
@@ -86,9 +89,12 @@ class GrowthOptimizationOrchestrator:
             - ``budget_summary``: remaining / limit / feasible_count
             - ``top_pick``: highest-scoring budget-feasible candidate
             - ``allocation_plan``: list of {video_id, score, budget_share}
+            - ``ranking_method``: "model_driven" or "linear_weighted"
+            - ``funnel_summary``: joint creative × conversion × budget funnel breakdown
         """
         from app.services.commerce.multi_objective_scorer import MultiObjectiveScorer
         from app.services.commerce.scoring_calibration_applier import ScoringCalibrationApplier
+        from app.services.commerce.ranking_engine import ModelDrivenRankingEngine
 
         base_objectives = objectives or {"conversion": 0.5, "ctr": 0.3, "roas": 0.2}
 
@@ -118,26 +124,64 @@ class GrowthOptimizationOrchestrator:
         )
         scored = scorer.score_candidates(enriched)
 
+        # --- Model-driven ranking on top of composite score ---
+        ranking_method = "linear_weighted"
+        if use_model_ranking and len(scored) > 1:
+            try:
+                ranker = ModelDrivenRankingEngine(n_rounds=5)
+                # Use historical records from learning store as reference
+                reference_records: list[dict[str, Any]] = []
+                if self._learning_store is not None:
+                    try:
+                        reference_records = self._learning_store.all_records()
+                    except Exception:
+                        pass
+                ranked = ranker.rank(scored, reference_records=reference_records)
+                # Blend: 70% composite_score + 30% ensemble_score
+                for item in ranked:
+                    blended = round(
+                        0.70 * item.get("composite_score", 0.0)
+                        + 0.30 * item.get("ensemble_score", 0.0),
+                        4,
+                    )
+                    item["blended_score"] = blended
+                ranked.sort(key=lambda x: x.get("blended_score", 0.0), reverse=True)
+                scored = ranked
+                ranking_method = "model_driven"
+            except Exception as exc:
+                logger.warning("GrowthOptimizationOrchestrator: model ranking failed: %s", exc)
+
         # Budget feasibility filter
         daily_limit = int((budget_constraint or {}).get("daily_limit", 999))
         remaining = int((budget_constraint or {}).get("remaining", daily_limit))
         feasible = scored[:remaining] if remaining < len(scored) else scored
 
-        total_score = sum(c.get("composite_score", 0.0) for c in feasible) or 1.0
+        score_key = "blended_score" if ranking_method == "model_driven" else "composite_score"
+        total_score = sum(c.get(score_key, 0.0) for c in feasible) or 1.0
 
         allocation_plan = [
             {
                 "video_id": c.get("video_id"),
                 "variant_id": c.get("variant_id"),
                 "composite_score": c.get("composite_score"),
-                "budget_share": round(c.get("composite_score", 0.0) / total_score, 4),
+                "blended_score": c.get(score_key),
+                "budget_share": round(c.get(score_key, 0.0) / total_score, 4),
                 "recommended_publishes": max(
                     1,
-                    round(remaining * c.get("composite_score", 0.0) / total_score),
+                    round(remaining * c.get(score_key, 0.0) / total_score),
                 ),
             }
             for c in feasible
         ]
+
+        # --- Joint funnel summary ---
+        funnel_summary = self._build_funnel_summary(
+            candidates=candidates,
+            feasible=feasible,
+            budget_constraint=budget_constraint,
+            platform=platform,
+            goal=goal,
+        )
 
         return {
             "campaign_id": campaign_id,
@@ -145,6 +189,7 @@ class GrowthOptimizationOrchestrator:
             "market_code": market_code,
             "goal": goal,
             "objectives_used": effective_objectives,
+            "ranking_method": ranking_method,
             "ranked_candidates": scored,
             "budget_summary": {
                 "daily_limit": daily_limit,
@@ -154,11 +199,57 @@ class GrowthOptimizationOrchestrator:
             },
             "top_pick": feasible[0] if feasible else None,
             "allocation_plan": allocation_plan,
+            "funnel_summary": funnel_summary,
         }
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _build_funnel_summary(
+        self,
+        candidates: list[dict[str, Any]],
+        feasible: list[dict[str, Any]],
+        budget_constraint: dict[str, Any] | None,
+        platform: str | None,
+        goal: str | None,
+    ) -> dict[str, Any]:
+        """Build a joint creative × conversion × budget × platform funnel breakdown."""
+        if not candidates:
+            return {}
+
+        # Creative diversity: unique hook_patterns
+        hook_patterns = {c.get("hook_pattern") for c in candidates if c.get("hook_pattern")}
+        conversion_scores = [float(c.get("conversion_score", 0.0)) for c in candidates]
+        avg_conversion = round(sum(conversion_scores) / len(conversion_scores), 4)
+        top_conversion = round(max(conversion_scores), 4) if conversion_scores else 0.0
+
+        # Budget utilization
+        daily_limit = float((budget_constraint or {}).get("daily_limit", len(candidates)))
+        budget_utilization = round(len(feasible) / max(daily_limit, 1), 4)
+
+        # Platform fit (proxy: count candidates with platform-specific metadata)
+        platform_fit_count = sum(
+            1 for c in candidates
+            if c.get("platform") == platform or not c.get("platform")
+        )
+
+        return {
+            "creative_diversity": len(hook_patterns),
+            "avg_conversion_score": avg_conversion,
+            "top_conversion_score": top_conversion,
+            "budget_utilization": budget_utilization,
+            "feasible_candidates": len(feasible),
+            "total_candidates": len(candidates),
+            "platform_fit_count": platform_fit_count,
+            "goal": goal,
+            "funnel_stages": {
+                "creative": len(candidates),
+                "conversion_eligible": sum(1 for c in candidates if float(c.get("conversion_score", 0.0)) >= 0.5),
+                "budget_feasible": len(feasible),
+                "platform_ready": platform_fit_count,
+            },
+        }
 
     @staticmethod
     def _enrich_with_budget_score(

@@ -247,3 +247,242 @@ class ComplianceRiskPolicy:
             preflight_errors=preflight_errors,
         )
 
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.5 (v16): Region x content_type compliance matrix
+# ---------------------------------------------------------------------------
+
+# Region codes and their compliance restrictions
+# Format: region_code → {content_type → restriction_level}
+# restriction_level: "allowed" | "review" | "blocked"
+_REGION_CONTENT_MATRIX: dict[str, dict[str, str]] = {
+    # Vietnam
+    "VN": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # Australia
+    "AU": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "allowed",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # European Union
+    "EU": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "blocked",  # GDPR / health claim strictness
+        "crypto": "review",
+        "data_collection": "review",  # GDPR
+    },
+    # United States
+    "US": {
+        "default": "allowed",
+        "gambling": "review",
+        "alcohol": "review",
+        "tobacco": "review",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+    # China
+    "CN": {
+        "default": "review",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "blocked",
+        "financial_advice": "blocked",
+        "health_claims": "review",
+        "crypto": "blocked",
+        "vpn": "blocked",
+    },
+    # Singapore
+    "SG": {
+        "default": "allowed",
+        "gambling": "blocked",
+        "alcohol": "review",
+        "tobacco": "blocked",
+        "adult": "blocked",
+        "political": "review",
+        "financial_advice": "review",
+        "health_claims": "review",
+        "crypto": "review",
+    },
+}
+
+# Content type keywords for auto-detection
+_CONTENT_TYPE_KEYWORDS: dict[str, list[str]] = {
+    "gambling": ["casino", "bet", "lottery", "jackpot", "poker", "wager"],
+    "alcohol": ["beer", "wine", "spirits", "alcohol", "liquor", "whisky"],
+    "tobacco": ["cigarette", "cigar", "tobacco", "nicotine", "vape", "e-cigarette"],
+    "adult": ["adult", "explicit", "nsfw", "18+"],
+    "political": ["vote", "election", "candidate", "political party", "campaign"],
+    "financial_advice": ["invest", "stock", "forex", "trading", "financial advice", "returns"],
+    "health_claims": ["cure", "treat", "diagnose", "heal", "medical", "clinically proven"],
+    "crypto": ["bitcoin", "crypto", "nft", "blockchain", "defi", "token"],
+}
+
+
+class RegionContentComplianceMatrix:
+    """Evaluate content against a region x content_type compliance matrix.
+
+    Usage::
+
+        matrix = RegionContentComplianceMatrix()
+        result = matrix.evaluate(
+            content={"caption": "Buy bitcoin now!"},
+            region_code="VN",
+            content_types=["crypto"],  # explicit types, or auto-detected
+        )
+        # result["status"]  → "review" | "blocked" | "allowed"
+        # result["violations"]  → list of dicts with type, restriction, region
+    """
+
+    def evaluate(
+        self,
+        content: dict[str, Any],
+        region_code: str,
+        platform: str | None = None,
+        content_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate content against the region's compliance rules.
+
+        Args:
+            content: Content dict (caption, title, etc.).
+            region_code: ISO region/country code (e.g. "VN", "EU", "US").
+            platform: Optional platform for combined platform+region checks.
+            content_types: Explicit content types to check.  When None,
+                types are auto-detected from the text.
+
+        Returns:
+            Dict with:
+            - ``status``: "allowed" | "review" | "blocked"
+            - ``violations``: list of {type, restriction, region}
+            - ``detected_types``: auto-detected content types
+            - ``region_code``, ``platform``
+        """
+        region_rules = _REGION_CONTENT_MATRIX.get(region_code.upper(), {})
+        if not region_rules:
+            # Unknown region: allow but flag for review
+            return {
+                "status": "review",
+                "violations": [{"type": "unknown_region", "restriction": "review", "region": region_code}],
+                "detected_types": [],
+                "region_code": region_code,
+                "platform": platform,
+            }
+
+        # Auto-detect content types from text when not provided
+        if content_types is None:
+            content_types = self._detect_content_types(content)
+
+        violations: list[dict[str, Any]] = []
+        statuses: list[str] = []
+
+        for ctype in content_types:
+            restriction = region_rules.get(ctype, region_rules.get("default", "allowed"))
+            if restriction != "allowed":
+                violations.append({
+                    "type": ctype,
+                    "restriction": restriction,
+                    "region": region_code,
+                })
+            statuses.append(restriction)
+
+        # Combine platform-level compliance when provided
+        if platform:
+            platform_violation = self._check_platform_region_combo(
+                region_code, platform, content_types
+            )
+            if platform_violation:
+                violations.extend(platform_violation)
+                statuses.extend([v["restriction"] for v in platform_violation])
+
+        # Overall status: most restrictive wins
+        if "blocked" in statuses:
+            overall = "blocked"
+        elif "review" in statuses:
+            overall = "review"
+        else:
+            overall = "allowed"
+
+        return {
+            "status": overall,
+            "violations": violations,
+            "detected_types": content_types,
+            "region_code": region_code,
+            "platform": platform,
+        }
+
+    @staticmethod
+    def _detect_content_types(content: dict[str, Any]) -> list[str]:
+        """Auto-detect content types from the content text."""
+        text = " ".join([
+            str(content.get("caption") or ""),
+            str(content.get("title") or ""),
+            str(content.get("description") or ""),
+        ]).lower()
+
+        detected: list[str] = []
+        for ctype, keywords in _CONTENT_TYPE_KEYWORDS.items():
+            if any(kw in text for kw in keywords):
+                detected.append(ctype)
+        return detected
+
+    @staticmethod
+    def _check_platform_region_combo(
+        region_code: str,
+        platform: str,
+        content_types: list[str],
+    ) -> list[dict[str, Any]]:
+        """Check for platform-specific regional restrictions."""
+        violations: list[dict[str, Any]] = []
+        plat = platform.lower()
+
+        # TikTok has stricter rules in certain regions
+        if plat == "tiktok" and region_code.upper() in ("VN", "CN", "SG"):
+            for ctype in content_types:
+                if ctype in ("financial_advice", "crypto"):
+                    violations.append({
+                        "type": ctype,
+                        "restriction": "blocked",
+                        "region": region_code,
+                        "platform": platform,
+                        "note": f"TikTok blocks {ctype} content in {region_code}",
+                    })
+
+        # YouTube applies COPPA for US
+        if plat in ("youtube", "shorts") and region_code.upper() == "US":
+            if "adult" in content_types:
+                violations.append({
+                    "type": "adult",
+                    "restriction": "blocked",
+                    "region": "US",
+                    "platform": platform,
+                    "note": "YouTube/US COPPA blocks adult content",
+                })
+
+        return violations
