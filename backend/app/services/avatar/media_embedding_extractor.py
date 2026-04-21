@@ -180,7 +180,7 @@ class MediaEmbeddingExtractor:
             pass
 
         # Final fallback: SHA-256 stub
-        quality = min(0.4, 0.5)
+        quality = 0.4
         self._last_extraction = {
             "extraction_source": "stub",
             "quality_score_cap": 0.4,

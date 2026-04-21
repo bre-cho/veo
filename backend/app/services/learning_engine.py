@@ -205,7 +205,8 @@ class PerformanceLearningEngine:
         persona_id: str | None = None,
         campaign_id: str | None = None,
         funnel_stage: str | None = None,
-    ) -> dict[str, Any]:
+        include_metadata: bool = False,
+    ) -> float | dict[str, Any]:
         """Compute adaptive score = base + performance_boost for a template/hook combo.
 
         This is the main scoring primitive for "self-learning" content selection:
@@ -230,12 +231,13 @@ class PerformanceLearningEngine:
                 tf_records = hp_records
 
         if len(tf_records) < _BOOST_MIN_RECORDS:
-            return {
+            payload = {
                 "score": _ADAPTIVE_BASE_SCORE,
                 "confidence": 0.0,
                 "sample_count": len(tf_records),
                 "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
             }
+            return payload if include_metadata else float(payload["score"])
 
         pairs = [
             (float(r["conversion_score"]), _time_weight(float(r.get("recorded_at") or time.time())))
@@ -243,23 +245,25 @@ class PerformanceLearningEngine:
         ]
         total_weight = sum(w for _, w in pairs)
         if total_weight < 1e-9:
-            return {
+            payload = {
                 "score": _ADAPTIVE_BASE_SCORE,
                 "confidence": 0.0,
                 "sample_count": len(tf_records),
                 "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
             }
+            return payload if include_metadata else float(payload["score"])
         weighted_avg = sum(s * w for s, w in pairs) / total_weight
         performance_boost = (weighted_avg - _ADAPTIVE_BASE_SCORE) * _MAX_PERFORMANCE_BOOST / 0.5
         result = _ADAPTIVE_BASE_SCORE + performance_boost
         sample_count = len(tf_records)
         confidence = min(1.0, sample_count / 10.0)
-        return {
+        payload = {
             "score": round(min(1.0, max(0.0, result)), 3),
             "confidence": round(confidence, 3),
             "sample_count": sample_count,
             "segment_key": f"{platform or '*'}|{market_code or '*'}|{persona_id or '*'}|{campaign_id or '*'}|{funnel_stage or '*'}",
         }
+        return payload if include_metadata else float(payload["score"])
 
     def record_outcome(
         self,
