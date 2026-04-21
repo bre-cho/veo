@@ -322,6 +322,29 @@ class StoryboardEngine:
         avatar_id: str | None = None,
         db: Any | None = None,
     ) -> StoryboardResponse:
+        """Generate a storyboard from a channel-preview payload dict.
+
+        Extracts ``script_text`` from ``scenes`` or top-level key and delegates
+        to ``generate_from_script()``.
+
+        Args:
+            preview_payload: Dict produced by the channel preview flow.  Expected
+                keys: ``scenes`` (list), ``script_text``, ``conversion_mode``,
+                ``content_goal``, ``target_platform``.
+            conversion_mode: Override conversion mode (falls back to payload value).
+            content_goal: Override content goal (falls back to payload value).
+            platform: Override platform (falls back to ``target_platform`` in payload).
+            learning_store: Optional learning engine for outcome-driven pacing boosts
+                and winner-pattern injection.
+            episode_memory: Winning scene sequence and open loops from the previous
+                episode; used for continuity-aware pacing overrides.
+            use_winning_graph: When True, seed scene goals from the top-performing
+                winning scene graph for this platform.
+            include_asset_plan: When True (and ``avatar_id`` is provided), attach a
+                per-scene asset checklist to the response summary.
+            avatar_id: Avatar identifier used by the asset planner and render QA.
+            db: SQLAlchemy session forwarded to asset planner and scene graph store.
+        """
         scenes = preview_payload.get("scenes") or []
         text = "\n\n".join((scene.get("script_text") or "").strip() for scene in scenes if scene.get("script_text"))
         if not text:
