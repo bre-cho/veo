@@ -8,6 +8,9 @@ Scoring rubric (additive, higher is better):
         reveal_escalation or story_escalation
   +0.5  winner_dna hook_core is present (bias toward known winners)
   +W    template.metadata["default_template_weight"] (tie-breaking priority)
+  +M    memory_bonus = PatternMemory winner score / 100  (live learning signal)
+        Only applied when a db session is provided and the template has a
+        template_winner record in the same market+goal niche.
 
 The score starts at float("-inf") so that even when no signal fires the
 registry-defined default_template_weight still distinguishes templates and
@@ -15,10 +18,13 @@ the fallback (story_chain_retention) is only used when the registry is empty.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.schemas.template_system import TemplateSelectionResult
 from app.services.template.template_registry import TEMPLATE_REGISTRY
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 _FALLBACK_TEMPLATE_ID = "story_chain_retention"
 
@@ -61,11 +67,21 @@ class TemplateSelector:
         request: dict[str, Any],
         memory_bundle: dict[str, Any],
         continuity: dict[str, Any],
+        db: "Session | None" = None,
     ) -> TemplateSelectionResult:
         topic_class = self._classify_topic(request)
         content_goal = request.get("content_goal")
         market_code = request.get("market_code")
         episode_role = continuity.get("episode_role")
+
+        # Build memory bonus map: template_id → bonus score from PatternMemory
+        memory_bonus_map: dict[str, float] = {}
+        if db is not None:
+            memory_bonus_map = self._build_memory_bonus(
+                db,
+                market_code=market_code,
+                content_goal=content_goal,
+            )
 
         best_score = float("-inf")
         best_template_id = _FALLBACK_TEMPLATE_ID
@@ -103,6 +119,9 @@ class TemplateSelector:
             # tie-breaking: add the per-template default weight
             score += float(template.metadata.get("default_template_weight", 0.0))
 
+            # learning signal: memory bonus from past winner records
+            score += memory_bonus_map.get(template_id, 0.0)
+
             if score > best_score:
                 best_score = score
                 best_template_id = template_id
@@ -116,3 +135,45 @@ class TemplateSelector:
             reasons=best_reasons,
             template_payload=chosen.model_dump(),
         )
+
+    # ------------------------------------------------------------------
+    # Memory bonus helpers
+    # ------------------------------------------------------------------
+
+    def _build_memory_bonus(
+        self,
+        db: "Session",
+        *,
+        market_code: str | None,
+        content_goal: str | None,
+    ) -> dict[str, float]:
+        """Return a map of template_id → memory bonus score.
+
+        Reads recent ``template_winner`` records from PatternMemory and sums
+        their normalised scores (each winner record carries score in [0, 1],
+        so bonus = score / 100 is already in selector-comparable units).
+        Only the highest score per template_id is kept to avoid runaway
+        accumulation from many duplicate records.
+        """
+        try:
+            from app.services.pattern_library import PatternLibrary
+
+            library = PatternLibrary()
+            winners = library.list(
+                db,
+                pattern_type="template_winner",
+                market_code=market_code,
+                content_goal=content_goal,
+            )
+            bonus_map: dict[str, float] = {}
+            for record in winners:
+                tid = (record.payload or {}).get("template_id")
+                if not tid:
+                    continue
+                raw_score = record.score or 0.0
+                # score in PatternMemory is normalised [0,1]; convert to selector units
+                bonus = float(raw_score)
+                bonus_map[tid] = max(bonus_map.get(tid, 0.0), bonus)
+            return bonus_map
+        except Exception:
+            return {}

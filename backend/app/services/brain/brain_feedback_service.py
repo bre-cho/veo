@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.episode_memory import EpisodeMemory
 from app.schemas.patterns import PatternMemoryIn
 from app.services.pattern_library import PatternLibrary
+from app.services.template.template_scorecard import classify_template_tier, compute_template_score
 
 
 class BrainFeedbackService:
@@ -80,23 +81,96 @@ class BrainFeedbackService:
             ),
         )
 
-        # Record which template produced this winner (unconditional — any publish is a signal).
+        # --- Template scorecard + tier classification ---
+        raw_metrics: dict[str, Any] = payload.get("metrics") or {}
+        derived_score = compute_template_score(raw_metrics)
+        total_score = derived_score["total_score"]
+        tier = classify_template_tier(total_score)
+
+        # Determine pattern_type from tier
         selected_template_id = payload.get("selected_template_id")
+        if tier == "winner":
+            template_pattern_type = "template_winner"
+        elif tier == "reject":
+            template_pattern_type = "template_reject"
+        else:
+            template_pattern_type = "template_normal"
+
         if selected_template_id:
             self._pattern_library.save(
                 db,
                 PatternMemoryIn(
-                    pattern_type="template_winner",
+                    pattern_type=template_pattern_type,
                     market_code=payload.get("market_code"),
                     content_goal=payload.get("content_goal"),
                     source_id=payload.get("project_id"),
-                    score=score,
+                    score=total_score / 100.0,  # normalise to [0,1] for PatternMemory
                     payload={
                         "template_id": selected_template_id,
                         "template_family": payload.get("selected_template_family"),
                         "winner_dna_summary": winner_dna,
-                        "metrics": payload.get("metrics") or {},
+                        "metrics": raw_metrics,
+                        "derived_score": derived_score,
+                        "tier": tier,
                         "episode_role": (payload.get("continuity_context") or {}).get("episode_role"),
+                        "winning_conditions": {
+                            "hook_type": (payload.get("brain_plan") or {}).get("notes", {}).get("hook_type"),
+                            "scene_sequence": (payload.get("brain_plan") or {}).get("scene_strategy"),
+                            "cta_style": (payload.get("brain_plan") or {}).get("notes", {}).get("cta_style"),
+                        },
                     },
                 ),
             )
+
+        # --- Trigger evolution when a strong winner is found ---
+        if tier == "winner" and selected_template_id and db is not None:
+            try:
+                self._trigger_evolution(
+                    db,
+                    winner_payload=payload,
+                    total_score=total_score,
+                )
+            except Exception:
+                pass  # evolution is non-fatal
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _trigger_evolution(
+        self,
+        db: Session,
+        *,
+        winner_payload: dict[str, Any],
+        total_score: float,
+    ) -> None:
+        """Fetch top winner templates from memory and evolve candidates."""
+        from app.services.template.template_evolution_engine import TemplateEvolutionEngine
+
+        market_code = winner_payload.get("market_code")
+        content_goal = winner_payload.get("content_goal")
+
+        # Retrieve top-2 winners for this niche to enable crossover
+        winners_raw = self._pattern_library.list(
+            db,
+            pattern_type="template_winner",
+            market_code=market_code,
+            content_goal=content_goal,
+        )[:2]
+
+        winner_templates = [w.payload for w in winners_raw if w.payload]
+        if not winner_templates:
+            return
+
+        # Crossover only when the score is exceptional (>= 90)
+        allow_crossover = total_score >= 90.0
+
+        engine = TemplateEvolutionEngine()
+        engine.evolve_from_winners(
+            db,
+            winner_templates=winner_templates,
+            market_code=market_code,
+            content_goal=content_goal,
+            source_id=winner_payload.get("project_id"),
+            allow_crossover=allow_crossover,
+        )
