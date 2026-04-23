@@ -30,7 +30,7 @@ class BrainFeedbackService:
         episode_index = project.get("episode_index")
         continuity_context = project.get("continuity_context") or {}
 
-        if not series_id or not episode_index:
+        if not series_id or episode_index is None:
             return
 
         row = EpisodeMemory(

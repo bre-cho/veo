@@ -265,18 +265,19 @@ class ExecutionBridgeService:
         if series_id:
             continuity = ctx.get("continuity_context") or {}
             unresolved = continuity.get("unresolved_loops") or []
-            episode_role = None
-            brain_plan = ctx.get("brain_plan") or {}
-            if isinstance(brain_plan, dict):
-                episode_role = brain_plan.get("episode_role")
+            episode_role = continuity.get("episode_role")
+            if not episode_role:
+                brain_plan = ctx.get("brain_plan") or {}
+                if isinstance(brain_plan, dict):
+                    episode_role = brain_plan.get("episode_role")
             if episode_role:
                 parts.append(f"Episode role: {episode_role}.")
             if unresolved:
                 parts.append(f"Series continuity: preserve unresolved loop about {unresolved[0]}.")
 
         winner_dna = ctx.get("winner_dna_summary") or {}
-        if isinstance(winner_dna, dict) and winner_dna.get("hook_pattern"):
-            parts.append(f"Winner DNA: {winner_dna['hook_pattern']}.")
+        if isinstance(winner_dna, dict) and winner_dna.get("hook_core"):
+            parts.append(f"Winner DNA: {winner_dna['hook_core']}.")
 
         if not parts:
             return prompt

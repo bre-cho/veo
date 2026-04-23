@@ -70,16 +70,22 @@ async def feedback_render(
     payload: BrainFeedbackPayload,
     db: Session = Depends(get_db),
 ):
-    """Manually trigger a render feedback write to Brain memory."""
+    """Manually trigger a render feedback write to Brain memory.
+
+    The caller should pass a full project-like payload via the BrainFeedbackPayload
+    fields; series_id / episode_index / continuity_context / brain_plan are read
+    from the reconstructed project dict.
+    """
     try:
+        project = {
+            "series_id": payload.metrics.get("series_id"),
+            "episode_index": payload.metrics.get("episode_index"),
+            "continuity_context": payload.metrics.get("continuity_context") or {},
+            "brain_plan": payload.metrics.get("brain_plan") or {},
+        }
         _feedback_service.record_render_outcome(
             db,
-            project={
-                "series_id": payload.project_id,  # caller should fill via project lookup
-                "episode_index": None,
-                "continuity_context": {},
-                "brain_plan": {},
-            },
+            project=project,
             render_job_id=payload.render_job_id or "",
             final_video_url=payload.final_video_url,
             status=payload.status or "completed",
