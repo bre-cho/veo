@@ -10,8 +10,18 @@ total_score        = 0.40 × retention + 0.30 × engagement + 0.30 × series_fol
 
 All input metrics are assumed to be floats in [0, 1].
 total_score is in [0, 1].
+
+fitness_score (tournament layer)
+---------------------------------
+0.25 × normalized_ctr
++ 0.35 × normalized_retention
++ 0.15 × normalized_watch_time
++ 0.15 × normalized_conversion
++ 0.10 × normalized_continuity_health
 """
 from __future__ import annotations
+
+from typing import Any
 
 from app.schemas.avatar_system import AvatarPerformanceScore
 
@@ -68,3 +78,71 @@ class AvatarScorecard:
             series_follow_score=round(series_follow_score, 4),
             total_score=round(total_score, 4),
         )
+
+    def compute_fitness_score(
+        self,
+        *,
+        metrics: dict[str, Any],
+        continuity_health: float = 0.5,
+    ) -> float:
+        """Compute a tournament-ready fitness score from publish metrics.
+
+        Fitness score formula (phase 1):
+            0.25 × ctr
+          + 0.35 × retention_30s
+          + 0.15 × avg_watch_ratio
+          + 0.15 × conversion_rate
+          + 0.10 × continuity_health
+
+        All inputs are floats in [0, 1].
+        """
+        ctr = float(metrics.get("ctr", 0.0))
+        retention = float(metrics.get("retention_30s", 0.0))
+        watch_time = float(metrics.get("avg_watch_ratio", 0.0))
+        conversion = float(metrics.get("conversion_rate", 0.0))
+
+        fitness = (
+            0.25 * ctr
+            + 0.35 * retention
+            + 0.15 * watch_time
+            + 0.15 * conversion
+            + 0.10 * max(0.0, min(1.0, continuity_health))
+        )
+        return round(fitness, 4)
+
+    def build_avatar_scorecard(
+        self,
+        *,
+        avatar_id: str,
+        market_code: str | None,
+        content_goal: str | None,
+        topic_class: str | None,
+        metrics: dict[str, Any],
+        continuity_health: float = 0.5,
+    ) -> dict[str, Any]:
+        """Build a full tournament-ready scorecard payload.
+
+        Combines the performance score with predicted tournament signals.
+        """
+        perf = self.compute(
+            avatar_id=avatar_id,
+            market_code=market_code,
+            content_goal=content_goal,
+            topic_class=topic_class,
+            metrics=metrics,
+        )
+        fitness = self.compute_fitness_score(
+            metrics=metrics,
+            continuity_health=continuity_health,
+        )
+        return {
+            "avatar_id": avatar_id,
+            "predicted_score": perf.total_score,
+            "predicted_ctr": float(metrics.get("ctr", 0.0)),
+            "predicted_retention": perf.retention_score,
+            "predicted_conversion": float(metrics.get("conversion_rate", 0.0)),
+            "brand_fit_score": perf.engagement_score,
+            "continuity_score": continuity_health,
+            "fitness_score": fitness,
+            "pair_fit_score": None,
+        }

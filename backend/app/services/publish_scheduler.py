@@ -248,6 +248,9 @@ class PublishScheduler:
             # Brain Layer feedback: record publish outcome to PatternMemory
             self._record_brain_publish_feedback(job, db=db)
 
+            # Avatar Governance: evaluate outcome and apply state transitions
+            self._record_avatar_governance_feedback(job, db=db)
+
             return job
         except Exception as exc:
             job.status = "failed"
@@ -328,6 +331,30 @@ class PublishScheduler:
             )
         except Exception:
             pass  # Non-fatal – brain write-back must never block publish flow
+
+    @staticmethod
+    def _record_avatar_governance_feedback(job: PublishJob, db: "Session | None" = None) -> None:
+        """Evaluate publish outcome against avatar governance rules."""
+        try:
+            from app.services.avatar.avatar_governance_engine import AvatarGovernanceEngine
+            payload: dict[str, Any] = job.payload or {}
+            metadata: dict[str, Any] = payload.get("metadata") or {}
+            avatar_id: str | None = metadata.get("avatar_id")
+            if not avatar_id or db is None:
+                return
+            governance = AvatarGovernanceEngine()
+            metrics = metadata.get("metrics") or {}
+            governance.evaluate_avatar_outcome(
+                db,
+                avatar_id=avatar_id,
+                metrics=metrics,
+                context={
+                    "project_id": payload.get("project_id") or metadata.get("project_id"),
+                    "topic_class": metadata.get("topic_class"),
+                },
+            )
+        except Exception:
+            pass  # Non-fatal – governance must never block publish flow
 
     def retry_failed_job(self, db: Session, job_id: str) -> PublishJob | None:
         previous = self.get_job(db, job_id)

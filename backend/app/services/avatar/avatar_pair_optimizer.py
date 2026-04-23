@@ -11,6 +11,12 @@ Pair key format
 The equal weighting is intentional: neither avatar persona nor template
 structure should dominate the other.  Tune the weights here as your data
 matures.
+
+Extended tracking (tournament layer)
+--------------------------------------
+The optimizer also tracks avatar × template_family, avatar × topic_class,
+and avatar × platform affinities.  These are used by the tournament engine
+to compute pair fit bonuses during candidate scoring.
 """
 from __future__ import annotations
 
@@ -61,3 +67,70 @@ class AvatarPairOptimizer:
         and ``pair_score``.
         """
         return sorted(candidates, key=lambda x: x.get("pair_score", 0.0), reverse=True)
+
+    # ── Extended tracking helpers ─────────────────────────────────────────────
+
+    def build_pair_tracking_payload(
+        self,
+        *,
+        avatar_id: str,
+        template_id: str | None,
+        template_family: str | None,
+        topic_class: str | None,
+        platform: str | None,
+        market_code: str | None,
+        avatar_score: float,
+        template_score: float,
+        metrics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build the full pair-tracking payload stored in PatternMemory.
+
+        Returns a dict ready to be stored as the ``payload`` field in a
+        PatternMemoryIn record with pattern_type="avatar_pair_fit".
+        """
+        pair_score = self.compute_pair_score(
+            avatar_score=avatar_score,
+            template_score=template_score,
+        )
+        return {
+            "pair_key": self.pair_key(
+                avatar_id=avatar_id,
+                template_id=template_id,
+                topic_class=topic_class,
+                market_code=market_code,
+            ),
+            "avatar_id": avatar_id,
+            "template_id": template_id,
+            "template_family": template_family,
+            "topic_class": topic_class,
+            "platform": platform,
+            "market_code": market_code,
+            "pair_score": pair_score,
+            "pair_confidence": 1.0,
+            "pair_history_count": 1,
+            "metrics": metrics or {},
+        }
+
+    def get_pair_bonus(
+        self,
+        *,
+        pair_payload: dict[str, Any],
+    ) -> float:
+        """Extract the pair_score (bonus) from a stored pair-tracking payload."""
+        return float((pair_payload or {}).get("pair_score", 0.0))
+
+    def get_pair_confidence(
+        self,
+        *,
+        pair_payload: dict[str, Any],
+    ) -> float:
+        """Extract confidence from a stored pair-tracking payload."""
+        return float((pair_payload or {}).get("pair_confidence", 1.0))
+
+    def get_pair_history_count(
+        self,
+        *,
+        pair_payload: dict[str, Any],
+    ) -> int:
+        """Extract the history count from a stored pair-tracking payload."""
+        return int((pair_payload or {}).get("pair_history_count", 0))

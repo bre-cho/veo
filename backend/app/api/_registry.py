@@ -58,6 +58,10 @@ from app.api.template_debug import router as template_debug_router
 # ── Avatar debug ───────────────────────────────────────────────────────────
 from app.api.avatar_debug import router as avatar_debug_router
 
+# ── Avatar Tournament + Governance ────────────────────────────────────────
+from app.api.avatar_tournament import router as avatar_tournament_router
+from app.api.avatar_governance import router as avatar_governance_router
+
 # ── Audio ─────────────────────────────────────────────────────────────────
 from app.api.audio import router as audio_router
 
@@ -148,6 +152,11 @@ _TEMPLATE_ROUTERS = [
     avatar_debug_router,
 ]
 
+_AVATAR_TOURNAMENT_ROUTERS = [
+    avatar_tournament_router,
+    avatar_governance_router,
+]
+
 _AUDIO_ROUTERS = [
     audio_router,
 ]
@@ -200,6 +209,7 @@ def register_all_routers(app: FastAPI) -> None:
         _TEMPLATE_ROUTERS,
         _AUDIO_ROUTERS,
         _AVATAR_ROUTERS,
+        _AVATAR_TOURNAMENT_ROUTERS,
         _CREATIVE_ROUTERS,
         _PHASE_10_12_ROUTERS,
     ):

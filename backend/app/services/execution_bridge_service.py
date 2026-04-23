@@ -42,6 +42,8 @@ class ExecutionBridgeService:
         avatar_identity: dict[str, Any] | None = None,
         avatar_voice: dict[str, Any] | None = None,
         avatar_continuity: dict[str, Any] | None = None,
+        # Avatar Tournament fields
+        avatar_selection_debug: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -99,6 +101,8 @@ class ExecutionBridgeService:
             "avatar_identity": avatar_identity or {},
             "avatar_voice": avatar_voice or {},
             "avatar_continuity": avatar_continuity or {},
+            # Avatar Tournament fields
+            "avatar_selection_debug": avatar_selection_debug or {},
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -119,6 +123,7 @@ class ExecutionBridgeService:
             avatar_identity=project.get("avatar_identity"),
             avatar_voice=project.get("avatar_voice"),
             avatar_continuity=project.get("avatar_continuity"),
+            avatar_selection_debug=project.get("avatar_selection_debug"),
         )
 
     def apply_to_preview_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -377,6 +382,8 @@ class ExecutionBridgeService:
             "avatar_identity": ctx.get("avatar_identity") or {},
             "avatar_voice": ctx.get("avatar_voice") or {},
             "avatar_continuity": ctx.get("avatar_continuity") or {},
+            # Avatar Tournament fields
+            "avatar_selection_debug": ctx.get("avatar_selection_debug") or {},
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
@@ -474,3 +481,9 @@ class ExecutionBridgeService:
         avatar_continuity = ctx.get("avatar_continuity") or {}
         if avatar_continuity:
             metadata["avatar_continuity"] = avatar_continuity
+
+        # Avatar Tournament fields
+        avatar_selection_debug = ctx.get("avatar_selection_debug") or {}
+        if avatar_selection_debug:
+            metadata["avatar_selection_reason"] = avatar_selection_debug.get("ranking_summary", [])[:1]
+            metadata["avatar_policy_state"] = avatar_selection_debug.get("selection_mode")

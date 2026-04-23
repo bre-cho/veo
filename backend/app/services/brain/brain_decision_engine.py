@@ -102,6 +102,7 @@ class BrainDecisionEngine:
                 "avatar_identity": request.get("avatar_identity") or {},
                 "avatar_voice": request.get("avatar_voice") or {},
                 "avatar_memory": memory_bundle.get("avatar_memory") or {},
+                "avatar_selection_debug": request.get("avatar_selection_debug") or {},
             },
         )
 
