@@ -1,0 +1,1062 @@
+*** Begin Patch
+*** Add File: backend/app/schemas/brain_intake.py
++from __future__ import annotations
++
++from typing import Literal
++
++from pydantic import BaseModel, Field, field_validator
++
++
++BrainSourceType = Literal["topic", "script_upload"]
++AspectRatio = Literal["9:16", "16:9", "1:1"]
++TargetPlatform = Literal["shorts", "tiktok", "reels", "youtube"]
++
++
++class BrainIntakeRequest(BaseModel):
++    source_type: BrainSourceType
++    topic: str | None = None
++    script_text: str | None = None
++    filename: str | None = None
++    aspect_ratio: AspectRatio = "9:16"
++    target_platform: TargetPlatform = "shorts"
++    style_preset: str | None = None
++    avatar_id: str | None = None
++    market_code: str | None = None
++    content_goal: str | None = None
++    conversion_mode: str | None = None
++    series_id: str | None = None
++    episode_index: int | None = Field(default=None, ge=1)
++
++    @field_validator("topic")
++    @classmethod
++    def validate_topic(cls, value: str | None) -> str | None:
++        return value.strip() if isinstance(value, str) else value
++
++    @field_validator("script_text")
++    @classmethod
++    def validate_script_text(cls, value: str | None) -> str | None:
++        return value.strip() if isinstance(value, str) else value
+*** Add File: backend/app/schemas/brain_manifest.py
++from __future__ import annotations
++
++from typing import Any
++
++from pydantic import BaseModel, Field
++
++
++class WinnerDNASummary(BaseModel):
++    pattern_id: str | None = None
++    pattern_type: str | None = None
++    hook_core: str | None = None
++    title_pattern: str | None = None
++    thumbnail_logic: str | None = None
++    score: float | None = None
++    payload: dict[str, Any] = Field(default_factory=dict)
++
++
++class ContinuityContext(BaseModel):
++    series_id: str | None = None
++    episode_index: int | None = None
++    episode_role: str | None = None
++    unresolved_loops: list[str] = Field(default_factory=list)
++    resolved_loops: list[str] = Field(default_factory=list)
++    callback_targets: list[str] = Field(default_factory=list)
++    continuity_constraints: dict[str, Any] = Field(default_factory=dict)
++
++
++class BrainPlan(BaseModel):
++    selected_series_id: str | None = None
++    selected_episode_index: int | None = None
++    episode_role: str | None = None
++    winner_pattern_refs: list[str] = Field(default_factory=list)
++    open_loop_targets: list[str] = Field(default_factory=list)
++    callback_targets: list[str] = Field(default_factory=list)
++    scene_strategy: list[dict[str, Any]] = Field(default_factory=list)
++    pacing_strategy: dict[str, Any] = Field(default_factory=dict)
++    cta_strategy: dict[str, Any] = Field(default_factory=dict)
++    notes: dict[str, Any] = Field(default_factory=dict)
++
++
++class BrainFeedbackPayload(BaseModel):
++    project_id: str | None = None
++    render_job_id: str | None = None
++    publish_job_id: str | None = None
++    platform: str | None = None
++    status: str | None = None
++    final_video_url: str | None = None
++    title: str | None = None
++    description: str | None = None
++    thumbnail_url: str | None = None
++    metrics: dict[str, Any] = Field(default_factory=dict)
+*** Add File: backend/app/services/brain/series_continuity_router.py
++from __future__ import annotations
++
++from typing import Any
++
++
++class SeriesContinuityRouter:
++    def resolve(
++        self,
++        *,
++        series_id: str | None,
++        episode_index: int | None,
++        latest_episode_memory: dict[str, Any] | None,
++        source_type: str,
++    ) -> dict[str, Any]:
++        latest_episode_memory = latest_episode_memory or {}
++
++        resolved_series_id = (
++            series_id
++            or latest_episode_memory.get("series_id")
++            or "default_series"
++        )
++
++        resolved_episode_index = (
++            episode_index
++            or latest_episode_memory.get("episode_index")
++            or 1
++        )
++
++        if resolved_episode_index <= 1:
++            episode_role = "opener"
++        elif resolved_episode_index == 2:
++            episode_role = "escalation"
++        else:
++            episode_role = "continuation"
++
++        return {
++            "series_id": resolved_series_id,
++            "episode_index": resolved_episode_index,
++            "episode_role": episode_role,
++            "unresolved_loops": latest_episode_memory.get("open_loops") or [],
++            "resolved_loops": latest_episode_memory.get("resolved_loops") or [],
++            "callback_targets": latest_episode_memory.get("character_callbacks") or [],
++        }
+*** Add File: backend/app/services/brain/brain_memory_service.py
++from __future__ import annotations
++
++from typing import Any
++
++from sqlalchemy.orm import Session
++
++from app.models.episode_memory import EpisodeMemory
++from app.services.pattern_library import PatternLibrary
++
++
++class BrainMemoryService:
++    def __init__(self) -> None:
++        self._pattern_library = PatternLibrary()
++
++    def recall(
++        self,
++        db: Session | None,
++        *,
++        market_code: str | None,
++        content_goal: str | None,
++        series_id: str | None,
++    ) -> dict[str, Any]:
++        winner_patterns: list[dict[str, Any]] = []
++        latest_episode_memory: dict[str, Any] | None = None
++
++        if db is not None:
++            rows = self._pattern_library.list_top_patterns(
++                db,
++                market_code=market_code,
++                content_goal=content_goal,
++                limit=5,
++                pattern_types=["winner_dna", "hook_pattern", "scene_sequence_pattern"],
++            )
++            winner_patterns = [
++                {
++                    "id": row.id,
++                    "pattern_type": row.pattern_type,
++                    "market_code": row.market_code,
++                    "content_goal": row.content_goal,
++                    "score": row.score,
++                    "payload": row.payload or {},
++                }
++                for row in rows
++            ]
++
++            if series_id:
++                latest = (
++                    db.query(EpisodeMemory)
++                    .filter(EpisodeMemory.series_id == series_id)
++                    .order_by(EpisodeMemory.episode_index.desc(), EpisodeMemory.created_at.desc())
++                    .first()
++                )
++                if latest is not None:
++                    latest_episode_memory = {
++                        "series_id": latest.series_id,
++                        "episode_index": latest.episode_index,
++                        "open_loops": latest.open_loops or [],
++                        "resolved_loops": latest.resolved_loops or [],
++                        "winning_scene_sequence": latest.winning_scene_sequence or [],
++                        "series_arc": latest.series_arc or {},
++                        "character_callbacks": latest.character_callbacks or [],
++                    }
++
++        top = winner_patterns[0] if winner_patterns else None
++        winner_dna_summary = {
++            "pattern_id": (top or {}).get("id"),
++            "pattern_type": (top or {}).get("pattern_type"),
++            "score": (top or {}).get("score"),
++            "payload": (top or {}).get("payload") or {},
++            "hook_core": ((top or {}).get("payload") or {}).get("hook_core"),
++            "title_pattern": ((top or {}).get("payload") or {}).get("title_pattern"),
++            "thumbnail_logic": ((top or {}).get("payload") or {}).get("thumbnail_logic"),
++        }
++
++        return {
++            "winner_patterns": winner_patterns,
++            "winner_dna_summary": winner_dna_summary,
++            "latest_episode_memory": latest_episode_memory,
++            "memory_refs": {
++                "series_id": series_id,
++                "winner_pattern_ids": [item["id"] for item in winner_patterns if item.get("id")],
++            },
++        }
+*** Add File: backend/app/services/brain/brain_decision_engine.py
++from __future__ import annotations
++
++from typing import Any
++
++from app.schemas.brain_manifest import BrainPlan, ContinuityContext
++
++
++class BrainDecisionEngine:
++    def build_plan(
++        self,
++        *,
++        request: dict[str, Any],
++        memory_bundle: dict[str, Any],
++        continuity: dict[str, Any],
++    ) -> tuple[BrainPlan, ContinuityContext]:
++        winner_patterns = memory_bundle.get("winner_patterns") or []
++        top_pattern = winner_patterns[0] if winner_patterns else None
++        selected_series_id = continuity.get("series_id")
++        selected_episode_index = continuity.get("episode_index")
++        episode_role = continuity.get("episode_role")
++
++        open_loop_targets = list(continuity.get("unresolved_loops") or [])[:3]
++        callback_targets = list(continuity.get("callback_targets") or [])[:3]
++
++        scene_strategy = [
++            {
++                "scene_index": 1,
++                "scene_goal": "hook",
++                "series_role": episode_role,
++                "winner_pattern_ref": (top_pattern or {}).get("id"),
++            },
++            {
++                "scene_index": 2,
++                "scene_goal": "tension",
++                "series_role": episode_role,
++                "winner_pattern_ref": (top_pattern or {}).get("id"),
++            },
++            {
++                "scene_index": 3,
++                "scene_goal": "reveal",
++                "series_role": episode_role,
++                "winner_pattern_ref": (top_pattern or {}).get("id"),
++            },
++            {
++                "scene_index": 4,
++                "scene_goal": "cta",
++                "series_role": episode_role,
++                "winner_pattern_ref": (top_pattern or {}).get("id"),
++            },
++        ]
++
++        plan = BrainPlan(
++            selected_series_id=selected_series_id,
++            selected_episode_index=selected_episode_index,
++            episode_role=episode_role,
++            winner_pattern_refs=[p["id"] for p in winner_patterns if p.get("id")],
++            open_loop_targets=open_loop_targets,
++            callback_targets=callback_targets,
++            scene_strategy=scene_strategy,
++            pacing_strategy={"mode": "winner_biased"},
++            cta_strategy={"mode": request.get("conversion_mode") or "soft_series_binge"},
++            notes={
++                "source_type": request.get("source_type"),
++                "market_code": request.get("market_code"),
++                "content_goal": request.get("content_goal"),
++            },
++        )
++
++        continuity_context = ContinuityContext(
++            series_id=selected_series_id,
++            episode_index=selected_episode_index,
++            episode_role=episode_role,
++            unresolved_loops=open_loop_targets,
++            resolved_loops=list(continuity.get("resolved_loops") or []),
++            callback_targets=callback_targets,
++            continuity_constraints={
++                "preserve_avatar_identity": True,
++                "preserve_series_tone": True,
++            },
++        )
++
++        return plan, continuity_context
+*** Add File: backend/app/services/brain/brain_manifest_builder.py
++from __future__ import annotations
++
++from typing import Any
++
++from app.services.execution_bridge_service import ExecutionBridgeService
++from app.services.script_ingestion import (
++    build_subtitle_segments_from_scenes,
++    normalize_script_text,
++    split_script_into_scenes,
++)
++from app.services.storyboard_engine import StoryboardEngine
++
++
++class BrainManifestBuilder:
++    def __init__(self) -> None:
++        self._execution_bridge = ExecutionBridgeService()
++        self._storyboard_engine = StoryboardEngine()
++
++    def _topic_to_script(self, topic: str, plan: dict[str, Any]) -> str:
++        topic = (topic or "").strip()
++        role = plan.get("episode_role") or "continuation"
++        return "\n".join(
++            [
++                f"Hook: {topic}",
++                f"Escalation: explain why this matters now in a {role} episode.",
++                "Reveal: connect this to the hidden pattern behind the topic.",
++                "CTA: tease the next unresolved secret in the series.",
++            ]
++        ).strip()
++
++    def build_preview_payload(
++        self,
++        *,
++        request: dict[str, Any],
++        memory_bundle: dict[str, Any],
++        brain_plan: dict[str, Any],
++        continuity_context: dict[str, Any],
++    ) -> dict[str, Any]:
++        source_type = request["source_type"]
++        script_text = request.get("script_text")
++
++        if source_type == "topic":
++            script_text = self._topic_to_script(request.get("topic") or "", brain_plan)
++
++        normalized = normalize_script_text(script_text or "")
++        if not normalized:
++            raise ValueError("Brain layer could not build a normalized script")
++
++        scenes = split_script_into_scenes(normalized, max_scenes=12)
++        storyboard = self._storyboard_engine.generate_from_script(
++            script_text=normalized,
++            conversion_mode=request.get("conversion_mode"),
++            content_goal=request.get("content_goal"),
++            platform=request.get("target_platform"),
++            episode_memory={
++                "series_id": continuity_context.get("series_id"),
++                "episode_index": continuity_context.get("episode_index"),
++                "open_loops": continuity_context.get("unresolved_loops"),
++                "resolved_loops": continuity_context.get("resolved_loops"),
++            },
++        )
++
++        storyboard_scenes = {scene.scene_index: scene for scene in storyboard.scenes}
++        strategy_by_scene = {
++            int(item["scene_index"]): item
++            for item in brain_plan.get("scene_strategy") or []
++            if item.get("scene_index") is not None
++        }
++
++        enriched_scenes: list[dict[str, Any]] = []
++        for scene in scenes:
++            scene_index = int(scene.get("scene_index", 0))
++            beat = storyboard_scenes.get(scene_index)
++            strategy = strategy_by_scene.get(scene_index, {})
++
++            metadata = dict(scene.get("metadata") or {})
++            if beat:
++                metadata.update(
++                    {
++                        "scene_goal": beat.scene_goal,
++                        "pacing_weight": beat.pacing_weight,
++                        "shot_hint": beat.shot_hint,
++                        "cta_flag": beat.cta_flag,
++                    }
++                )
++            metadata.update(
++                {
++                    "series_role": strategy.get("series_role"),
++                    "winner_pattern_ref": strategy.get("winner_pattern_ref"),
++                    "open_loop_seed": (brain_plan.get("open_loop_targets") or [None])[0],
++                    "callback_to_previous_episode": (brain_plan.get("callback_targets") or [None])[0],
++                    "continuity_constraints": continuity_context.get("continuity_constraints") or {},
++                }
++            )
++
++            enriched = dict(scene)
++            enriched["metadata"] = metadata
++            if beat and beat.shot_hint:
++                enriched["shot_hint"] = beat.shot_hint
++            enriched_scenes.append(enriched)
++
++        ctx = self._execution_bridge.resolve_context(
++            None,
++            avatar_id=request.get("avatar_id"),
++            market_code=request.get("market_code"),
++            content_goal=request.get("content_goal"),
++            conversion_mode=request.get("conversion_mode"),
++            storyboard=storyboard.model_dump(),
++            winner_patterns=memory_bundle.get("winner_patterns") or [],
++            series_id=continuity_context.get("series_id"),
++            episode_index=continuity_context.get("episode_index"),
++            continuity_context=continuity_context,
++            winner_dna_summary=memory_bundle.get("winner_dna_summary"),
++            brain_plan=brain_plan,
++        )
++
++        bridged_scenes = [
++            self._execution_bridge.apply_to_project_scene(scene, ctx)
++            for scene in enriched_scenes
++        ]
++        subtitle_segments = build_subtitle_segments_from_scenes(bridged_scenes)
++
++        return {
++            "avatar_id": request.get("avatar_id"),
++            "market_code": request.get("market_code"),
++            "content_goal": request.get("content_goal"),
++            "conversion_mode": request.get("conversion_mode"),
++            "source_mode": "topic_intake" if source_type == "topic" else "script_upload",
++            "aspect_ratio": request.get("aspect_ratio"),
++            "target_platform": request.get("target_platform"),
++            "style_preset": request.get("style_preset"),
++            "original_filename": request.get("filename"),
++            "script_text": normalized,
++            "scenes": bridged_scenes,
++            "subtitle_segments": subtitle_segments,
++            "storyboard": storyboard.model_dump(),
++            "winner_patterns": memory_bundle.get("winner_patterns") or [],
++            "series_id": continuity_context.get("series_id"),
++            "episode_index": continuity_context.get("episode_index"),
++            "brain_plan": brain_plan,
++            "continuity_context": continuity_context,
++            "winner_dna_summary": memory_bundle.get("winner_dna_summary"),
++            "memory_refs": memory_bundle.get("memory_refs") or {},
++        }
+*** Add File: backend/app/services/brain/brain_feedback_service.py
++from __future__ import annotations
++
++from typing import Any
++
++from sqlalchemy.orm import Session
++
++from app.models.episode_memory import EpisodeMemory
++from app.schemas.patterns import PatternMemoryIn
++from app.services.pattern_library import PatternLibrary
++
++
++class BrainFeedbackService:
++    def __init__(self) -> None:
++        self._pattern_library = PatternLibrary()
++
++    def record_render_outcome(
++        self,
++        db: Session | None,
++        *,
++        project: dict[str, Any] | None,
++        render_job_id: str,
++        final_video_url: str | None,
++        status: str,
++    ) -> None:
++        if db is None or not project:
++            return
++
++        series_id = project.get("series_id")
++        episode_index = project.get("episode_index")
++        continuity_context = project.get("continuity_context") or {}
++
++        if not series_id or not episode_index:
++            return
++
++        row = EpisodeMemory(
++            series_id=str(series_id),
++            episode_index=int(episode_index),
++            open_loops=continuity_context.get("unresolved_loops") or [],
++            resolved_loops=continuity_context.get("resolved_loops") or [],
++            winning_scene_sequence=((project.get("brain_plan") or {}).get("scene_strategy") or []),
++            series_arc={
++                "episode_role": continuity_context.get("episode_role"),
++                "render_job_id": render_job_id,
++                "status": status,
++                "final_video_url": final_video_url,
++            },
++            character_callbacks=continuity_context.get("callback_targets") or [],
++        )
++        db.add(row)
++        db.commit()
++
++    def record_publish_outcome(
++        self,
++        db: Session | None,
++        *,
++        payload: dict[str, Any],
++        score: float = 0.5,
++    ) -> None:
++        if db is None:
++            return
++
++        winner_dna = payload.get("winner_dna_summary") or {}
++        pattern_payload = {
++            "hook_core": winner_dna.get("hook_core"),
++            "title_pattern": winner_dna.get("title_pattern"),
++            "thumbnail_logic": winner_dna.get("thumbnail_logic"),
++            "source_payload": payload,
++        }
++
++        self._pattern_library.save(
++            db,
++            PatternMemoryIn(
++                pattern_type="winner_dna",
++                market_code=payload.get("market_code"),
++                content_goal=payload.get("content_goal"),
++                source_id=payload.get("project_id"),
++                score=score,
++                payload=pattern_payload,
++            ),
++        )
+*** Add File: backend/app/services/brain/brain_intake_service.py
++from __future__ import annotations
++
++from typing import Any
++
++from sqlalchemy.orm import Session
++
++from app.schemas.brain_intake import BrainIntakeRequest
++from app.services.brain.brain_decision_engine import BrainDecisionEngine
++from app.services.brain.brain_manifest_builder import BrainManifestBuilder
++from app.services.brain.brain_memory_service import BrainMemoryService
++from app.services.brain.series_continuity_router import SeriesContinuityRouter
++
++
++class BrainIntakeService:
++    def __init__(self) -> None:
++        self._memory = BrainMemoryService()
++        self._decision = BrainDecisionEngine()
++        self._builder = BrainManifestBuilder()
++        self._continuity = SeriesContinuityRouter()
++
++    def _orchestrate(self, db: Session | None, request: BrainIntakeRequest) -> dict[str, Any]:
++        request_dict = request.model_dump()
++        memory_bundle = self._memory.recall(
++            db,
++            market_code=request.market_code,
++            content_goal=request.content_goal,
++            series_id=request.series_id,
++        )
++        continuity = self._continuity.resolve(
++            series_id=request.series_id,
++            episode_index=request.episode_index,
++            latest_episode_memory=memory_bundle.get("latest_episode_memory"),
++            source_type=request.source_type,
++        )
++        brain_plan, continuity_context = self._decision.build_plan(
++            request=request_dict,
++            memory_bundle=memory_bundle,
++            continuity=continuity,
++        )
++        return self._builder.build_preview_payload(
++            request=request_dict,
++            memory_bundle=memory_bundle,
++            brain_plan=brain_plan.model_dump(),
++            continuity_context=continuity_context.model_dump(),
++        )
++
++    def orchestrate_script_preview(
++        self,
++        db: Session | None,
++        *,
++        filename: str | None,
++        script_text: str,
++        aspect_ratio: str,
++        target_platform: str,
++        style_preset: str | None,
++        avatar_id: str | None,
++        market_code: str | None,
++        content_goal: str | None,
++        conversion_mode: str | None,
++        series_id: str | None = None,
++        episode_index: int | None = None,
++    ) -> dict[str, Any]:
++        request = BrainIntakeRequest(
++            source_type="script_upload",
++            filename=filename,
++            script_text=script_text,
++            aspect_ratio=aspect_ratio,
++            target_platform=target_platform,
++            style_preset=style_preset,
++            avatar_id=avatar_id,
++            market_code=market_code,
++            content_goal=content_goal,
++            conversion_mode=conversion_mode,
++            series_id=series_id,
++            episode_index=episode_index,
++        )
++        return self._orchestrate(db, request)
++
++    def orchestrate_topic_preview(
++        self,
++        db: Session | None,
++        *,
++        topic: str,
++        aspect_ratio: str,
++        target_platform: str,
++        style_preset: str | None,
++        avatar_id: str | None,
++        market_code: str | None,
++        content_goal: str | None,
++        conversion_mode: str | None,
++        series_id: str | None = None,
++        episode_index: int | None = None,
++    ) -> dict[str, Any]:
++        request = BrainIntakeRequest(
++            source_type="topic",
++            topic=topic,
++            aspect_ratio=aspect_ratio,
++            target_platform=target_platform,
++            style_preset=style_preset,
++            avatar_id=avatar_id,
++            market_code=market_code,
++            content_goal=content_goal,
++            conversion_mode=conversion_mode,
++            series_id=series_id,
++            episode_index=episode_index,
++        )
++        return self._orchestrate(db, request)
+*** Add File: backend/app/api/topic_intake.py
++from __future__ import annotations
++
++from fastapi import APIRouter, HTTPException
++from pydantic import BaseModel, Field
++
++from app.services.brain.brain_intake_service import BrainIntakeService
++
++router = APIRouter(tags=["topic-intake"])
++_brain = BrainIntakeService()
++
++
++class TopicIntakePreviewRequest(BaseModel):
++    topic: str = Field(..., min_length=1)
++    aspect_ratio: str = "9:16"
++    target_platform: str = "shorts"
++    style_preset: str | None = None
++    avatar_id: str | None = None
++    market_code: str | None = None
++    content_goal: str | None = None
++    conversion_mode: str | None = None
++    series_id: str | None = None
++    episode_index: int | None = Field(default=None, ge=1)
++
++
++@router.post("/api/v1/topic-intake/preview")
++async def topic_intake_preview(payload: TopicIntakePreviewRequest):
++    try:
++        preview = _brain.orchestrate_topic_preview(
++            db=None,
++            topic=payload.topic,
++            aspect_ratio=payload.aspect_ratio,
++            target_platform=payload.target_platform,
++            style_preset=payload.style_preset,
++            avatar_id=payload.avatar_id,
++            market_code=payload.market_code,
++            content_goal=payload.content_goal,
++            conversion_mode=payload.conversion_mode,
++            series_id=payload.series_id,
++            episode_index=payload.episode_index,
++        )
++        return {
++            "ok": True,
++            "data": preview,
++            "error": None,
++            "meta": {
++                "scene_count": len(preview.get("scenes", [])),
++                "subtitle_count": len(preview.get("subtitle_segments", [])),
++            },
++        }
++    except ValueError as exc:
++        raise HTTPException(status_code=400, detail=str(exc)) from exc
++    except Exception as exc:
++        raise HTTPException(status_code=500, detail="Failed to build topic preview") from exc
+*** Add File: backend/app/api/brain_memory.py
++from __future__ import annotations
++
++from fastapi import APIRouter, Depends
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.services.brain.brain_memory_service import BrainMemoryService
++
++router = APIRouter(tags=["brain-memory"])
++_memory = BrainMemoryService()
++
++
++@router.get("/api/v1/brain/memory/patterns")
++async def get_brain_patterns(
++    market_code: str | None = None,
++    content_goal: str | None = None,
++    series_id: str | None = None,
++    db: Session = Depends(get_db),
++):
++    return {
++        "ok": True,
++        "data": _memory.recall(
++            db,
++            market_code=market_code,
++            content_goal=content_goal,
++            series_id=series_id,
++        ),
++        "error": None,
++    }
+*** Update File: backend/app/api/_registry.py
+@@
+ from app.api.script_upload_preview import router as script_upload_preview_router
+ from app.api.script_validation import router as script_validation_router
+ from app.api.script_regeneration_routes import router as script_regeneration_router
+ from app.api.provider_payload_preview import router as provider_payload_preview_router
++from app.api.topic_intake import router as topic_intake_router
+@@
+ from app.api.orchestration_timeline import router as orchestration_timeline_router
+ from app.api.decision_engine import router as decision_engine_router
+ from app.api.control_plane import router as control_plane_router
+ from app.api.autopilot import router as autopilot_router
+ from app.api.production import router as production_router
++from app.api.brain_memory import router as brain_memory_router
+@@
+ _SCRIPT_ROUTERS = [
+     script_upload_preview_router,
+     script_validation_router,
+     script_regeneration_router,
+     provider_payload_preview_router,
++    topic_intake_router,
+ ]
+@@
+ _ORCHESTRATION_ROUTERS = [
+     orchestration_timeline_router,
+     decision_engine_router,
+     control_plane_router,
+     autopilot_router,
+     production_router,
++    brain_memory_router,
+ ]
+*** Update File: backend/app/schemas/script_preview.py
+@@
+-SourceMode = Literal["script_upload"]
++SourceMode = Literal["script_upload", "topic_intake"]
+@@
+ class ScriptPreviewPayload(BaseModel):
+@@
+     storyboard: dict[str, Any] | None = None
+     optimization_response: dict[str, Any] | None = None
+     winner_patterns: list[dict[str, Any]] | None = None
++    series_id: str | None = None
++    episode_index: int | None = None
++    brain_plan: dict[str, Any] | None = None
++    continuity_context: dict[str, Any] | None = None
++    winner_dna_summary: dict[str, Any] | None = None
++    memory_refs: dict[str, Any] | None = None
+*** Update File: backend/app/api/script_upload_preview.py
+@@
+-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+-
+-from app.services.script_ingestion import build_preview_payload, parse_script_file_bytes, validate_script_file
++from fastapi import APIRouter, File, Form, HTTPException, UploadFile
++
++from app.services.brain.brain_intake_service import BrainIntakeService
++from app.services.script_ingestion import parse_script_file_bytes, validate_script_file
+ 
+ router = APIRouter(tags=["script-upload-preview"])
++_brain = BrainIntakeService()
+@@
+     avatar_id: str | None = Form(default=None),
+     market_code: str | None = Form(default=None),
+     content_goal: str | None = Form(default=None),
+     conversion_mode: str | None = Form(default=None),
++    series_id: str | None = Form(default=None),
++    episode_index: int | None = Form(default=None),
+ ):
+@@
+-        preview = build_preview_payload(
+-            filename=file.filename,
+-            script_text=script_text,
+-            aspect_ratio=aspect_ratio,
+-            target_platform=target_platform,
+-            style_preset=style_preset,
+-            avatar_id=avatar_id,
+-            market_code=market_code,
+-            content_goal=content_goal,
+-            conversion_mode=conversion_mode,
++        preview = _brain.orchestrate_script_preview(
++            db=None,
++            filename=file.filename,
++            script_text=script_text,
++            aspect_ratio=aspect_ratio,
++            target_platform=target_platform,
++            style_preset=style_preset,
++            avatar_id=avatar_id,
++            market_code=market_code,
++            content_goal=content_goal,
++            conversion_mode=conversion_mode,
++            series_id=series_id,
++            episode_index=episode_index,
+         )
+*** Update File: backend/app/api/project_from_preview.py
+@@
+             "storyboard": payload.preview_payload.storyboard,
+             "optimization_response": payload.preview_payload.optimization_response,
+             "winner_patterns": payload.preview_payload.winner_patterns or [],
++            "series_id": payload.preview_payload.series_id,
++            "episode_index": payload.preview_payload.episode_index,
++            "brain_plan": payload.preview_payload.brain_plan,
++            "continuity_context": payload.preview_payload.continuity_context,
++            "winner_dna_summary": payload.preview_payload.winner_dna_summary,
++            "memory_refs": payload.preview_payload.memory_refs,
+             "original_filename": payload.preview_payload.original_filename,
+             "is_template_source": True,
+*** Update File: backend/app/services/execution_bridge_service.py
+@@
+     def resolve_context(
+         self,
+         db,
+@@
+         conversion_mode: str | None = None,
+         storyboard: dict[str, Any] | None = None,
+         optimization_response: dict[str, Any] | None = None,
+         winner_patterns: list[dict[str, Any]] | None = None,
++        series_id: str | None = None,
++        episode_index: int | None = None,
++        continuity_context: dict[str, Any] | None = None,
++        winner_dna_summary: dict[str, Any] | None = None,
++        brain_plan: dict[str, Any] | None = None,
+     ) -> dict[str, Any]:
+@@
+             "storyboard": storyboard,
+             "optimization_response": optimization_response,
+             "winner_patterns": winner_patterns or [],
++            "series_id": series_id,
++            "episode_index": episode_index,
++            "continuity_context": continuity_context or {},
++            "winner_dna_summary": winner_dna_summary or {},
++            "brain_plan": brain_plan or {},
+         }
+@@
+             storyboard=project.get("storyboard"),
+             optimization_response=project.get("optimization_response"),
+             winner_patterns=project.get("winner_patterns"),
++            series_id=project.get("series_id"),
++            episode_index=project.get("episode_index"),
++            continuity_context=project.get("continuity_context"),
++            winner_dna_summary=project.get("winner_dna_summary"),
++            brain_plan=project.get("brain_plan"),
+         )
+@@
+             "storyboard": updated.get("storyboard"),
+             "optimization_response": updated.get("optimization_response"),
+             "winner_patterns": updated.get("winner_patterns") or [],
++            "series_id": updated.get("series_id"),
++            "episode_index": updated.get("episode_index"),
++            "continuity_context": updated.get("continuity_context") or {},
++            "winner_dna_summary": updated.get("winner_dna_summary") or {},
++            "brain_plan": updated.get("brain_plan") or {},
+         }
+@@
+         if market_code:
+             compact["market_code"] = market_code
++        if ctx.get("series_id"):
++            compact["series_id"] = ctx.get("series_id")
++        if ctx.get("episode_index") is not None:
++            compact["episode_index"] = ctx.get("episode_index")
++        if ctx.get("continuity_context"):
++            compact["continuity_context"] = ctx.get("continuity_context") or {}
++        if ctx.get("winner_dna_summary"):
++            compact["winner_dna_summary"] = ctx.get("winner_dna_summary") or {}
+         return compact
+@@
+     def _prepend_context_prompt(self, prompt: str, ctx: dict[str, Any]) -> str:
+         prompt = (prompt or "").strip()
+         parts: list[str] = []
+@@
+         conversion_mode = (ctx.get("conversion_mode") or "").strip()
+         if conversion_mode:
+             parts.append(f"CTA bias: {conversion_mode} with open-loop momentum.")
++
++        series_id = ctx.get("series_id")
++        episode_index = ctx.get("episode_index")
++        continuity = ctx.get("continuity_context") or {}
++        winner_dna = ctx.get("winner_dna_summary") or {}
++
++        if series_id:
++            parts.append(f"Series: {series_id}.")
++        if episode_index:
++            parts.append(f"Episode: {episode_index}.")
++        if continuity.get("episode_role"):
++            parts.append(f"Episode role: {continuity['episode_role']}.")
++        if winner_dna.get("hook_core"):
++            parts.append(f"Winner DNA hook: {winner_dna['hook_core']}.")
+@@
+     def _apply_storyboard_and_optimization(self, updated: dict[str, Any], metadata: dict[str, Any], ctx: dict[str, Any]) -> None:
+@@
+         if winner_patterns:
+             metadata["winner_patterns"] = winner_patterns
++
++        continuity = ctx.get("continuity_context") or {}
++        if continuity:
++            metadata["series_id"] = continuity.get("series_id")
++            metadata["episode_index"] = continuity.get("episode_index")
++            metadata["episode_role"] = continuity.get("episode_role")
++            metadata["callback_targets"] = continuity.get("callback_targets") or []
++            metadata["continuity_constraints"] = continuity.get("continuity_constraints") or {}
++
++        winner_dna = ctx.get("winner_dna_summary") or {}
++        if winner_dna:
++            metadata["winner_dna_summary"] = winner_dna
+*** Update File: backend/app/services/project_render_runtime.py
+@@
+         planned_scenes.append({
+             "scene_index": bridged_scene["scene_index"],
+             "title": bridged_scene["title"],
+             "script_text": bridged_scene.get("script_text"),
+             "prompt_text": bridged_scene.get("visual_prompt") or bridged_scene.get("script_text") or bridged_scene["title"],
+             "provider_target_duration_sec": int(round(float(bridged_scene.get("target_duration_sec", 5)))),
+             "aspect_ratio": project.get("format","9:16"),
+             "provider_mode": bridged_scene.get("provider_mode") or veo_config.get("veo_mode"),
+             "start_image_url": bridged_scene.get("start_image_url"),
+             "end_image_url": bridged_scene.get("end_image_url"),
+             "character_reference_image_urls": bridged_scene.get("character_reference_image_urls") or [],
+             "character_reference_pack_id": veo_config.get("character_reference_pack_id"),
+             "sound_generation": veo_config.get("sound_generation", False),
+             "provider_model": veo_config.get("provider_model"),
++            "metadata": bridged_scene.get("metadata") or {},
+         })
+*** Update File: backend/app/api/render_execution.py
+@@
+ class RenderJobCreateRequest(BaseModel):
+@@
+     avatar_id: str | None = None
+     market_code: str | None = None
+     content_goal: str | None = None
+     conversion_mode: str | None = None
++    series_id: str | None = None
++    episode_index: int | None = None
++    continuity_context: dict[str, Any] = Field(default_factory=dict)
++    winner_dna_summary: dict[str, Any] = Field(default_factory=dict)
++    brain_plan: dict[str, Any] = Field(default_factory=dict)
+@@
+     bridge_ctx = _execution_bridge.resolve_context(
+         db,
+         avatar_id=payload.avatar_id,
+         market_code=payload.market_code,
+         content_goal=payload.content_goal,
+         conversion_mode=payload.conversion_mode,
++        series_id=payload.series_id,
++        episode_index=payload.episode_index,
++        continuity_context=payload.continuity_context,
++        winner_dna_summary=payload.winner_dna_summary,
++        brain_plan=payload.brain_plan,
+     )
+*** Update File: backend/app/services/pattern_library.py
+@@
+ class PatternLibrary:
+@@
+     def list(
+         self,
+         db: Session,
+@@
+         if content_goal:
+             query = query.filter(PatternMemory.content_goal == content_goal)
+         return query.order_by(PatternMemory.score.is_(None), PatternMemory.score.desc(), PatternMemory.created_at.desc()).all()
++
++    def list_top_patterns(
++        self,
++        db: Session,
++        *,
++        market_code: str | None = None,
++        content_goal: str | None = None,
++        limit: int = 5,
++        pattern_types: list[str] | None = None,
++    ) -> list[PatternMemory]:
++        query = db.query(PatternMemory)
++        if market_code:
++            query = query.filter(PatternMemory.market_code == market_code)
++        if content_goal:
++            query = query.filter(PatternMemory.content_goal == content_goal)
++        if pattern_types:
++            query = query.filter(PatternMemory.pattern_type.in_(pattern_types))
++        return (
++            query.order_by(
++                PatternMemory.score.is_(None),
++                PatternMemory.score.desc(),
++                PatternMemory.created_at.desc(),
++            )
++            .limit(limit)
++            .all()
++        )
+*** Update File: backend/app/workers/render_postprocess_worker.py
+@@
+ from app.core.config import settings
+ from app.services.final_timeline_builder import build_final_preview_timeline
++from app.services.brain.brain_feedback_service import BrainFeedbackService
++from app.services.project_workspace_service import load_project
+ from app.services.render_repository import (
+@@
+ logger = logging.getLogger(__name__)
++_brain_feedback = BrainFeedbackService()
+@@
+         finalized = finalize_render_job(
+             db,
+             latest_job,
+             final_video_url=final_video_url,
+             final_video_path=final_path,
+             final_timeline=final_timeline,
+             source="postprocess",
+         )
+         if not finalized:
+             return
++
++        project = load_project(latest_job.project_id) if getattr(latest_job, "project_id", None) else None
++        _brain_feedback.record_render_outcome(
++            db,
++            project=project,
++            render_job_id=latest_job.id,
++            final_video_url=final_video_url,
++            status="completed",
++        )
+*** Update File: backend/app/services/publish_scheduler.py
+@@
+ from app.models.publish_job import PublishJob
++from app.services.brain.brain_feedback_service import BrainFeedbackService
+ from app.services.learning_engine import PerformanceLearningEngine
+@@
+ logger = logging.getLogger(__name__)
++_brain_feedback = BrainFeedbackService()
+@@
+             if (job.publish_mode or _PUBLISH_MODE) == PUBLISH_MODE_REAL:
+                 self._record_publish_outcome(job, db=db)
++
++            payload = job.payload or {}
++            _brain_feedback.record_publish_outcome(
++                db,
++                payload={
++                    "project_id": payload.get("project_id"),
++                    "market_code": (payload.get("metadata") or {}).get("market_code"),
++                    "content_goal": payload.get("content_goal"),
++                    "winner_dna_summary": (payload.get("metadata") or {}).get("winner_dna_summary") or {},
++                    "title": payload.get("title"),
++                    "description": payload.get("description"),
++                    "thumbnail_url": payload.get("thumbnail_url"),
++                    "platform": job.platform,
++                },
++                score=0.5,
++            )
+ 
+             return job
+*** End Patch
