@@ -144,6 +144,16 @@ class BrainManifestBuilder:
                 avatar_voice=avatar_voice,
                 avatar_continuity=avatar_continuity,
             )
+            # Inject director context if available
+            plan_notes_director = brain_plan.get("notes", {}).get("director_plan") or {}
+            beats_by_index = {b["scene_index"]: b for b in (plan_notes_director.get("beats") or []) if b.get("scene_index") is not None}
+            beat = beats_by_index.get(scene_index) or {}
+            if beat:
+                enriched["metadata"]["director_intent"] = beat.get("director_intent")
+                enriched["metadata"]["dramatic_intent"] = beat.get("dramatic_intent")
+                enriched["metadata"]["conflict_type"] = beat.get("conflict_type")
+                enriched["metadata"]["emotional_tone"] = beat.get("emotional_tone")
+                enriched["metadata"]["beat_type"] = beat.get("beat_type")
             enriched_scenes.append(enriched)
 
         ctx = self._execution_bridge.resolve_context(

@@ -146,3 +146,49 @@ class AvatarScorecard:
             "fitness_score": fitness,
             "pair_fit_score": None,
         }
+
+    def compute_director_score(
+        self,
+        *,
+        director_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compute a structured director quality score from cinematic metrics.
+
+        Parameters
+        ----------
+        director_metrics:
+            Dict with keys: shot_purpose_score, conflict_clarity_score,
+            emotional_beat_score, visual_continuity_score,
+            performance_believability_score, frame_storytelling_score,
+            lighting_intent_score.
+            Missing keys default to 0.0.
+        """
+        shot_purpose_score = float(director_metrics.get("shot_purpose_score") or 0.0)
+        conflict_clarity_score = float(director_metrics.get("conflict_clarity_score") or 0.0)
+        emotional_beat_score = float(director_metrics.get("emotional_beat_score") or 0.0)
+        visual_continuity_score = float(director_metrics.get("visual_continuity_score") or 0.0)
+        performance_believability_score = float(director_metrics.get("performance_believability_score") or 0.0)
+        frame_storytelling_score = float(director_metrics.get("frame_storytelling_score") or 0.0)
+        lighting_intent_score = float(director_metrics.get("lighting_intent_score") or 0.0)
+
+        scores = [
+            shot_purpose_score,
+            conflict_clarity_score,
+            emotional_beat_score,
+            visual_continuity_score,
+            performance_believability_score,
+            frame_storytelling_score,
+            lighting_intent_score,
+        ]
+        total_director_score = round(sum(scores) / len(scores), 4)
+
+        return {
+            "shot_purpose_score": round(shot_purpose_score, 4),
+            "conflict_clarity_score": round(conflict_clarity_score, 4),
+            "emotional_beat_score": round(emotional_beat_score, 4),
+            "visual_continuity_score": round(visual_continuity_score, 4),
+            "performance_believability_score": round(performance_believability_score, 4),
+            "frame_storytelling_score": round(frame_storytelling_score, 4),
+            "lighting_intent_score": round(lighting_intent_score, 4),
+            "total_director_score": total_director_score,
+        }

@@ -29,6 +29,20 @@ class BrainDecisionEngine:
         self._template_selector = TemplateSelector()
         self._template_mapper = TemplateMapper()
         self._template_ab = TemplateABService()
+        self._story_beat_engine = None  # lazy-init to avoid circular imports
+        self._conflict_validator = None  # lazy-init to avoid circular imports
+
+    def _get_story_beat_engine(self):
+        if self._story_beat_engine is None:
+            from app.services.director.story_beat_engine import StoryBeatEngine
+            self._story_beat_engine = StoryBeatEngine()
+        return self._story_beat_engine
+
+    def _get_conflict_validator(self):
+        if self._conflict_validator is None:
+            from app.services.director.scene_conflict_validator import SceneConflictValidator
+            self._conflict_validator = SceneConflictValidator()
+        return self._conflict_validator
 
     def build_plan(
         self,
@@ -76,6 +90,25 @@ class BrainDecisionEngine:
                     "avatar_tournament failed; falling back to request avatar_id: %s", exc
                 )
         # ──────────────────────────────────────────────────────────────────────
+
+        # ── Director System: expand script into story beats ─────────────────
+        director_plan: dict[str, Any] = {}
+        try:
+            beats = self._get_story_beat_engine().expand(
+                request.get("script_text") or request.get("topic") or "",
+                context={
+                    "num_scenes": len(request.get("scenes") or []) or 8,
+                    "conflict_type": request.get("conflict_type"),
+                },
+            )
+            validated_beats = self._get_conflict_validator().validate_sequence(beats)
+            director_plan = {
+                "beats": [b.model_dump() for b in validated_beats],
+                "num_beats": len(validated_beats),
+            }
+        except Exception as exc:
+            logger.warning("director system failed: %s", exc)
+        # ─────────────────────────────────────────────────────────────────────
 
         template_result = self._template_selector.select(
             request=request,
@@ -147,6 +180,8 @@ class BrainDecisionEngine:
                 "avatar_memory": memory_bundle.get("avatar_memory") or {},
                 "avatar_selection_debug": request.get("avatar_selection_debug") or avatar_selection_notes.get("explanation") or {},
                 "avatar_selection": avatar_selection_notes,
+                "director_plan": director_plan,
+                "conflict_type": request.get("conflict_type"),
             },
         )
 

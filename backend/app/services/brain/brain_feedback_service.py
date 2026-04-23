@@ -264,7 +264,37 @@ class BrainFeedbackService:
             except Exception:
                 pass  # adaptive learning is non-fatal
 
-    # ------------------------------------------------------------------
+        # --- Director Scorecard: cinematic quality metrics ---
+        director_metrics = payload.get("director_metrics") or {}
+        if director_metrics and db is not None:
+            try:
+                director_scorecard = {
+                    "shot_purpose_score": float(director_metrics.get("shot_purpose_score") or 0.0),
+                    "conflict_clarity_score": float(director_metrics.get("conflict_clarity_score") or 0.0),
+                    "emotional_beat_score": float(director_metrics.get("emotional_beat_score") or 0.0),
+                    "visual_continuity_score": float(director_metrics.get("visual_continuity_score") or 0.0),
+                    "performance_believability_score": float(director_metrics.get("performance_believability_score") or 0.0),
+                    "frame_storytelling_score": float(director_metrics.get("frame_storytelling_score") or 0.0),
+                    "lighting_intent_score": float(director_metrics.get("lighting_intent_score") or 0.0),
+                }
+                director_total = sum(director_scorecard.values()) / len(director_scorecard)
+                self._pattern_library.save(
+                    db,
+                    PatternMemoryIn(
+                        pattern_type="director_scorecard",
+                        market_code=payload.get("market_code"),
+                        content_goal=payload.get("content_goal"),
+                        source_id=payload.get("project_id"),
+                        score=director_total,
+                        payload={
+                            "avatar_id": payload.get("avatar_id"),
+                            "director_scorecard": director_scorecard,
+                            "director_total_score": director_total,
+                        },
+                    ),
+                )
+            except Exception:
+                pass  # director scorecard is non-fatal
     # Internal helpers
     # ------------------------------------------------------------------
 

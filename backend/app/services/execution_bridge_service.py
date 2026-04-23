@@ -181,6 +181,13 @@ class ExecutionBridgeService:
                 pass
 
         updated["metadata"] = metadata
+
+        # Director system fields
+        for director_key in ("director_intent", "dramatic_intent", "conflict_type", "shot_purpose", "emotional_tone", "beat_type"):
+            val = (scene.get("metadata") or {}).get(director_key)
+            if val is not None:
+                updated[director_key] = val
+
         return updated
 
     def transform_scene_payload(self, scene_payload: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
