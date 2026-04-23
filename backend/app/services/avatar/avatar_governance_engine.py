@@ -1,103 +1,263 @@
+"""avatar_governance_engine — evaluates post-publish outcomes and applies
+governance decisions (promote, demote, cooldown, rollback).
+
+This engine is called from BrainFeedbackService after each publish outcome.
+It reads the avatar's current policy state, applies the governance rules,
+and writes the resulting state transitions and audit events.
+"""
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.avatar_guardrail_event import AvatarGuardrailEvent
 from app.models.avatar_policy_state import AvatarPolicyState
 from app.models.avatar_promotion_event import AvatarPromotionEvent
-from app.schemas.avatar_governance import AvatarOutcomePayload, AvatarPromotionDecision
+from app.schemas.avatar_governance import AvatarPromotionDecision
 from app.services.avatar.avatar_policy_engine import AvatarPolicyEngine
 from app.services.avatar.avatar_rollback_service import AvatarRollbackService
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class AvatarGovernanceEngine:
-    def __init__(self, db: Session, policy_engine: AvatarPolicyEngine | None = None, rollback_service: AvatarRollbackService | None = None) -> None:
-        self.db = db
-        self.policy_engine = policy_engine or AvatarPolicyEngine()
-        self.rollback_service = rollback_service or AvatarRollbackService()
+    """Evaluates avatar outcome data and applies governance state transitions."""
 
-    def evaluate_avatar_outcome(self, payload: AvatarOutcomePayload) -> AvatarPromotionDecision:
-        state = self._get_or_create_state(payload.avatar_id)
-        previous_state = state.state
+    def __init__(self) -> None:
+        self._policy = AvatarPolicyEngine()
+        self._rollback = AvatarRollbackService()
 
-        if payload.brand_drift_score is not None and payload.brand_drift_score > 0.70:
-            self._emit_guardrail(payload, code="brand_drift", severity="warning", action_taken="downweight")
-            state.risk_weight = float(state.risk_weight) + 0.25
+    # ── Public API ────────────────────────────────────────────────────────────
 
-        if self.rollback_service.should_rollback(
-            actual_publish_score=payload.actual_publish_score,
-            actual_retention=payload.actual_retention,
-            baseline_retention=float(state.quality_confidence) if state.quality_confidence is not None else None,
+    def evaluate_avatar_outcome(
+        self,
+        db: Session,
+        *,
+        avatar_id: str,
+        metrics: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> AvatarPromotionDecision:
+        """Evaluate post-publish metrics and apply the appropriate action.
+
+        Parameters
+        ----------
+        avatar_id:
+            The avatar whose outcome is being evaluated.
+        metrics:
+            Publish metrics dict (same shape as AvatarScorecard inputs +
+            optional ``baseline_retention`` for delta comparison).
+        context:
+            Optional dict with ``project_id``, ``topic_class``, etc.
+        """
+        context = context or {}
+        policy_state = self._get_or_create_policy_state(db, avatar_id=avatar_id)
+        current_state = policy_state.state
+
+        # Extract metric signals
+        total_score = float(metrics.get("total_score", 0.0))
+        retention = float(metrics.get("retention_30s", 0.0))
+        baseline_retention = float(metrics.get("baseline_retention", retention))
+        retention_drop = max(0.0, baseline_retention - retention)
+
+        has_continuity_break = bool(context.get("continuity_break"))
+        has_brand_drift = bool(context.get("brand_drift"))
+        consecutive_losses = int(metrics.get("consecutive_losses", 0))
+        outcome_count = int(metrics.get("outcome_count", 1))
+        consecutive_wins = int(metrics.get("consecutive_wins", 0))
+
+        # ── Decide action ─────────────────────────────────────────────────
+        action: str
+        reason_code: str
+
+        # Blocked / retired → no changes
+        if current_state in ("blocked", "retired"):
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="none",
+                reason_code="state_locked",
+                previous_state=current_state,
+                new_state=current_state,
+                evidence=metrics,
+            )
+
+        # Cooldown check
+        if self._policy.is_in_cooldown(policy_state.cooldown_until):
+            if total_score >= 0.50:
+                self._rollback.reactivate(db, avatar_id=avatar_id, reason_code="recovery_signal")
+                return AvatarPromotionDecision(
+                    avatar_id=avatar_id,
+                    action="reactivate",
+                    reason_code="recovery_signal",
+                    previous_state="cooldown",
+                    new_state="active",
+                    evidence=metrics,
+                )
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="none",
+                reason_code="in_cooldown",
+                previous_state="cooldown",
+                new_state="cooldown",
+                evidence=metrics,
+            )
+
+        # Rollback check
+        if self._policy.should_rollback(
+            total_score=total_score, retention_drop=retention_drop
         ):
-            state.state = "cooldown"
-            state.cooldown_until = self.policy_engine.compute_cooldown_until()
-            state.last_rollback_at = datetime.now(timezone.utc)
-            action = "rollback"
-            reason_code = "retention_or_publish_crash"
-        elif payload.actual_publish_score is not None and payload.actual_publish_score >= 0.75:
-            state.state = "priority"
-            state.priority_weight = max(float(state.priority_weight), 1.25)
-            state.last_promotion_at = datetime.now(timezone.utc)
-            action = "promote"
-            reason_code = "strong_publish_score"
-        elif payload.actual_publish_score is not None and payload.actual_publish_score >= 0.55:
-            state.state = "active"
-            state.priority_weight = max(float(state.priority_weight), 1.0)
-            action = "stabilize"
-            reason_code = "acceptable_publish_score"
-        else:
-            state.state = "candidate"
-            action = "demote"
-            reason_code = "insufficient_signal"
+            new_state = self._rollback.rollback(
+                db,
+                avatar_id=avatar_id,
+                from_state=current_state,
+                reason_code="retention_drop" if retention_drop >= 0.15 else "low_score",
+                source_metrics=metrics,
+            )
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="rollback",
+                reason_code="retention_drop" if retention_drop >= 0.15 else "low_score",
+                previous_state=current_state,
+                new_state=new_state,
+                evidence=metrics,
+            )
 
-        if payload.continuity_health is not None:
-            state.continuity_confidence = payload.continuity_health
-        if payload.actual_retention is not None:
-            state.quality_confidence = payload.actual_retention
+        # Cooldown check (continuity / brand drift / consecutive losses)
+        if self._policy.should_cooldown(
+            has_continuity_break=has_continuity_break,
+            has_brand_drift=has_brand_drift,
+            consecutive_losses=consecutive_losses,
+        ):
+            reason_code = (
+                "continuity_break"
+                if has_continuity_break
+                else "brand_drift"
+                if has_brand_drift
+                else "consecutive_losses"
+            )
+            new_state = self._rollback.cooldown(
+                db,
+                avatar_id=avatar_id,
+                from_state=current_state,
+                reason_code=reason_code,
+                source_metrics=metrics,
+            )
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="cooldown",
+                reason_code=reason_code,
+                previous_state=current_state,
+                new_state=new_state,
+                evidence=metrics,
+            )
 
-        event = AvatarPromotionEvent(
-            avatar_id=payload.avatar_id,
-            event_type=action,
-            from_state=previous_state,
-            to_state=state.state,
-            reason_code=reason_code,
-            reason_text=f"Avatar governance action={action}",
-            source_metric_json=json.dumps(payload.model_dump(mode="json")),
-        )
-        self.db.add(state)
-        self.db.add(event)
-        self.db.commit()
-        self.db.refresh(state)
+        # Promotion checks
+        if current_state == "candidate" and self._policy.should_promote_to_active(
+            total_score=total_score, outcome_count=outcome_count
+        ):
+            new_state = self._promote(
+                db,
+                avatar_id=avatar_id,
+                from_state="candidate",
+                to_state="active",
+                reason_code="threshold_reached",
+                source_metrics=metrics,
+            )
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="promote",
+                reason_code="threshold_reached",
+                previous_state="candidate",
+                new_state=new_state,
+                evidence=metrics,
+            )
+
+        if current_state == "active" and self._policy.should_promote_to_priority(
+            total_score=total_score,
+            consecutive_wins=consecutive_wins,
+        ):
+            new_state = self._promote(
+                db,
+                avatar_id=avatar_id,
+                from_state="active",
+                to_state="priority",
+                reason_code="priority_win_streak",
+                source_metrics=metrics,
+            )
+            return AvatarPromotionDecision(
+                avatar_id=avatar_id,
+                action="promote",
+                reason_code="priority_win_streak",
+                previous_state="active",
+                new_state=new_state,
+                evidence=metrics,
+            )
 
         return AvatarPromotionDecision(
-            avatar_id=payload.avatar_id,
-            action=action,
-            reason_code=reason_code,
-            previous_state=previous_state,
-            new_state=state.state,
-            evidence=payload.model_dump(mode="json"),
+            avatar_id=avatar_id,
+            action="none",
+            reason_code="stable",
+            previous_state=current_state,
+            new_state=current_state,
+            evidence=metrics,
         )
 
-    def _get_or_create_state(self, avatar_id):
-        state = self.db.query(AvatarPolicyState).filter(AvatarPolicyState.avatar_id == avatar_id).one_or_none()
-        if state:
-            return state
-        state = AvatarPolicyState(avatar_id=avatar_id)
-        self.db.add(state)
-        self.db.flush()
-        return state
+    def get_policy_state(
+        self, db: Session, *, avatar_id: str
+    ) -> AvatarPolicyState | None:
+        return (
+            db.query(AvatarPolicyState)
+            .filter(AvatarPolicyState.avatar_id == avatar_id)
+            .first()
+        )
 
-    def _emit_guardrail(self, payload: AvatarOutcomePayload, *, code: str, severity: str, action_taken: str) -> None:
-        self.db.add(
-            AvatarGuardrailEvent(
-                avatar_id=payload.avatar_id,
-                project_id=payload.project_id,
-                guardrail_code=code,
-                severity=severity,
-                payload_json=json.dumps(payload.model_dump(mode="json")),
-                action_taken=action_taken,
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _get_or_create_policy_state(
+        self, db: Session, *, avatar_id: str
+    ) -> AvatarPolicyState:
+        row = self.get_policy_state(db, avatar_id=avatar_id)
+        if row is None:
+            row = AvatarPolicyState(
+                avatar_id=avatar_id,
+                state="candidate",
+                priority_weight=0.5,
+                exploration_weight=0.2,
+                risk_weight=0.0,
+            )
+            db.add(row)
+            db.commit()
+        return row
+
+    def _promote(
+        self,
+        db: Session,
+        *,
+        avatar_id: str,
+        from_state: str,
+        to_state: str,
+        reason_code: str,
+        source_metrics: dict[str, Any],
+    ) -> str:
+        row = self.get_policy_state(db, avatar_id=avatar_id)
+        if row is None:
+            return from_state
+        row.state = to_state
+        row.last_promotion_at = _now()
+        if to_state == "priority":
+            row.priority_weight = min(row.priority_weight + 0.1, 1.0)
+        db.commit()
+        db.add(
+            AvatarPromotionEvent(
+                avatar_id=avatar_id,
+                event_type="promote",
+                from_state=from_state,
+                to_state=to_state,
+                reason_code=reason_code,
+                source_metric_json=source_metrics,
             )
         )
+        db.commit()
+        return to_state

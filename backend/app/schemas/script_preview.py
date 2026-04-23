@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 AspectRatio = Literal["9:16", "16:9", "1:1"]
-SourceMode = Literal["script_upload"]
+SourceMode = Literal["script_upload", "topic_intake"]
 TargetPlatform = Literal["shorts", "tiktok", "reels", "youtube"]
 
 
@@ -64,6 +64,20 @@ class ScriptPreviewPayload(BaseModel):
     storyboard: dict[str, Any] | None = None
     optimization_response: dict[str, Any] | None = None
     winner_patterns: list[dict[str, Any]] | None = None
+    # Brain Layer enrichment fields (optional, backward-compatible)
+    series_id: str | None = None
+    episode_index: int | None = None
+    brain_plan: dict[str, Any] | None = None
+    continuity_context: dict[str, Any] | None = None
+    winner_dna_summary: dict[str, Any] | None = None
+    memory_refs: dict[str, Any] | None = None
+    # Template System fields (optional, backward-compatible)
+    selected_template_id: str | None = None
+    selected_template_family: str | None = None
+    # Avatar System fields (optional, backward-compatible)
+    avatar_identity: dict[str, Any] | None = None
+    avatar_voice: dict[str, Any] | None = None
+    avatar_continuity: dict[str, Any] | None = None
 
     @field_validator("script_text")
     @classmethod

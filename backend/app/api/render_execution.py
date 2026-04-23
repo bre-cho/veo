@@ -121,6 +121,23 @@ class RenderJobCreateRequest(BaseModel):
     market_code: str | None = None
     content_goal: str | None = None
     conversion_mode: str | None = None
+    # --- Brain Layer context (optional) ---
+    series_id: str | None = None
+    episode_index: int | None = None
+    continuity_context: dict[str, Any] | None = None
+    winner_dna_summary: dict[str, Any] | None = None
+    brain_plan: dict[str, Any] | None = None
+    # --- Avatar System context (optional) ---
+    avatar_identity: dict[str, Any] = Field(default_factory=dict)
+    avatar_voice: dict[str, Any] = Field(default_factory=dict)
+    avatar_continuity: dict[str, Any] = Field(default_factory=dict)
+    # --- Avatar Tournament context (optional) ---
+    avatar_tournament_run_id: str | None = None
+    avatar_selection_mode: str | None = None
+    avatar: dict[str, Any] | None = None
+    # --- Avatar Acting Model context (optional) ---
+    avatar_acting_profile: dict[str, Any] | None = None
+    acting_payload: dict[str, Any] | None = None
 
     @field_validator("provider")
     @classmethod
@@ -180,6 +197,7 @@ class RenderJobCreateResponse(BaseModel):
     completed_scene_count: int
     failed_scene_count: int
     dispatch_task: dict[str, Any]
+    avatar_context: dict[str, Any] | None = None
 
 
 # =========================
@@ -209,13 +227,52 @@ async def create_render_job(
         )
 
     normalized_provider = normalize_provider_name(payload.provider)
+
+    # PATCH 1 — extract avatar context from render request
+    avatar_ctx = payload.avatar or {}
+    avatar_id = payload.avatar_id or avatar_ctx.get("avatar_id")
+    avatar_tournament_run_id = payload.avatar_tournament_run_id or avatar_ctx.get("tournament_run_id")
+    avatar_selection_mode = payload.avatar_selection_mode or avatar_ctx.get("selection_mode")
+
+    # PATCH 4 — debug log
+    _log.info(
+        "render execution avatar context: avatar_id=%s tournament_run_id=%s selection_mode=%s",
+        avatar_id,
+        avatar_tournament_run_id,
+        avatar_selection_mode,
+    )
+
+    # Build avatar_selection_debug for execution bridge (carries tournament context)
+    _avatar_selection_debug: dict[str, Any] = {}
+    if avatar_tournament_run_id:
+        _avatar_selection_debug["tournament_run_id"] = avatar_tournament_run_id
+    if avatar_selection_mode:
+        _avatar_selection_debug["selection_mode"] = avatar_selection_mode
+    if avatar_ctx.get("selection_reason"):
+        _avatar_selection_debug["selection_reason"] = avatar_ctx["selection_reason"]
+
     bridge_ctx = _execution_bridge.resolve_context(
         db,
         avatar_id=payload.avatar_id,
         market_code=payload.market_code,
         content_goal=payload.content_goal,
         conversion_mode=payload.conversion_mode,
+        series_id=payload.series_id,
+        episode_index=payload.episode_index,
+        continuity_context=payload.continuity_context,
+        winner_dna_summary=payload.winner_dna_summary,
+        brain_plan=payload.brain_plan,
+        avatar_identity=payload.avatar_identity,
+        avatar_voice=payload.avatar_voice,
+        avatar_continuity=payload.avatar_continuity,
+        avatar_selection_debug=_avatar_selection_debug or None,
     )
+
+    # Avatar Acting Model: inject acting context into bridge context
+    if payload.acting_payload:
+        bridge_ctx["acting_payload"] = payload.acting_payload
+    if payload.avatar_acting_profile:
+        bridge_ctx["avatar_acting_profile"] = payload.avatar_acting_profile
 
     planned_scenes = [
         _execution_bridge.transform_scene_payload(
@@ -272,6 +329,15 @@ async def create_render_job(
             detail="Render job created but could not be reloaded",
         )
 
+    # PATCH 5 — include avatar context in completion/response payload for feedback loop
+    _avatar_context_payload: dict[str, Any] | None = None
+    if avatar_id or avatar_tournament_run_id or avatar_selection_mode:
+        _avatar_context_payload = {
+            "avatar_id": avatar_id,
+            "tournament_run_id": avatar_tournament_run_id,
+            "selection_mode": avatar_selection_mode,
+        }
+
     response = RenderJobCreateResponse(
         id=refreshed.id,
         project_id=refreshed.project_id,
@@ -284,6 +350,7 @@ async def create_render_job(
         completed_scene_count=refreshed.completed_scene_count,
         failed_scene_count=refreshed.failed_scene_count,
         dispatch_task=dispatch_task,
+        avatar_context=_avatar_context_payload,
     )
 
     # --- Autovis production bridge: track avatar usage after job is dispatched ---

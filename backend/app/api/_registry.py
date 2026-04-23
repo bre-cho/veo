@@ -19,6 +19,7 @@ from app.api.script_upload_preview import router as script_upload_preview_router
 from app.api.script_validation import router as script_validation_router
 from app.api.script_regeneration_routes import router as script_regeneration_router
 from app.api.provider_payload_preview import router as provider_payload_preview_router
+from app.api.topic_intake import router as topic_intake_router
 
 # ── Project workspace ─────────────────────────────────────────────────────
 from app.api.project_from_preview import router as project_from_preview_router
@@ -40,6 +41,7 @@ from app.api.control_plane import router as control_plane_router
 from app.api.autopilot import router as autopilot_router
 from app.api.autopilot_brain import router as autopilot_brain_router
 from app.api.production import router as production_router
+from app.api.brain_memory import router as brain_memory_router
 
 # ── Intelligence / ML ─────────────────────────────────────────────────────
 from app.api.ai_engine import router as ai_engine_router
@@ -52,6 +54,14 @@ from app.api.templates import router as templates_router
 from app.api.template_runtime import router as template_runtime_router
 from app.api.template_extraction import router as template_extraction_router
 from app.api.template_governance_scheduling import router as template_governance_scheduling_router
+from app.api.template_debug import router as template_debug_router
+
+# ── Avatar debug ───────────────────────────────────────────────────────────
+from app.api.avatar_debug import router as avatar_debug_router
+
+# ── Avatar Tournament + Governance ────────────────────────────────────────
+from app.api.avatar_tournament import router as avatar_tournament_router
+from app.api.avatar_governance import router as avatar_governance_router
 
 # ── Audio ─────────────────────────────────────────────────────────────────
 from app.api.audio import router as audio_router
@@ -78,6 +88,12 @@ from app.api.creative_runs import router as creative_runs_router
 from app.api.publish_signal import router as publish_signal_router
 from app.api.publish_webhooks import router as publish_webhooks_router
 
+# ── Avatar Acting Model ───────────────────────────────────────────────────
+from app.api.avatar_acting import router as avatar_acting_router
+
+# ── Multi-Character Drama Engine ─────────────────────────────────────────
+from app.api.drama import router as drama_router
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
@@ -100,6 +116,7 @@ _SCRIPT_ROUTERS = [
     script_validation_router,
     script_regeneration_router,
     provider_payload_preview_router,
+    topic_intake_router,
 ]
 
 _PROJECT_ROUTERS = [
@@ -124,6 +141,7 @@ _ORCHESTRATION_ROUTERS = [
     autopilot_router,
     autopilot_brain_router,
     production_router,
+    brain_memory_router,
 ]
 
 _INTELLIGENCE_ROUTERS = [
@@ -138,6 +156,13 @@ _TEMPLATE_ROUTERS = [
     template_runtime_router,
     template_extraction_router,
     template_governance_scheduling_router,
+    template_debug_router,
+    avatar_debug_router,
+]
+
+_AVATAR_TOURNAMENT_ROUTERS = [
+    avatar_tournament_router,
+    avatar_governance_router,
 ]
 
 _AUDIO_ROUTERS = [
@@ -177,6 +202,8 @@ _PHASE_10_12_ROUTERS = [
     render_quality_plural_router,
     storyboard_extended_router,
     publish_compliance_router,
+    avatar_acting_router,
+    drama_router,
 ]
 
 
@@ -192,6 +219,7 @@ def register_all_routers(app: FastAPI) -> None:
         _TEMPLATE_ROUTERS,
         _AUDIO_ROUTERS,
         _AVATAR_ROUTERS,
+        _AVATAR_TOURNAMENT_ROUTERS,
         _CREATIVE_ROUTERS,
         _PHASE_10_12_ROUTERS,
     ):

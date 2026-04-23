@@ -299,6 +299,82 @@ def finalize_render_job(
     return True
 
 
+def stage_render_job_for_identity_review(
+    db: Session,
+    job: RenderJob,
+    *,
+    final_video_url: str,
+    final_video_path: str,
+    final_timeline: dict,
+    source: str = "postprocess",
+) -> bool:
+    """Persist final output onto the job and transition it to identity_review.
+
+    The job is NOT yet marked completed.  The identity review worker will
+    call ``finalize_render_job()`` (→ completed) once QA passes, or transition
+    to ``quality_remediation`` / ``identity_gate_failed`` on failure.
+    """
+    old_status = job.status
+
+    try:
+        assert_valid_transition(
+            entity_type="render_job",
+            entity_id=job.id,
+            current_state=old_status,
+            next_state="identity_review",
+            context={
+                "project_id": job.project_id,
+                "provider": job.provider,
+                "source": source,
+            },
+        )
+    except Exception:
+        return False
+
+    job.status = "identity_review"
+    job.final_video_url = final_video_url
+    job.final_video_path = final_video_path
+    job.final_timeline_json = _json_dumps(final_timeline)
+
+    db.flush()
+
+    create_state_transition_event(
+        db,
+        entity_type="render_job",
+        entity_id=job.id,
+        job_id=job.id,
+        scene_task_id=None,
+        source=source,
+        old_state=old_status,
+        new_state="identity_review",
+        reason="Postprocess complete; awaiting identity and quality review",
+        metadata={
+            "final_video_url": final_video_url,
+            "final_video_path": final_video_path,
+        },
+        _flush_only=True,
+    )
+    append_timeline_event(
+        db,
+        job_id=job.id,
+        scene_task_id=None,
+        scene_index=None,
+        source=source,
+        event_type="job_identity_review",
+        status="identity_review",
+        provider=job.provider,
+        payload={
+            "old_status": old_status,
+            "final_video_url": final_video_url,
+            "final_video_path": final_video_path,
+        },
+        _flush_only=True,
+    )
+    db.commit()
+
+    return True
+
+
 # =========================
 # Scene transitions
 # =========================
@@ -728,6 +804,98 @@ def mark_scene_failed_from_provider(
         source="callback",
         final_status="failed",
     )
+
+
+# =========================
+# Scene-level remediation
+# =========================
+def requeue_failed_scene(
+    db: Session,
+    job: RenderJob,
+    scene: RenderSceneTask,
+    *,
+    source: str = "remediation",
+) -> bool:
+    """Requeue a single failed scene for re-dispatch without restarting the whole job.
+
+    Resets the scene back to ``queued`` and decrements the job's
+    ``failed_scene_count`` so the job health snapshot stays accurate.
+    Callers must subsequently re-dispatch the scene via the normal dispatch path.
+
+    Returns ``True`` if the scene was successfully requeued.
+    """
+    if scene.status not in ("failed", "canceled"):
+        return False
+
+    try:
+        assert_valid_transition(
+            entity_type="render_scene_task",
+            entity_id=scene.id,
+            current_state=scene.status,
+            next_state="queued",
+            context={
+                "job_id": scene.job_id,
+                "provider": scene.provider,
+                "source": source,
+            },
+        )
+    except Exception:
+        return False
+
+    old_status = scene.status
+    # Decrement failed count since we're giving it another chance
+    if job.failed_scene_count > 0:
+        job.failed_scene_count -= 1
+
+    scene.status = "queued"
+    scene.error_message = None
+    scene.failure_code = None
+    scene.failure_category = None
+    scene.provider_task_id = None
+    scene.provider_operation_name = None
+    scene.provider_request_id = None
+    scene.provider_status_raw = None
+    scene.submitted_at = None
+    scene.started_at = None
+    scene.finished_at = None
+
+    db.flush()
+
+    create_state_transition_event(
+        db,
+        entity_type="render_scene_task",
+        entity_id=scene.id,
+        job_id=scene.job_id,
+        scene_task_id=scene.id,
+        source=source,
+        old_state=old_status,
+        new_state="queued",
+        reason="Scene requeued for remediation re-dispatch",
+        metadata={"remediation_source": source},
+        _flush_only=True,
+    )
+    append_timeline_event(
+        db,
+        job_id=scene.job_id,
+        scene_task_id=scene.id,
+        scene_index=scene.scene_index,
+        source=source,
+        event_type="scene_requeued",
+        status="queued",
+        provider=scene.provider,
+        provider_status_raw=None,
+        provider_request_id=None,
+        provider_task_id=None,
+        provider_operation_name=None,
+        payload={"old_status": old_status},
+        _flush_only=True,
+    )
+    db.commit()
+    refresh_render_job_health_snapshot(
+        db,
+        get_render_job_by_id(db, scene.job_id, with_scenes=True) or scene.job,
+    )
+    return True
 
 
 # =========================

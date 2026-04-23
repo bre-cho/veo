@@ -1,37 +1,51 @@
+"""avatar_tournament_run — records a single avatar selection tournament run."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
 
-try:
-    from app.db.base_class import Base
-except Exception:  # pragma: no cover - monorepo compatibility shim
-    from sqlalchemy.orm import DeclarativeBase
+from app.db.base import Base
 
-    class Base(DeclarativeBase):
-        pass
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AvatarTournamentRun(Base):
+    """One tournament run per selection event.
+
+    Tracks the context and outcome of each time the system chose an avatar
+    for a given project/topic/template context.
+    """
+
     __tablename__ = "avatar_tournament_run"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    topic_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    template_family: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
-    topic_signature: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    platform: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
-    selection_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="exploit")
-    selected_avatar_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    explanation_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    project_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    topic_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    template_family: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    platform: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="completed", index=True
+    )  # pending|running|completed|cancelled
+    selection_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="exploit"
+    )  # exploit|explore|forced_test
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, default=_now
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, default=_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, default=_now, onupdate=_now
+    )

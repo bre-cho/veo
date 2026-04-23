@@ -30,6 +30,20 @@ class ExecutionBridgeService:
         storyboard: dict[str, Any] | None = None,
         optimization_response: dict[str, Any] | None = None,
         winner_patterns: list[dict[str, Any]] | None = None,
+        # Brain Layer fields
+        series_id: str | None = None,
+        episode_index: int | None = None,
+        continuity_context: dict[str, Any] | None = None,
+        winner_dna_summary: dict[str, Any] | None = None,
+        brain_plan: dict[str, Any] | None = None,
+        # Template System fields
+        template_prompt_bias: dict[str, Any] | None = None,
+        # Avatar System fields
+        avatar_identity: dict[str, Any] | None = None,
+        avatar_voice: dict[str, Any] | None = None,
+        avatar_continuity: dict[str, Any] | None = None,
+        # Avatar Tournament fields
+        avatar_selection_debug: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -75,6 +89,20 @@ class ExecutionBridgeService:
             "storyboard": storyboard,
             "optimization_response": optimization_response,
             "winner_patterns": winner_patterns or [],
+            # Brain Layer fields
+            "series_id": series_id,
+            "episode_index": episode_index,
+            "continuity_context": continuity_context,
+            "winner_dna_summary": winner_dna_summary,
+            "brain_plan": brain_plan,
+            # Template System fields
+            "template_prompt_bias": template_prompt_bias or {},
+            # Avatar System fields
+            "avatar_identity": avatar_identity or {},
+            "avatar_voice": avatar_voice or {},
+            "avatar_continuity": avatar_continuity or {},
+            # Avatar Tournament fields
+            "avatar_selection_debug": avatar_selection_debug or {},
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -87,6 +115,15 @@ class ExecutionBridgeService:
             storyboard=project.get("storyboard"),
             optimization_response=project.get("optimization_response"),
             winner_patterns=project.get("winner_patterns"),
+            series_id=project.get("series_id"),
+            episode_index=project.get("episode_index"),
+            continuity_context=project.get("continuity_context"),
+            winner_dna_summary=project.get("winner_dna_summary"),
+            brain_plan=project.get("brain_plan"),
+            avatar_identity=project.get("avatar_identity"),
+            avatar_voice=project.get("avatar_voice"),
+            avatar_continuity=project.get("avatar_continuity"),
+            avatar_selection_debug=project.get("avatar_selection_debug"),
         )
 
     def apply_to_preview_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +137,12 @@ class ExecutionBridgeService:
             "storyboard": updated.get("storyboard"),
             "optimization_response": updated.get("optimization_response"),
             "winner_patterns": updated.get("winner_patterns") or [],
+            # Brain Layer fields
+            "series_id": updated.get("series_id"),
+            "episode_index": updated.get("episode_index"),
+            "continuity_context": updated.get("continuity_context") or {},
+            "winner_dna_summary": updated.get("winner_dna_summary") or {},
+            "brain_plan": updated.get("brain_plan") or {},
         }
         scenes = updated.get("scenes") or []
         updated["scenes"] = [self.apply_to_project_scene(scene, context) for scene in scenes]
@@ -138,6 +181,13 @@ class ExecutionBridgeService:
                 pass
 
         updated["metadata"] = metadata
+
+        # Director system fields
+        for director_key in ("director_intent", "dramatic_intent", "conflict_type", "shot_purpose", "emotional_tone", "beat_type"):
+            val = (scene.get("metadata") or {}).get(director_key)
+            if val is not None:
+                updated[director_key] = val
+
         return updated
 
     def transform_scene_payload(self, scene_payload: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
@@ -243,6 +293,64 @@ class ExecutionBridgeService:
         if conversion_mode:
             parts.append(f"CTA bias: {conversion_mode} with open-loop momentum.")
 
+        # Brain Layer context hints (brief, non-redundant)
+        series_id = (ctx.get("series_id") or "").strip()
+        if series_id:
+            continuity = ctx.get("continuity_context") or {}
+            unresolved = continuity.get("unresolved_loops") or []
+            episode_role = continuity.get("episode_role")
+            if not episode_role:
+                brain_plan = ctx.get("brain_plan") or {}
+                if isinstance(brain_plan, dict):
+                    episode_role = brain_plan.get("episode_role")
+            if episode_role:
+                parts.append(f"Episode role: {episode_role}.")
+            if unresolved:
+                parts.append(f"Series continuity: preserve unresolved loop about {unresolved[0]}.")
+
+        winner_dna = ctx.get("winner_dna_summary") or {}
+        if isinstance(winner_dna, dict) and winner_dna.get("hook_core"):
+            parts.append(f"Winner DNA: {winner_dna['hook_core']}.")
+
+        # Template System: inject template identity and visual bias from brain plan
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        template_id = brain_notes.get("selected_template_id")
+        template_family = brain_notes.get("selected_template_family")
+        template_prompt_bias = brain_notes.get("template_prompt_bias") or {}
+
+        if template_id:
+            parts.append(f"Template: {template_id}.")
+        if template_family:
+            parts.append(f"Template family: {template_family}.")
+
+        prompt_bias = template_prompt_bias.get("prompt_bias") or {}
+        if isinstance(prompt_bias, dict):
+            if prompt_bias.get("tone"):
+                parts.append(f"Tone bias: {prompt_bias['tone']}.")
+            if prompt_bias.get("emotion"):
+                parts.append(f"Emotion bias: {prompt_bias['emotion']}.")
+            if prompt_bias.get("contrast"):
+                parts.append(f"Contrast bias: {prompt_bias['contrast']}.")
+        cta_style = template_prompt_bias.get("cta_style")
+        if cta_style:
+            parts.append(f"CTA style: {cta_style}.")
+
+        # Avatar System: inject avatar identity context into prompt
+        avatar_identity = ctx.get("avatar_identity") or {}
+        avatar_voice = ctx.get("avatar_voice") or {}
+        avatar_continuity = ctx.get("avatar_continuity") or {}
+
+        if avatar_identity.get("display_name"):
+            parts.append(f"Avatar: {avatar_identity['display_name']}.")
+        if avatar_identity.get("persona"):
+            parts.append(f"Avatar persona: {avatar_identity['persona']}.")
+        if avatar_identity.get("tone"):
+            parts.append(f"Avatar tone: {avatar_identity['tone']}.")
+        if avatar_voice.get("delivery_style"):
+            parts.append(f"Voice delivery: {avatar_voice['delivery_style']}.")
+        if avatar_continuity.get("emotion_curve"):
+            parts.append(f"Emotion curve: {avatar_continuity['emotion_curve']}.")
+
         if not parts:
             return prompt
 
@@ -258,6 +366,8 @@ class ExecutionBridgeService:
             metadata["open_loop_bias"] = True
 
     def _compact_context(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        avatar_selection = brain_notes.get("avatar_selection") or {}
         return {
             "avatar_id": ctx.get("avatar_id"),
             "market_code": ctx.get("market_code"),
@@ -266,6 +376,24 @@ class ExecutionBridgeService:
             "template_family": ctx.get("template_family"),
             "has_storyboard": bool(ctx.get("storyboard")),
             "has_optimization_response": bool(ctx.get("optimization_response")),
+            # Brain Layer fields
+            "series_id": ctx.get("series_id"),
+            "episode_index": ctx.get("episode_index"),
+            "continuity_context": ctx.get("continuity_context"),
+            "winner_dna_summary": ctx.get("winner_dna_summary"),
+            "brain_plan": ctx.get("brain_plan"),
+            # Template System fields (sourced from brain_plan.notes for consistency)
+            "selected_template_id": brain_notes.get("selected_template_id"),
+            "selected_template_family": brain_notes.get("selected_template_family"),
+            "template_prompt_bias": brain_notes.get("template_prompt_bias") or {},
+            # Avatar System fields
+            "avatar_identity": ctx.get("avatar_identity") or {},
+            "avatar_voice": ctx.get("avatar_voice") or {},
+            "avatar_continuity": ctx.get("avatar_continuity") or {},
+            # Avatar Tournament fields
+            "avatar_selection_debug": ctx.get("avatar_selection_debug") or {},
+            "avatar_tournament_run_id": avatar_selection.get("tournament_run_id"),
+            "avatar_selection_mode": avatar_selection.get("selection_mode"),
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
@@ -325,3 +453,83 @@ class ExecutionBridgeService:
             top_pattern = winner_patterns[0]
             if isinstance(top_pattern, dict):
                 metadata["trust_bias"] = top_pattern.get("score")
+
+        # Brain Layer: inject continuity and winner DNA into scene metadata
+        continuity = ctx.get("continuity_context") or {}
+        if continuity:
+            metadata["series_id"] = continuity.get("series_id")
+            metadata["episode_index"] = continuity.get("episode_index")
+            metadata["episode_role"] = continuity.get("episode_role")
+            metadata["callback_targets"] = continuity.get("callback_targets") or []
+            metadata["continuity_constraints"] = continuity.get("continuity_constraints") or {}
+
+        winner_dna = ctx.get("winner_dna_summary") or {}
+        if winner_dna:
+            metadata["winner_dna_summary"] = winner_dna
+
+        # Template System: inject selected template metadata into scene metadata
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        if brain_notes.get("selected_template_id"):
+            metadata["selected_template_id"] = brain_notes.get("selected_template_id")
+        if brain_notes.get("selected_template_family"):
+            metadata["selected_template_family"] = brain_notes.get("selected_template_family")
+        if brain_notes.get("template_prompt_bias"):
+            metadata["template_prompt_bias"] = brain_notes.get("template_prompt_bias")
+
+        # Avatar System: inject avatar context into scene metadata
+        avatar_identity = ctx.get("avatar_identity") or {}
+        if avatar_identity:
+            metadata["avatar_id"] = avatar_identity.get("avatar_id")
+            metadata["avatar_persona"] = avatar_identity.get("persona")
+            metadata["avatar_tone"] = avatar_identity.get("tone")
+            metadata["avatar_visual_style"] = avatar_identity.get("visual_style")
+
+        avatar_voice = ctx.get("avatar_voice") or {}
+        if avatar_voice:
+            metadata["avatar_voice"] = avatar_voice
+
+        avatar_continuity = ctx.get("avatar_continuity") or {}
+        if avatar_continuity:
+            metadata["avatar_continuity"] = avatar_continuity
+
+        # Direct avatar_id fallback: if avatar_identity didn't carry avatar_id, use ctx-level one
+        if not metadata.get("avatar_id") and ctx.get("avatar_id"):
+            metadata["avatar_id"] = ctx.get("avatar_id")
+
+        # Avatar Tournament fields
+        avatar_selection_debug = ctx.get("avatar_selection_debug") or {}
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        avatar_selection = brain_notes.get("avatar_selection") or {}
+
+        if avatar_selection_debug or avatar_selection:
+            # Use tournament explanation if available, fall back to legacy debug payload
+            explanation = avatar_selection.get("explanation") or {}
+            ranking_summary = explanation.get("ranking_summary") or avatar_selection_debug.get("ranking_summary") or []
+            metadata["avatar_selection_reason"] = ranking_summary[:1]
+            metadata["avatar_selection_mode"] = (
+                avatar_selection.get("selection_mode")
+                or avatar_selection_debug.get("selection_mode")
+            )
+            tournament_run_id = (
+                avatar_selection.get("tournament_run_id")
+                or avatar_selection_debug.get("tournament_run_id")
+            )
+            if tournament_run_id:
+                metadata["avatar_tournament_run_id"] = tournament_run_id
+            if avatar_selection.get("selection_mode"):
+                metadata["avatar_policy_state"] = avatar_selection["selection_mode"]
+
+        # Avatar Acting Model: inject acting decision fields into scene metadata
+        brain_notes_acting = (ctx.get("brain_plan") or {}).get("notes") or {}
+        acting_payload = brain_notes_acting.get("acting_payload") or ctx.get("acting_payload") or {}
+        if acting_payload:
+            metadata["acting_logic"] = acting_payload
+            emotion = acting_payload.get("emotion_state") or {}
+            if emotion:
+                metadata["emotion_state"] = emotion
+            if acting_payload.get("subtext"):
+                metadata["subtext"] = acting_payload["subtext"]
+            if acting_payload.get("body_language"):
+                metadata["body_language"] = acting_payload["body_language"]
+            if acting_payload.get("line_delivery"):
+                metadata["line_delivery"] = acting_payload["line_delivery"]

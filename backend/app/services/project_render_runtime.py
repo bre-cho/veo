@@ -42,20 +42,46 @@ def trigger_project_render(db: Session, project_id: str) -> dict:
     planned_scenes=[]
     for scene in project.get("scenes", []):
         bridged_scene = _execution_bridge.apply_to_project_scene(scene, bridge_ctx)
+        duration_seconds = int(round(float(
+            bridged_scene.get("target_duration_sec")
+            or bridged_scene.get("duration_seconds")
+            or 5
+        )))
+        resolved_prompt_text = (
+            bridged_scene.get("visual_prompt")
+            or bridged_scene.get("prompt_text")
+            or bridged_scene.get("script_text")
+            or bridged_scene["title"]
+        )
         planned_scenes.append({
+            # --- Canonical scene contract (shared by all pipeline flows) ---
             "scene_index": bridged_scene["scene_index"],
             "title": bridged_scene["title"],
             "script_text": bridged_scene.get("script_text"),
-            "prompt_text": bridged_scene.get("visual_prompt") or bridged_scene.get("script_text") or bridged_scene["title"],
-            "provider_target_duration_sec": int(round(float(bridged_scene.get("target_duration_sec", 5)))),
-            "aspect_ratio": project.get("format","9:16"),
-            "provider_mode": bridged_scene.get("provider_mode") or veo_config.get("veo_mode"),
-            "start_image_url": bridged_scene.get("start_image_url"),
-            "end_image_url": bridged_scene.get("end_image_url"),
+            "prompt_text": bridged_scene.get("prompt_text") or bridged_scene.get("visual_prompt"),
+            "resolved_prompt_text": resolved_prompt_text,
+            "duration_seconds": duration_seconds,
+            "resolved_duration_seconds": duration_seconds,
+            "aspect_ratio": project.get("format", "9:16"),
+            "provider_model": veo_config.get("provider_model") or bridged_scene.get("provider_mode"),
+            # image / frame inputs (normalised key names)
+            "prompt_image_url": (
+                bridged_scene.get("start_image_url")
+                or bridged_scene.get("prompt_image_url")
+            ),
+            "last_frame_image_url": (
+                bridged_scene.get("end_image_url")
+                or bridged_scene.get("last_frame_image_url")
+            ),
             "character_reference_image_urls": bridged_scene.get("character_reference_image_urls") or [],
             "character_reference_pack_id": veo_config.get("character_reference_pack_id"),
-            "sound_generation": veo_config.get("sound_generation", False),
-            "provider_model": veo_config.get("provider_model"),
+            # audio
+            "enable_audio": (
+                veo_config.get("sound_generation", False)
+                or bridged_scene.get("enable_audio", False)
+            ),
+            # passthrough metadata
+            "metadata": bridged_scene.get("metadata") or {},
         })
     try:
         planned_scenes = plan_provider_scenes(
