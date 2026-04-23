@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.core.config import settings
@@ -9,6 +10,8 @@ from app.services.control_plane import get_or_create_worker_override, resolve_ef
 from app.schemas.provider_common import NormalizedSubmitResult
 from app.services.provider_normalize import normalize_provider_name
 from app.services.provider_router import submit_render_task
+
+logger = logging.getLogger(__name__)
 
 
 # =========================
@@ -88,12 +91,32 @@ def _resolve_metadata(raw: dict[str, Any], provider: str) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         metadata = {}
 
-    return {
+    # Explicit avatar context — promote top-level keys so they survive even
+    # if the upstream metadata dict is absent or sparsely populated.
+    avatar_id = raw.get("avatar_id") or metadata.get("avatar_id")
+    avatar_tournament_run_id = raw.get("avatar_tournament_run_id") or metadata.get("avatar_tournament_run_id")
+    avatar_selection_mode = raw.get("avatar_selection_mode") or metadata.get("avatar_selection_mode")
+    avatar_continuity_payload = raw.get("avatar_continuity_payload") or metadata.get("avatar_continuity_payload")
+
+    resolved = {
         "scene_index": raw.get("scene_index"),
         "title": raw.get("title"),
         "source_provider": normalize_provider_name(provider),
         **metadata,
     }
+
+    # Ensure avatar fields are present at top level in the resolved metadata.
+    # These may already be set via **metadata above; only set if missing.
+    if avatar_id:
+        resolved.setdefault("avatar_id", avatar_id)
+    if avatar_tournament_run_id:
+        resolved.setdefault("avatar_tournament_run_id", avatar_tournament_run_id)
+    if avatar_selection_mode:
+        resolved.setdefault("avatar_selection_mode", avatar_selection_mode)
+    if avatar_continuity_payload:
+        resolved.setdefault("avatar_continuity_payload", avatar_continuity_payload)
+
+    return resolved
 
 
 # =========================
@@ -112,7 +135,13 @@ def _build_provider_payload(raw: dict[str, Any], provider: str) -> dict[str, Any
     """
     default_model_attr = _PROVIDER_DEFAULT_MODELS.get(provider)
     default_model = getattr(settings, default_model_attr) if default_model_attr else None
-    return {
+
+    # Extract avatar context for per-scene injection
+    metadata = raw.get("metadata") or {}
+    avatar_id = raw.get("avatar_id") or metadata.get("avatar_id")
+    avatar_continuity_payload = raw.get("avatar_continuity_payload") or metadata.get("avatar_continuity_payload")
+
+    payload: dict[str, Any] = {
         "prompt_text": _resolve_prompt_text(raw),
         "negative_prompt": raw.get("negative_prompt"),
         "provider_model": raw.get("provider_model") or default_model,
@@ -126,6 +155,14 @@ def _build_provider_payload(raw: dict[str, Any], provider: str) -> dict[str, Any
         "enable_audio": bool(raw.get("enable_audio", False)),
         "metadata": _resolve_metadata(raw, provider),
     }
+
+    # Attach avatar context at scene level for providers that support it
+    if avatar_id:
+        payload["avatar_id"] = avatar_id
+    if avatar_continuity_payload:
+        payload["avatar_continuity_payload"] = avatar_continuity_payload
+
+    return payload
 
 
 def build_scene_dispatch_payload(provider: str, request_payload_json: str) -> dict[str, Any]:
@@ -159,6 +196,18 @@ async def dispatch_scene_task(provider: str, request_payload_json: str) -> Norma
     normalized_provider = normalize_provider_name(provider)
     scene_payload = build_scene_dispatch_payload(normalized_provider, request_payload_json)
     callback_url = _build_callback_url(normalized_provider)
+
+    # Log avatar context attached to this render dispatch for traceability
+    _meta = scene_payload.get("metadata") or {}
+    logger.info(
+        "render dispatch avatar context: avatar_id=%s tournament_run_id=%s selection_mode=%s scene_index=%s",
+        scene_payload.get("avatar_id") or _meta.get("avatar_id"),
+        _meta.get("avatar_tournament_run_id"),
+        _meta.get("avatar_selection_mode"),
+        _meta.get("scene_index"),
+    )
+    if not (scene_payload.get("avatar_id") or _meta.get("avatar_id")):
+        logger.info("render dispatch proceeding without avatar context; legacy flow preserved")
 
     try:
         return await submit_render_task(
