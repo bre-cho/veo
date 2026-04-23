@@ -49,6 +49,14 @@ class BrainFeedbackPayload(BaseModel):
     title: str | None = None
     description: str | None = None
     thumbnail_url: str | None = None
+    # Brain-aware render feedback fields (top-level for easy API use)
+    series_id: str | None = None
+    episode_index: int | None = None
+    continuity_context: dict[str, Any] = Field(default_factory=dict)
+    brain_plan: dict[str, Any] = Field(default_factory=dict)
+    winner_dna_summary: dict[str, Any] = Field(default_factory=dict)
+    market_code: str | None = None
+    content_goal: str | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
 
 

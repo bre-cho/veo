@@ -72,16 +72,15 @@ async def feedback_render(
 ):
     """Manually trigger a render feedback write to Brain memory.
 
-    The caller should pass a full project-like payload via the BrainFeedbackPayload
-    fields; series_id / episode_index / continuity_context / brain_plan are read
-    from the reconstructed project dict.
+    Pass series_id, episode_index, continuity_context, and brain_plan as top-level
+    fields in the request body (not nested inside metrics).
     """
     try:
         project = {
-            "series_id": payload.metrics.get("series_id"),
-            "episode_index": payload.metrics.get("episode_index"),
-            "continuity_context": payload.metrics.get("continuity_context") or {},
-            "brain_plan": payload.metrics.get("brain_plan") or {},
+            "series_id": payload.series_id,
+            "episode_index": payload.episode_index,
+            "continuity_context": payload.continuity_context or {},
+            "brain_plan": payload.brain_plan or {},
         }
         _feedback_service.record_render_outcome(
             db,

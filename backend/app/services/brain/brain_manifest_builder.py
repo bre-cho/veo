@@ -97,8 +97,8 @@ class BrainManifestBuilder:
                 {
                     "series_role": strategy.get("series_role"),
                     "winner_pattern_ref": strategy.get("winner_pattern_ref"),
-                    "open_loop_seed": (brain_plan.get("open_loop_targets") or [None])[0],
-                    "callback_to_previous_episode": (brain_plan.get("callback_targets") or [None])[0],
+                    "open_loop_seed": next(iter(brain_plan.get("open_loop_targets") or []), None),
+                    "callback_to_previous_episode": next(iter(brain_plan.get("callback_targets") or []), None),
                     "continuity_constraints": continuity_context.get("continuity_constraints") or {},
                 }
             )

@@ -309,7 +309,11 @@ class PublishScheduler:
                     "project_id": payload.get("project_id") or (payload.get("metadata") or {}).get("project_id"),
                     "market_code": (payload.get("metadata") or {}).get("market_code"),
                     "content_goal": payload.get("content_goal"),
-                    "winner_dna_summary": payload.get("winner_dna_summary") or {},
+                    "winner_dna_summary": (
+                        payload.get("winner_dna_summary")
+                        or (payload.get("metadata") or {}).get("winner_dna_summary")
+                        or {}
+                    ),
                     "title": payload.get("title"),
                     "description": payload.get("description"),
                     "thumbnail_url": payload.get("thumbnail_url"),
