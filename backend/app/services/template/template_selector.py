@@ -9,7 +9,9 @@ Scoring rubric (additive, higher is better):
   +0.5  winner_dna hook_core is present (bias toward known winners)
   +W    template.metadata["default_template_weight"] (tie-breaking priority)
 
-Default fallback (no positive match at all): story_chain_retention
+The score starts at float("-inf") so that even when no signal fires the
+registry-defined default_template_weight still distinguishes templates and
+the fallback (story_chain_retention) is only used when the registry is empty.
 """
 from __future__ import annotations
 

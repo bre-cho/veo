@@ -80,7 +80,9 @@ class BrainFeedbackService:
             ),
         )
 
-        # Record which template produced this winner
+        # Record which template produced this winner.
+        # Threshold 0.6 matches the existing winner_dna gate in PatternLibrary —
+        # below this score the publish outcome is not considered a strong signal.
         selected_template_id = payload.get("selected_template_id")
         if score >= 0.6 and selected_template_id:
             self._pattern_library.save(
