@@ -21,6 +21,20 @@ class BrainFeedbackService:
         self._avatar_scorecard = AvatarScorecard()
         self._avatar_pair_optimizer = AvatarPairOptimizer()
         self._avatar_governance = AvatarGovernanceEngine()
+        self._self_healing = None  # lazy-init to avoid circular imports
+        self._adaptive_learning = None  # lazy-init to avoid circular imports
+
+    def _get_self_healing(self):
+        if self._self_healing is None:
+            from app.services.avatar.self_healing_engine import SelfHealingEngine
+            self._self_healing = SelfHealingEngine()
+        return self._self_healing
+
+    def _get_adaptive_learning(self):
+        if self._adaptive_learning is None:
+            from app.services.avatar.learning_engine import AdaptiveLearningEngine
+            self._adaptive_learning = AdaptiveLearningEngine()
+        return self._adaptive_learning
 
     def record_render_outcome(
         self,
@@ -210,6 +224,45 @@ class BrainFeedbackService:
                 )
             except Exception:
                 pass  # governance feedback is non-fatal
+
+        # --- Self-Healing: detect anomalies and apply corrective actions ---
+        if avatar_id and db is not None:
+            try:
+                avatar_metrics = {**(payload.get("metrics") or {}), "total_score": score}
+                avatar_context = {
+                    "project_id": payload.get("project_id"),
+                    "topic_class": payload.get("topic_class"),
+                    "template_family": payload.get("selected_template_family"),
+                    "platform": payload.get("platform"),
+                    "topic_signature": payload.get("topic_signature"),
+                    "candidate_avatar_ids": payload.get("candidate_avatar_ids") or [],
+                }
+                self._get_self_healing().process_feedback(
+                    db,
+                    avatar_id=avatar_id,
+                    metrics=avatar_metrics,
+                    context=avatar_context,
+                )
+            except Exception:
+                pass  # self-healing is non-fatal
+
+        # --- Adaptive Learning: update EWMA baseline, bandit arm, policy weights ---
+        if avatar_id and db is not None:
+            try:
+                avatar_metrics = {**(payload.get("metrics") or {}), "total_score": score}
+                learning_context = {
+                    "topic_signature": payload.get("topic_signature"),
+                    "template_family": payload.get("selected_template_family"),
+                    "platform": payload.get("platform"),
+                }
+                self._get_adaptive_learning().learn(
+                    db,
+                    avatar_id=avatar_id,
+                    context=learning_context,
+                    metrics=avatar_metrics,
+                )
+            except Exception:
+                pass  # adaptive learning is non-fatal
 
     # ------------------------------------------------------------------
     # Internal helpers
