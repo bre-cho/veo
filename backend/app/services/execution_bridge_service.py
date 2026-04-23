@@ -117,6 +117,12 @@ class ExecutionBridgeService:
             "storyboard": updated.get("storyboard"),
             "optimization_response": updated.get("optimization_response"),
             "winner_patterns": updated.get("winner_patterns") or [],
+            # Brain Layer fields
+            "series_id": updated.get("series_id"),
+            "episode_index": updated.get("episode_index"),
+            "continuity_context": updated.get("continuity_context") or {},
+            "winner_dna_summary": updated.get("winner_dna_summary") or {},
+            "brain_plan": updated.get("brain_plan") or {},
         }
         scenes = updated.get("scenes") or []
         updated["scenes"] = [self.apply_to_project_scene(scene, context) for scene in scenes]
@@ -367,3 +373,16 @@ class ExecutionBridgeService:
             top_pattern = winner_patterns[0]
             if isinstance(top_pattern, dict):
                 metadata["trust_bias"] = top_pattern.get("score")
+
+        # Brain Layer: inject continuity and winner DNA into scene metadata
+        continuity = ctx.get("continuity_context") or {}
+        if continuity:
+            metadata["series_id"] = continuity.get("series_id")
+            metadata["episode_index"] = continuity.get("episode_index")
+            metadata["episode_role"] = continuity.get("episode_role")
+            metadata["callback_targets"] = continuity.get("callback_targets") or []
+            metadata["continuity_constraints"] = continuity.get("continuity_constraints") or {}
+
+        winner_dna = ctx.get("winner_dna_summary") or {}
+        if winner_dna:
+            metadata["winner_dna_summary"] = winner_dna
