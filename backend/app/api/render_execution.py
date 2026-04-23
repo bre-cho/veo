@@ -121,6 +121,12 @@ class RenderJobCreateRequest(BaseModel):
     market_code: str | None = None
     content_goal: str | None = None
     conversion_mode: str | None = None
+    # --- Brain Layer context (optional) ---
+    series_id: str | None = None
+    episode_index: int | None = None
+    continuity_context: dict[str, Any] | None = None
+    winner_dna_summary: dict[str, Any] | None = None
+    brain_plan: dict[str, Any] | None = None
 
     @field_validator("provider")
     @classmethod
@@ -215,6 +221,11 @@ async def create_render_job(
         market_code=payload.market_code,
         content_goal=payload.content_goal,
         conversion_mode=payload.conversion_mode,
+        series_id=payload.series_id,
+        episode_index=payload.episode_index,
+        continuity_context=payload.continuity_context,
+        winner_dna_summary=payload.winner_dna_summary,
+        brain_plan=payload.brain_plan,
     )
 
     planned_scenes = [

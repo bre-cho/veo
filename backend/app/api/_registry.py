@@ -19,6 +19,7 @@ from app.api.script_upload_preview import router as script_upload_preview_router
 from app.api.script_validation import router as script_validation_router
 from app.api.script_regeneration_routes import router as script_regeneration_router
 from app.api.provider_payload_preview import router as provider_payload_preview_router
+from app.api.topic_intake import router as topic_intake_router
 
 # ── Project workspace ─────────────────────────────────────────────────────
 from app.api.project_from_preview import router as project_from_preview_router
@@ -39,6 +40,7 @@ from app.api.decision_engine import router as decision_engine_router
 from app.api.control_plane import router as control_plane_router
 from app.api.autopilot import router as autopilot_router
 from app.api.production import router as production_router
+from app.api.brain_memory import router as brain_memory_router
 
 # ── Intelligence / ML ─────────────────────────────────────────────────────
 from app.api.ai_engine import router as ai_engine_router
@@ -99,6 +101,7 @@ _SCRIPT_ROUTERS = [
     script_validation_router,
     script_regeneration_router,
     provider_payload_preview_router,
+    topic_intake_router,
 ]
 
 _PROJECT_ROUTERS = [
@@ -122,6 +125,7 @@ _ORCHESTRATION_ROUTERS = [
     control_plane_router,
     autopilot_router,
     production_router,
+    brain_memory_router,
 ]
 
 _INTELLIGENCE_ROUTERS = [

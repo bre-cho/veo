@@ -50,6 +50,13 @@ async def create_project_from_script_preview(payload: ConfirmCreateProjectReques
             "optimization_response": payload.preview_payload.optimization_response,
             "winner_patterns": payload.preview_payload.winner_patterns or [],
             "original_filename": payload.preview_payload.original_filename,
+            # Brain Layer enrichment
+            "series_id": payload.preview_payload.series_id,
+            "episode_index": payload.preview_payload.episode_index,
+            "brain_plan": payload.preview_payload.brain_plan,
+            "continuity_context": payload.preview_payload.continuity_context,
+            "winner_dna_summary": payload.preview_payload.winner_dna_summary,
+            "memory_refs": payload.preview_payload.memory_refs,
             "is_template_source": True,
             "template_extracted": False,
             "template_extract_queued": False,

@@ -245,6 +245,9 @@ class PublishScheduler:
             if (job.publish_mode or _PUBLISH_MODE) == PUBLISH_MODE_REAL:
                 self._record_publish_outcome(job, db=db)
 
+            # Brain Layer feedback: record publish outcome to PatternMemory
+            self._record_brain_publish_feedback(job, db=db)
+
             return job
         except Exception as exc:
             job.status = "failed"
@@ -292,6 +295,27 @@ class PublishScheduler:
             )
         except Exception:
             pass  # Non-fatal – learning write-back must never block publish flow
+
+    @staticmethod
+    def _record_brain_publish_feedback(job: PublishJob, db: "Session | None" = None) -> None:
+        """Write publish outcome to Brain PatternMemory (winner DNA)."""
+        try:
+            from app.services.brain.brain_feedback_service import BrainFeedbackService
+            payload: dict[str, Any] = job.payload or {}
+            metadata: dict[str, Any] = payload.get("metadata") or {}
+            brain_feedback = BrainFeedbackService()
+            brain_feedback.record_publish_outcome(
+                db,
+                project_id=str(payload.get("project_id") or metadata.get("project_id") or ""),
+                publish_job_id=job.id,
+                platform=job.platform,
+                title=str(payload.get("title") or ""),
+                description=str(payload.get("description") or ""),
+                thumbnail_url=str(payload.get("thumbnail_url") or ""),
+                signal_metrics={},
+            )
+        except Exception:
+            pass  # Non-fatal – brain write-back must never block publish flow
 
     def retry_failed_job(self, db: Session, job_id: str) -> PublishJob | None:
         previous = self.get_job(db, job_id)

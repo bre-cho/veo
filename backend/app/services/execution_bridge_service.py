@@ -30,6 +30,12 @@ class ExecutionBridgeService:
         storyboard: dict[str, Any] | None = None,
         optimization_response: dict[str, Any] | None = None,
         winner_patterns: list[dict[str, Any]] | None = None,
+        # Brain Layer fields
+        series_id: str | None = None,
+        episode_index: int | None = None,
+        continuity_context: dict[str, Any] | None = None,
+        winner_dna_summary: dict[str, Any] | None = None,
+        brain_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -75,6 +81,12 @@ class ExecutionBridgeService:
             "storyboard": storyboard,
             "optimization_response": optimization_response,
             "winner_patterns": winner_patterns or [],
+            # Brain Layer fields
+            "series_id": series_id,
+            "episode_index": episode_index,
+            "continuity_context": continuity_context,
+            "winner_dna_summary": winner_dna_summary,
+            "brain_plan": brain_plan,
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -87,6 +99,11 @@ class ExecutionBridgeService:
             storyboard=project.get("storyboard"),
             optimization_response=project.get("optimization_response"),
             winner_patterns=project.get("winner_patterns"),
+            series_id=project.get("series_id"),
+            episode_index=project.get("episode_index"),
+            continuity_context=project.get("continuity_context"),
+            winner_dna_summary=project.get("winner_dna_summary"),
+            brain_plan=project.get("brain_plan"),
         )
 
     def apply_to_preview_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -243,6 +260,24 @@ class ExecutionBridgeService:
         if conversion_mode:
             parts.append(f"CTA bias: {conversion_mode} with open-loop momentum.")
 
+        # Brain Layer context hints (brief, non-redundant)
+        series_id = (ctx.get("series_id") or "").strip()
+        if series_id:
+            continuity = ctx.get("continuity_context") or {}
+            unresolved = continuity.get("unresolved_loops") or []
+            episode_role = None
+            brain_plan = ctx.get("brain_plan") or {}
+            if isinstance(brain_plan, dict):
+                episode_role = brain_plan.get("episode_role")
+            if episode_role:
+                parts.append(f"Episode role: {episode_role}.")
+            if unresolved:
+                parts.append(f"Series continuity: preserve unresolved loop about {unresolved[0]}.")
+
+        winner_dna = ctx.get("winner_dna_summary") or {}
+        if isinstance(winner_dna, dict) and winner_dna.get("hook_pattern"):
+            parts.append(f"Winner DNA: {winner_dna['hook_pattern']}.")
+
         if not parts:
             return prompt
 
@@ -266,6 +301,12 @@ class ExecutionBridgeService:
             "template_family": ctx.get("template_family"),
             "has_storyboard": bool(ctx.get("storyboard")),
             "has_optimization_response": bool(ctx.get("optimization_response")),
+            # Brain Layer fields
+            "series_id": ctx.get("series_id"),
+            "episode_index": ctx.get("episode_index"),
+            "continuity_context": ctx.get("continuity_context"),
+            "winner_dna_summary": ctx.get("winner_dna_summary"),
+            "brain_plan": ctx.get("brain_plan"),
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
