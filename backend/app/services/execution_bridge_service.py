@@ -485,6 +485,10 @@ class ExecutionBridgeService:
         if avatar_continuity:
             metadata["avatar_continuity"] = avatar_continuity
 
+        # Direct avatar_id fallback: if avatar_identity didn't carry avatar_id, use ctx-level one
+        if not metadata.get("avatar_id") and ctx.get("avatar_id"):
+            metadata["avatar_id"] = ctx.get("avatar_id")
+
         # Avatar Tournament fields
         avatar_selection_debug = ctx.get("avatar_selection_debug") or {}
         brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
@@ -499,7 +503,11 @@ class ExecutionBridgeService:
                 avatar_selection.get("selection_mode")
                 or avatar_selection_debug.get("selection_mode")
             )
-            if avatar_selection.get("tournament_run_id"):
-                metadata["avatar_tournament_run_id"] = avatar_selection["tournament_run_id"]
+            tournament_run_id = (
+                avatar_selection.get("tournament_run_id")
+                or avatar_selection_debug.get("tournament_run_id")
+            )
+            if tournament_run_id:
+                metadata["avatar_tournament_run_id"] = tournament_run_id
             if avatar_selection.get("selection_mode"):
                 metadata["avatar_policy_state"] = avatar_selection["selection_mode"]
