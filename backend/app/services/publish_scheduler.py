@@ -321,6 +321,8 @@ class PublishScheduler:
                     "thumbnail_url": payload.get("thumbnail_url"),
                     "platform": job.platform,
                     "metrics": (payload.get("metadata") or {}).get("metrics") or {},
+                    "avatar_id": (payload.get("metadata") or {}).get("avatar_id"),
+                    "topic_class": (payload.get("metadata") or {}).get("topic_class"),
                 },
                 score=0.5,
             )

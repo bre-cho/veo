@@ -127,6 +127,10 @@ class RenderJobCreateRequest(BaseModel):
     continuity_context: dict[str, Any] | None = None
     winner_dna_summary: dict[str, Any] | None = None
     brain_plan: dict[str, Any] | None = None
+    # --- Avatar System context (optional) ---
+    avatar_identity: dict[str, Any] = Field(default_factory=dict)
+    avatar_voice: dict[str, Any] = Field(default_factory=dict)
+    avatar_continuity: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("provider")
     @classmethod
@@ -226,6 +230,9 @@ async def create_render_job(
         continuity_context=payload.continuity_context,
         winner_dna_summary=payload.winner_dna_summary,
         brain_plan=payload.brain_plan,
+        avatar_identity=payload.avatar_identity,
+        avatar_voice=payload.avatar_voice,
+        avatar_continuity=payload.avatar_continuity,
     )
 
     planned_scenes = [

@@ -6,12 +6,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.episode_memory import EpisodeMemory
+from app.services.avatar.avatar_memory_service import AvatarMemoryService
 from app.services.pattern_library import PatternLibrary
 
 
 class BrainMemoryService:
     def __init__(self) -> None:
         self._pattern_library = PatternLibrary()
+        self._avatar_memory = AvatarMemoryService()
 
     def recall(
         self,
@@ -20,6 +22,8 @@ class BrainMemoryService:
         market_code: str | None,
         content_goal: str | None,
         series_id: str | None,
+        avatar_id: str | None = None,
+        topic_class: str | None = None,
     ) -> dict[str, Any]:
         winner_patterns: list[dict[str, Any]] = []
         latest_episode_memory: dict[str, Any] | None = None
@@ -81,4 +85,11 @@ class BrainMemoryService:
                 "series_id": series_id,
                 "winner_pattern_ids": [item["id"] for item in winner_patterns if item.get("id")],
             },
+            "avatar_memory": self._avatar_memory.get_recent_avatar_score(
+                db,
+                avatar_id=avatar_id or "",
+                market_code=market_code,
+                content_goal=content_goal,
+                topic_class=topic_class,
+            ) if avatar_id else {},
         }

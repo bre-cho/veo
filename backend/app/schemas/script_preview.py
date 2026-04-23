@@ -74,6 +74,10 @@ class ScriptPreviewPayload(BaseModel):
     # Template System fields (optional, backward-compatible)
     selected_template_id: str | None = None
     selected_template_family: str | None = None
+    # Avatar System fields (optional, backward-compatible)
+    avatar_identity: dict[str, Any] | None = None
+    avatar_voice: dict[str, Any] | None = None
+    avatar_continuity: dict[str, Any] | None = None
 
     @field_validator("script_text")
     @classmethod

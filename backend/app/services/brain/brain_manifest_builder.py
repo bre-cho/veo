@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.avatar.avatar_continuity_engine import AvatarContinuityEngine
+from app.services.avatar.avatar_scene_mapper import AvatarSceneMapper
+from app.services.avatar.avatar_voice_engine import AvatarVoiceEngine
 from app.services.execution_bridge_service import ExecutionBridgeService
 from app.services.script_ingestion import (
     build_subtitle_segments_from_scenes,
@@ -24,6 +27,9 @@ class BrainManifestBuilder:
     def __init__(self) -> None:
         self._execution_bridge = ExecutionBridgeService()
         self._storyboard_engine = StoryboardEngine()
+        self._avatar_voice = AvatarVoiceEngine()
+        self._avatar_continuity = AvatarContinuityEngine()
+        self._avatar_scene_mapper = AvatarSceneMapper()
 
     def _topic_to_script(self, topic: str, plan: dict[str, Any]) -> str:
         topic = (topic or "").strip()
@@ -81,6 +87,19 @@ class BrainManifestBuilder:
         plan_notes = brain_plan.get("notes") or {}
         template_prompt_bias = plan_notes.get("template_prompt_bias") or {}
 
+        avatar_identity = plan_notes.get("avatar_identity") or request.get("avatar_identity") or {}
+        avatar_voice = self._avatar_voice.resolve_voice_context(
+            voice_profile=(plan_notes.get("avatar_voice") or request.get("avatar_voice") or {}),
+            episode_role=continuity_context.get("episode_role"),
+        )
+        avatar_continuity = self._avatar_continuity.build_state(
+            avatar_id=avatar_identity.get("avatar_id") or request.get("avatar_id"),
+            series_id=continuity_context.get("series_id"),
+            episode_index=continuity_context.get("episode_index"),
+            episode_role=continuity_context.get("episode_role"),
+            callback_targets=continuity_context.get("callback_targets") or [],
+        ).model_dump()
+
         enriched_scenes: list[dict[str, Any]] = []
         for scene in scenes:
             scene_index = int(scene.get("scene_index", 0))
@@ -119,6 +138,12 @@ class BrainManifestBuilder:
                 enriched["pacing_weight"] = strategy.get("pacing_weight")
             if strategy.get("shot_hint"):
                 enriched["shot_hint"] = strategy.get("shot_hint")
+            enriched = self._avatar_scene_mapper.apply_to_scene(
+                scene=enriched,
+                avatar_identity=avatar_identity,
+                avatar_voice=avatar_voice,
+                avatar_continuity=avatar_continuity,
+            )
             enriched_scenes.append(enriched)
 
         ctx = self._execution_bridge.resolve_context(
@@ -143,7 +168,7 @@ class BrainManifestBuilder:
         subtitle_segments = build_subtitle_segments_from_scenes(bridged_scenes)
 
         return {
-            "avatar_id": request.get("avatar_id"),
+            "avatar_id": avatar_identity.get("avatar_id") or request.get("avatar_id"),
             "market_code": request.get("market_code"),
             "content_goal": request.get("content_goal"),
             "conversion_mode": request.get("conversion_mode"),
@@ -165,6 +190,9 @@ class BrainManifestBuilder:
             "memory_refs": memory_bundle.get("memory_refs") or {},
             "selected_template_id": plan_notes.get("selected_template_id"),
             "selected_template_family": plan_notes.get("selected_template_family"),
+            "avatar_identity": avatar_identity,
+            "avatar_voice": avatar_voice,
+            "avatar_continuity": avatar_continuity,
         }
 
     def build(

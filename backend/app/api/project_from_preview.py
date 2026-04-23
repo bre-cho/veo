@@ -64,6 +64,10 @@ async def create_project_from_script_preview(payload: ConfirmCreateProjectReques
             "template_extracted": False,
             "template_extract_queued": False,
             "template_source_locked": False,
+            # Avatar System enrichment
+            "avatar_identity": payload.preview_payload.avatar_identity,
+            "avatar_voice": payload.preview_payload.avatar_voice,
+            "avatar_continuity": payload.preview_payload.avatar_continuity,
         }
 
         project_dir = PROJECT_STORAGE_DIR / project_id

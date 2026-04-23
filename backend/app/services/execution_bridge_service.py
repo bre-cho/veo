@@ -38,6 +38,10 @@ class ExecutionBridgeService:
         brain_plan: dict[str, Any] | None = None,
         # Template System fields
         template_prompt_bias: dict[str, Any] | None = None,
+        # Avatar System fields
+        avatar_identity: dict[str, Any] | None = None,
+        avatar_voice: dict[str, Any] | None = None,
+        avatar_continuity: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -91,6 +95,10 @@ class ExecutionBridgeService:
             "brain_plan": brain_plan,
             # Template System fields
             "template_prompt_bias": template_prompt_bias or {},
+            # Avatar System fields
+            "avatar_identity": avatar_identity or {},
+            "avatar_voice": avatar_voice or {},
+            "avatar_continuity": avatar_continuity or {},
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +116,9 @@ class ExecutionBridgeService:
             continuity_context=project.get("continuity_context"),
             winner_dna_summary=project.get("winner_dna_summary"),
             brain_plan=project.get("brain_plan"),
+            avatar_identity=project.get("avatar_identity"),
+            avatar_voice=project.get("avatar_voice"),
+            avatar_continuity=project.get("avatar_continuity"),
         )
 
     def apply_to_preview_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -312,6 +323,22 @@ class ExecutionBridgeService:
         if cta_style:
             parts.append(f"CTA style: {cta_style}.")
 
+        # Avatar System: inject avatar identity context into prompt
+        avatar_identity = ctx.get("avatar_identity") or {}
+        avatar_voice = ctx.get("avatar_voice") or {}
+        avatar_continuity = ctx.get("avatar_continuity") or {}
+
+        if avatar_identity.get("display_name"):
+            parts.append(f"Avatar: {avatar_identity['display_name']}.")
+        if avatar_identity.get("persona"):
+            parts.append(f"Avatar persona: {avatar_identity['persona']}.")
+        if avatar_identity.get("tone"):
+            parts.append(f"Avatar tone: {avatar_identity['tone']}.")
+        if avatar_voice.get("delivery_style"):
+            parts.append(f"Voice delivery: {avatar_voice['delivery_style']}.")
+        if avatar_continuity.get("emotion_curve"):
+            parts.append(f"Emotion curve: {avatar_continuity['emotion_curve']}.")
+
         if not parts:
             return prompt
 
@@ -346,6 +373,10 @@ class ExecutionBridgeService:
             "selected_template_id": brain_notes.get("selected_template_id"),
             "selected_template_family": brain_notes.get("selected_template_family"),
             "template_prompt_bias": brain_notes.get("template_prompt_bias") or {},
+            # Avatar System fields
+            "avatar_identity": ctx.get("avatar_identity") or {},
+            "avatar_voice": ctx.get("avatar_voice") or {},
+            "avatar_continuity": ctx.get("avatar_continuity") or {},
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
@@ -427,3 +458,19 @@ class ExecutionBridgeService:
             metadata["selected_template_family"] = brain_notes.get("selected_template_family")
         if brain_notes.get("template_prompt_bias"):
             metadata["template_prompt_bias"] = brain_notes.get("template_prompt_bias")
+
+        # Avatar System: inject avatar context into scene metadata
+        avatar_identity = ctx.get("avatar_identity") or {}
+        if avatar_identity:
+            metadata["avatar_id"] = avatar_identity.get("avatar_id")
+            metadata["avatar_persona"] = avatar_identity.get("persona")
+            metadata["avatar_tone"] = avatar_identity.get("tone")
+            metadata["avatar_visual_style"] = avatar_identity.get("visual_style")
+
+        avatar_voice = ctx.get("avatar_voice") or {}
+        if avatar_voice:
+            metadata["avatar_voice"] = avatar_voice
+
+        avatar_continuity = ctx.get("avatar_continuity") or {}
+        if avatar_continuity:
+            metadata["avatar_continuity"] = avatar_continuity

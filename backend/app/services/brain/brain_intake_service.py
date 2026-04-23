@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.schemas.brain_intake import BrainIntakeRequest
+from app.services.avatar.avatar_identity_engine import AvatarIdentityEngine
 from app.services.brain.brain_decision_engine import BrainDecisionEngine
 from app.services.brain.brain_manifest_builder import BrainManifestBuilder
 from app.services.brain.brain_memory_service import BrainMemoryService
@@ -18,14 +19,36 @@ class BrainIntakeService:
         self._decision = BrainDecisionEngine()
         self._builder = BrainManifestBuilder()
         self._continuity = SeriesContinuityRouter()
+        self._avatar_identity = AvatarIdentityEngine()
 
     def _orchestrate(self, db: Session | None, request: BrainIntakeRequest) -> dict[str, Any]:
         request_dict = request.model_dump()
+
+        raw = f"{request_dict.get('topic') or ''} {request_dict.get('script_text') or ''}".lower()
+        topic_class = "system"
+        if any(k in raw for k in ["ai", "algorithm", "automation", "machine"]):
+            topic_class = "ai"
+        elif any(k in raw for k in ["story", "journey", "biography", "mystery"]):
+            topic_class = "documentary"
+
+        avatar_selection = self._avatar_identity.select_avatar(
+            market_code=request.market_code,
+            content_goal=request.content_goal,
+            topic_class=topic_class,
+            preferred_avatar_id=request.avatar_id,
+        )
+        request_dict["avatar_id"] = avatar_selection.avatar_id
+        request_dict["topic_class"] = topic_class
+        request_dict["avatar_identity"] = avatar_selection.identity
+        request_dict["avatar_voice"] = avatar_selection.voice
+
         memory_bundle = self._memory.recall(
             db,
             market_code=request.market_code,
             content_goal=request.content_goal,
             series_id=request.series_id,
+            avatar_id=avatar_selection.avatar_id,
+            topic_class=topic_class,
         )
         continuity = self._continuity.resolve(
             series_id=request.series_id,

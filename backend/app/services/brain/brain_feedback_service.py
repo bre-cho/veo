@@ -6,7 +6,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.episode_memory import EpisodeMemory
+from app.models.avatar_performance import AvatarPerformance
 from app.schemas.patterns import PatternMemoryIn
+from app.services.avatar.avatar_pair_optimizer import AvatarPairOptimizer
+from app.services.avatar.avatar_scorecard import AvatarScorecard
 from app.services.pattern_library import PatternLibrary
 from app.services.template.template_scorecard import classify_template_tier, compute_template_score
 
@@ -14,6 +17,8 @@ from app.services.template.template_scorecard import classify_template_tier, com
 class BrainFeedbackService:
     def __init__(self) -> None:
         self._pattern_library = PatternLibrary()
+        self._avatar_scorecard = AvatarScorecard()
+        self._avatar_pair_optimizer = AvatarPairOptimizer()
 
     def record_render_outcome(
         self,
@@ -132,6 +137,57 @@ class BrainFeedbackService:
                 )
             except Exception:
                 pass  # evolution is non-fatal
+
+        # --- Avatar performance scorecard + pair memory ---
+        avatar_id = payload.get("avatar_id")
+        if avatar_id and db is not None:
+            try:
+                score = self._avatar_scorecard.compute(
+                    avatar_id=avatar_id,
+                    market_code=payload.get("market_code"),
+                    content_goal=payload.get("content_goal"),
+                    topic_class=payload.get("topic_class"),
+                    metrics=payload.get("metrics") or {},
+                )
+                db.add(
+                    AvatarPerformance(
+                        avatar_id=score.avatar_id,
+                        market_code=score.market_code,
+                        content_goal=score.content_goal,
+                        topic_class=score.topic_class,
+                        template_id=payload.get("selected_template_id"),
+                        retention_score=score.retention_score,
+                        engagement_score=score.engagement_score,
+                        series_follow_score=score.series_follow_score,
+                        total_score=score.total_score,
+                        metrics=payload.get("metrics") or {},
+                    )
+                )
+                db.commit()
+
+                pair_score = self._avatar_pair_optimizer.compute_pair_score(
+                    avatar_score=score.total_score,
+                    template_score=total_score / 100.0,
+                )
+                self._pattern_library.save(
+                    db,
+                    PatternMemoryIn(
+                        pattern_type="avatar_template_pair",
+                        market_code=payload.get("market_code"),
+                        content_goal=payload.get("content_goal"),
+                        source_id=payload.get("project_id"),
+                        score=pair_score,
+                        payload={
+                            "avatar_id": avatar_id,
+                            "template_id": payload.get("selected_template_id"),
+                            "template_family": payload.get("selected_template_family"),
+                            "pair_score": pair_score,
+                            "metrics": payload.get("metrics") or {},
+                        },
+                    ),
+                )
+            except Exception:
+                pass  # avatar feedback is non-fatal
 
     # ------------------------------------------------------------------
     # Internal helpers

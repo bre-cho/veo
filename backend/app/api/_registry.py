@@ -55,6 +55,9 @@ from app.api.template_extraction import router as template_extraction_router
 from app.api.template_governance_scheduling import router as template_governance_scheduling_router
 from app.api.template_debug import router as template_debug_router
 
+# ── Avatar debug ───────────────────────────────────────────────────────────
+from app.api.avatar_debug import router as avatar_debug_router
+
 # ── Audio ─────────────────────────────────────────────────────────────────
 from app.api.audio import router as audio_router
 
@@ -142,6 +145,7 @@ _TEMPLATE_ROUTERS = [
     template_extraction_router,
     template_governance_scheduling_router,
     template_debug_router,
+    avatar_debug_router,
 ]
 
 _AUDIO_ROUTERS = [

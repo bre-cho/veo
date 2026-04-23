@@ -98,6 +98,10 @@ class BrainDecisionEngine:
                 "template_ab_enabled": run_ab,
                 "template_variants": template_variants,
                 "top_winner_pattern_id": (top_pattern or {}).get("id"),
+                "avatar_id": request.get("avatar_id"),
+                "avatar_identity": request.get("avatar_identity") or {},
+                "avatar_voice": request.get("avatar_voice") or {},
+                "avatar_memory": memory_bundle.get("avatar_memory") or {},
             },
         )
 
