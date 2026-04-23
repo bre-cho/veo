@@ -104,7 +104,7 @@ async def feedback_publish(
         _feedback_service.record_publish_outcome(
             db,
             payload=payload.model_dump(),
-            score=float(payload.metrics.get("score") or 0.5),
+            score=float(payload.metrics.get("score") if payload.metrics.get("score") is not None else 0.5),
         )
         return {"ok": True, "message": "Publish feedback recorded"}
     except Exception as exc:
