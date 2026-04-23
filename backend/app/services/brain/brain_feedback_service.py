@@ -295,6 +295,31 @@ class BrainFeedbackService:
                 )
             except Exception:
                 pass  # director scorecard is non-fatal
+
+        # --- Acting Scorecard: acting quality metrics ---
+        acting_metrics = payload.get("acting_metrics") or {}
+        if acting_metrics and db is not None:
+            try:
+                acting_scorecard = self._avatar_scorecard.compute_acting_score(
+                    acting_metrics=acting_metrics,
+                )
+                acting_total = acting_scorecard.get("total_acting_score", 0.0)
+                self._pattern_library.save(
+                    db,
+                    PatternMemoryIn(
+                        pattern_type="acting_scorecard",
+                        market_code=payload.get("market_code"),
+                        content_goal=payload.get("content_goal"),
+                        source_id=payload.get("project_id"),
+                        score=acting_total,
+                        payload={
+                            "avatar_id": payload.get("avatar_id"),
+                            "acting_scorecard": acting_scorecard,
+                        },
+                    ),
+                )
+            except Exception:
+                pass  # acting scorecard is non-fatal
     # Internal helpers
     # ------------------------------------------------------------------
 

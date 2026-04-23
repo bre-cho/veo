@@ -135,6 +135,9 @@ class RenderJobCreateRequest(BaseModel):
     avatar_tournament_run_id: str | None = None
     avatar_selection_mode: str | None = None
     avatar: dict[str, Any] | None = None
+    # --- Avatar Acting Model context (optional) ---
+    avatar_acting_profile: dict[str, Any] | None = None
+    acting_payload: dict[str, Any] | None = None
 
     @field_validator("provider")
     @classmethod
@@ -264,6 +267,12 @@ async def create_render_job(
         avatar_continuity=payload.avatar_continuity,
         avatar_selection_debug=_avatar_selection_debug or None,
     )
+
+    # Avatar Acting Model: inject acting context into bridge context
+    if payload.acting_payload:
+        bridge_ctx["acting_payload"] = payload.acting_payload
+    if payload.avatar_acting_profile:
+        bridge_ctx["avatar_acting_profile"] = payload.avatar_acting_profile
 
     planned_scenes = [
         _execution_bridge.transform_scene_payload(

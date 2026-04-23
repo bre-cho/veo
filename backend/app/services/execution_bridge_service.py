@@ -518,3 +518,18 @@ class ExecutionBridgeService:
                 metadata["avatar_tournament_run_id"] = tournament_run_id
             if avatar_selection.get("selection_mode"):
                 metadata["avatar_policy_state"] = avatar_selection["selection_mode"]
+
+        # Avatar Acting Model: inject acting decision fields into scene metadata
+        brain_notes_acting = (ctx.get("brain_plan") or {}).get("notes") or {}
+        acting_payload = brain_notes_acting.get("acting_payload") or ctx.get("acting_payload") or {}
+        if acting_payload:
+            metadata["acting_logic"] = acting_payload
+            emotion = acting_payload.get("emotion_state") or {}
+            if emotion:
+                metadata["emotion_state"] = emotion
+            if acting_payload.get("subtext"):
+                metadata["subtext"] = acting_payload["subtext"]
+            if acting_payload.get("body_language"):
+                metadata["body_language"] = acting_payload["body_language"]
+            if acting_payload.get("line_delivery"):
+                metadata["line_delivery"] = acting_payload["line_delivery"]

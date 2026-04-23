@@ -192,3 +192,46 @@ class AvatarScorecard:
             "lighting_intent_score": round(lighting_intent_score, 4),
             "total_director_score": total_director_score,
         }
+
+    def compute_acting_score(
+        self,
+        *,
+        acting_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compute a structured acting quality score from post-render metrics.
+
+        Parameters
+        ----------
+        acting_metrics:
+            Dict with keys: emotional_clarity, subtext_readability,
+            behavior_consistency, reaction_truthfulness, character_continuity.
+            Missing keys default to 0.0.
+
+        Returns
+        -------
+        dict
+            Acting scorecard with individual scores and ``total_acting_score``.
+        """
+        emotional_clarity = float(acting_metrics.get("emotional_clarity") or 0.0)
+        subtext_readability = float(acting_metrics.get("subtext_readability") or 0.0)
+        behavior_consistency = float(acting_metrics.get("behavior_consistency") or 0.0)
+        reaction_truthfulness = float(acting_metrics.get("reaction_truthfulness") or 0.0)
+        character_continuity = float(acting_metrics.get("character_continuity") or 0.0)
+
+        scores = [
+            emotional_clarity,
+            subtext_readability,
+            behavior_consistency,
+            reaction_truthfulness,
+            character_continuity,
+        ]
+        total_acting_score = round(sum(scores) / len(scores), 4)
+
+        return {
+            "emotional_clarity": round(emotional_clarity, 4),
+            "subtext_readability": round(subtext_readability, 4),
+            "behavior_consistency": round(behavior_consistency, 4),
+            "reaction_truthfulness": round(reaction_truthfulness, 4),
+            "character_continuity": round(character_continuity, 4),
+            "total_acting_score": total_acting_score,
+        }
