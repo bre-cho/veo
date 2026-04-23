@@ -45,7 +45,7 @@ RENDER_JOB_TRANSITIONS: dict[str, set[str]] = {
     "merging": {"burning_subtitles", "completed", "failed", "identity_review"},
     "burning_subtitles": {"completed", "failed", "identity_review"},
     "queue_error": {"failed"},
-    "identity_review": {"queued", "failed", "identity_gate_failed", "quality_remediation"},
+    "identity_review": {"queued", "completed", "failed", "identity_gate_failed", "quality_remediation"},
     "identity_gate_failed": {"re_render_queued", "failed"},  # re-render or hard fail
     "re_render_queued": {"queued", "failed"},  # fed back into the render pipeline
     "quality_remediation": {"queued", "completed", "failed"},  # re-queue or accept/fail
@@ -58,8 +58,8 @@ RENDER_SCENE_TRANSITIONS: dict[str, set[str]] = {
     "submitted": {"processing", "succeeded", "failed", "canceled"},
     "processing": {"processing", "succeeded", "failed", "canceled"},
     "succeeded": set(),
-    "failed": set(),
-    "canceled": set(),
+    "failed": {"queued"},   # allow scene-level remediation requeue
+    "canceled": {"queued"}, # allow requeue of canceled scenes
 }
 
 

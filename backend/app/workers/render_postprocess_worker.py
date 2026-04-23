@@ -12,6 +12,7 @@ from app.services.render_repository import (
     get_render_job_by_id,
     list_successful_scene_tasks,
     mark_job_status,
+    stage_render_job_for_identity_review,
 )
 from app.services.subtitle_burner import burn_subtitles, write_srt
 from app.services.video_merger import merge_clips_concat
@@ -202,7 +203,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
         latest_job = get_render_job_by_id(db, job_id, with_scenes=False)
         if not latest_job or _is_job_terminal(latest_job):
             return
-        finalize_render_job(
+        staged = stage_render_job_for_identity_review(
             db,
             latest_job,
             final_video_url=fallback_url,
@@ -210,6 +211,9 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
             final_timeline=final_timeline,
             source="postprocess",
         )
+        if staged:
+            from app.services.render_queue import enqueue_render_identity_review
+            enqueue_render_identity_review(latest_job.id)
         return
 
     merged_path = str(out_dir / "merged.mp4")
@@ -259,7 +263,7 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
         return
 
     if _is_job_already_in_postprocess(latest_job) or latest_job.status == "polling":
-        finalized = finalize_render_job(
+        staged = stage_render_job_for_identity_review(
             db,
             latest_job,
             final_video_url=final_video_url,
@@ -267,5 +271,9 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
             final_timeline=final_timeline,
             source="postprocess",
         )
-        if not finalized:
+        if not staged:
             return
+
+        # Enqueue the mandatory identity review gate
+        from app.services.render_queue import enqueue_render_identity_review
+        enqueue_render_identity_review(latest_job.id)
