@@ -87,6 +87,12 @@ from app.api.creative_runs import router as creative_runs_router
 from app.api.publish_signal import router as publish_signal_router
 from app.api.publish_webhooks import router as publish_webhooks_router
 
+# ── Avatar Acting Model ───────────────────────────────────────────────────
+from app.api.avatar_acting import router as avatar_acting_router
+
+# ── Multi-Character Drama Engine ─────────────────────────────────────────
+from app.api.drama import router as drama_router
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
@@ -194,6 +200,8 @@ _PHASE_10_12_ROUTERS = [
     render_quality_plural_router,
     storyboard_extended_router,
     publish_compliance_router,
+    avatar_acting_router,
+    drama_router,
 ]
 
 
