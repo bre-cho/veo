@@ -38,7 +38,7 @@ _ALLOWED_CONTENT_TYPES = (
     "binary/",
 )
 _DOWNLOAD_TIMEOUT_SECONDS = 120
-_MAX_RETRIES = 2
+_MAX_ATTEMPTS = 3  # total download attempts (1 initial + 2 retries)
 
 
 # -----------------------------------------------------------------------
@@ -100,7 +100,7 @@ async def cache_remote_video(job_id: str, scene_index: int, url: str) -> str:
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     last_error: Exception | None = None
-    for attempt in range(1, _MAX_RETRIES + 2):  # attempts: 1, 2, 3
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as client:
                 response = await client.get(url)
@@ -139,13 +139,13 @@ async def cache_remote_video(job_id: str, scene_index: int, url: str) -> str:
             logger.warning(
                 "Asset download attempt %d/%d failed for scene %d job %s: %s",
                 attempt,
-                _MAX_RETRIES + 1,
+                _MAX_ATTEMPTS,
                 scene_index,
                 job_id,
                 exc,
             )
 
     raise AssetIngestionError(
-        f"Asset ingestion failed after {_MAX_RETRIES + 1} attempts "
+        f"Asset ingestion failed after {_MAX_ATTEMPTS} attempts "
         f"for scene {scene_index} job {job_id}: {last_error}"
     )
