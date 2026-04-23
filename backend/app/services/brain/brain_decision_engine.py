@@ -1,9 +1,22 @@
-"""brain_decision_engine — deterministic planning pipeline."""
+"""brain_decision_engine — deterministic planning pipeline.
+
+Step sequence inside build_plan():
+  1. Recall winner patterns + continuity from memory_bundle
+  2. Select template via TemplateSelector
+  3. Map template → scene strategy via TemplateMapper
+  4. Merge winner-pattern refs + open-loop / callback targets
+  5. Build final BrainPlan + ContinuityContext
+"""
 from __future__ import annotations
 
 from typing import Any
 
 from app.schemas.brain_manifest import BrainPlan, ContinuityContext
+from app.services.template.template_mapper import TemplateMapper
+from app.services.template.template_selector import TemplateSelector
+
+_selector = TemplateSelector()
+_mapper = TemplateMapper()
 
 
 class BrainDecisionEngine:
@@ -23,32 +36,28 @@ class BrainDecisionEngine:
         open_loop_targets = list(continuity.get("unresolved_loops") or [])[:3]
         callback_targets = list(continuity.get("callback_targets") or [])[:3]
 
-        scene_strategy = [
-            {
-                "scene_index": 1,
-                "scene_goal": "hook",
-                "series_role": episode_role,
-                "winner_pattern_ref": (top_pattern or {}).get("id"),
-            },
-            {
-                "scene_index": 2,
-                "scene_goal": "tension",
-                "series_role": episode_role,
-                "winner_pattern_ref": (top_pattern or {}).get("id"),
-            },
-            {
-                "scene_index": 3,
-                "scene_goal": "reveal",
-                "series_role": episode_role,
-                "winner_pattern_ref": (top_pattern or {}).get("id"),
-            },
-            {
-                "scene_index": 4,
-                "scene_goal": "cta",
-                "series_role": episode_role,
-                "winner_pattern_ref": (top_pattern or {}).get("id"),
-            },
-        ]
+        # --- Template selection ---
+        selection = _selector.select(
+            request=request,
+            memory_bundle=memory_bundle,
+            continuity=continuity,
+        )
+        template_payload = selection.template_payload
+        episode_role_for_plan = episode_role or "continuation"
+
+        # --- Map template → scene strategy ---
+        scene_strategy = _mapper.map_to_scene_strategy(
+            template_payload=template_payload,
+            brain_plan={"episode_role": episode_role_for_plan},
+        )
+        # Inject winner pattern ref into every scene entry
+        winner_pattern_ref = (top_pattern or {}).get("id")
+        for entry in scene_strategy:
+            if winner_pattern_ref:
+                entry.setdefault("winner_pattern_ref", winner_pattern_ref)
+
+        # Prompt bias from template
+        prompt_bias = _mapper.map_to_prompt_bias(template_payload=template_payload)
 
         plan = BrainPlan(
             selected_series_id=selected_series_id,
@@ -58,12 +67,24 @@ class BrainDecisionEngine:
             open_loop_targets=open_loop_targets,
             callback_targets=callback_targets,
             scene_strategy=scene_strategy,
-            pacing_strategy={"mode": "winner_biased"},
-            cta_strategy={"mode": request.get("conversion_mode") or "soft_series_binge"},
+            pacing_strategy={
+                "mode": "template_driven",
+                "template_id": selection.template_id,
+                "template_family": selection.template_family,
+                "template_score": selection.score,
+                "selection_reasons": selection.reasons,
+            },
+            cta_strategy={
+                "mode": request.get("conversion_mode") or "soft_series_binge",
+                "cta_style": template_payload.get("cta_style"),
+            },
             notes={
                 "source_type": request.get("source_type"),
                 "market_code": request.get("market_code"),
                 "content_goal": request.get("content_goal"),
+                "template_id": selection.template_id,
+                "template_family": selection.template_family,
+                "prompt_bias": prompt_bias,
             },
         )
 
