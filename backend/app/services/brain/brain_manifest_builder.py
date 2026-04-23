@@ -7,23 +7,151 @@ For script input, passes the already-parsed scenes through with brain enrichment
 """
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
-# Sentinel topic-to-script template: expand topic into brief scene-per-paragraph blocks.
-_TOPIC_SCENE_PROMPTS = [
-    "Hook: {topic} — what most people don't realize.",
-    "The hidden truth about {topic} that changes everything.",
-    "Here's the specific pattern behind {topic} nobody talks about.",
-    "What this means for you — and what to do next about {topic}.",
-    "The one thing you need to remember about {topic}.",
-]
+from app.services.execution_bridge_service import ExecutionBridgeService
+from app.services.script_ingestion import (
+    build_subtitle_segments_from_scenes,
+    normalize_script_text,
+    split_script_into_scenes,
+)
+from app.services.storyboard_engine import StoryboardEngine
 
 
 class BrainManifestBuilder:
     """Build enriched ScriptPreviewPayload-shaped dicts."""
+
+    def __init__(self) -> None:
+        self._execution_bridge = ExecutionBridgeService()
+        self._storyboard_engine = StoryboardEngine()
+
+    def _topic_to_script(self, topic: str, plan: dict[str, Any]) -> str:
+        topic = (topic or "").strip()
+        role = plan.get("episode_role") or "continuation"
+        return "\n".join(
+            [
+                f"Hook: {topic}",
+                f"Escalation: explain why this matters now in a {role} episode.",
+                "Reveal: connect this to the hidden pattern behind the topic.",
+                "CTA: tease the next unresolved secret in the series.",
+            ]
+        ).strip()
+
+    def build_preview_payload(
+        self,
+        *,
+        request: dict[str, Any],
+        memory_bundle: dict[str, Any],
+        brain_plan: dict[str, Any],
+        continuity_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return a dict compatible with ScriptPreviewPayload + brain enrichment."""
+        source_type = request["source_type"]
+        script_text = request.get("script_text")
+
+        if source_type == "topic":
+            script_text = self._topic_to_script(request.get("topic") or "", brain_plan)
+
+        normalized = normalize_script_text(script_text or "")
+        if not normalized:
+            raise ValueError("Brain layer could not build a normalized script")
+
+        scenes = split_script_into_scenes(normalized, max_scenes=12)
+        storyboard = self._storyboard_engine.generate_from_script(
+            script_text=normalized,
+            conversion_mode=request.get("conversion_mode"),
+            content_goal=request.get("content_goal"),
+            platform=request.get("target_platform"),
+            episode_memory={
+                "series_id": continuity_context.get("series_id"),
+                "episode_index": continuity_context.get("episode_index"),
+                "open_loops": continuity_context.get("unresolved_loops"),
+                "resolved_loops": continuity_context.get("resolved_loops"),
+            },
+        )
+
+        storyboard_scenes = {scene.scene_index: scene for scene in storyboard.scenes}
+        strategy_by_scene = {
+            int(item["scene_index"]): item
+            for item in brain_plan.get("scene_strategy") or []
+            if item.get("scene_index") is not None
+        }
+
+        enriched_scenes: list[dict[str, Any]] = []
+        for scene in scenes:
+            scene_index = int(scene.get("scene_index", 0))
+            beat = storyboard_scenes.get(scene_index)
+            strategy = strategy_by_scene.get(scene_index, {})
+
+            metadata = dict(scene.get("metadata") or {})
+            if beat:
+                metadata.update(
+                    {
+                        "scene_goal": beat.scene_goal,
+                        "pacing_weight": beat.pacing_weight,
+                        "shot_hint": beat.shot_hint,
+                        "cta_flag": beat.cta_flag,
+                    }
+                )
+            metadata.update(
+                {
+                    "series_role": strategy.get("series_role"),
+                    "winner_pattern_ref": strategy.get("winner_pattern_ref"),
+                    "open_loop_seed": (brain_plan.get("open_loop_targets") or [None])[0],
+                    "callback_to_previous_episode": (brain_plan.get("callback_targets") or [None])[0],
+                    "continuity_constraints": continuity_context.get("continuity_constraints") or {},
+                }
+            )
+
+            enriched = dict(scene)
+            enriched["metadata"] = metadata
+            if beat and beat.shot_hint:
+                enriched["shot_hint"] = beat.shot_hint
+            enriched_scenes.append(enriched)
+
+        ctx = self._execution_bridge.resolve_context(
+            None,
+            avatar_id=request.get("avatar_id"),
+            market_code=request.get("market_code"),
+            content_goal=request.get("content_goal"),
+            conversion_mode=request.get("conversion_mode"),
+            storyboard=storyboard.model_dump(),
+            winner_patterns=memory_bundle.get("winner_patterns") or [],
+            series_id=continuity_context.get("series_id"),
+            episode_index=continuity_context.get("episode_index"),
+            continuity_context=continuity_context,
+            winner_dna_summary=memory_bundle.get("winner_dna_summary"),
+            brain_plan=brain_plan,
+        )
+
+        bridged_scenes = [
+            self._execution_bridge.apply_to_project_scene(scene, ctx)
+            for scene in enriched_scenes
+        ]
+        subtitle_segments = build_subtitle_segments_from_scenes(bridged_scenes)
+
+        return {
+            "avatar_id": request.get("avatar_id"),
+            "market_code": request.get("market_code"),
+            "content_goal": request.get("content_goal"),
+            "conversion_mode": request.get("conversion_mode"),
+            "source_mode": "topic_intake" if source_type == "topic" else "script_upload",
+            "aspect_ratio": request.get("aspect_ratio"),
+            "target_platform": request.get("target_platform"),
+            "style_preset": request.get("style_preset"),
+            "original_filename": request.get("filename"),
+            "script_text": normalized,
+            "scenes": bridged_scenes,
+            "subtitle_segments": subtitle_segments,
+            "storyboard": storyboard.model_dump(),
+            "winner_patterns": memory_bundle.get("winner_patterns") or [],
+            "series_id": continuity_context.get("series_id"),
+            "episode_index": continuity_context.get("episode_index"),
+            "brain_plan": brain_plan,
+            "continuity_context": continuity_context,
+            "winner_dna_summary": memory_bundle.get("winner_dna_summary"),
+            "memory_refs": memory_bundle.get("memory_refs") or {},
+        }
 
     def build(
         self,
@@ -42,107 +170,32 @@ class BrainManifestBuilder:
         memory_bundle: dict[str, Any],
         brain_plan: dict[str, Any],
     ) -> dict[str, Any]:
-        """Return a dict compatible with ScriptPreviewPayload + brain enrichment."""
-        from app.services.script_ingestion import build_preview_payload
-
-        if source_type == "topic" and topic and not script_text:
-            script_text = self._topic_to_script(topic)
-            filename = filename or f"{topic[:40].replace(' ', '_')}.txt"
-
-        if not script_text:
-            raise ValueError("script_text is required to build manifest")
-
-        # Build the base preview (scenes + subtitles + storyboard)
-        base = build_preview_payload(
-            filename=filename,
-            script_text=script_text,
-            aspect_ratio=aspect_ratio,
-            target_platform=target_platform,
-            style_preset=style_preset,
-            avatar_id=avatar_id,
-            market_code=market_code,
-            content_goal=content_goal,
-            conversion_mode=conversion_mode,
+        """Backward-compat wrapper that calls build_preview_payload."""
+        continuity_context = {
+            "series_id": brain_plan.get("selected_series_id"),
+            "episode_index": brain_plan.get("selected_episode_index"),
+            "episode_role": brain_plan.get("episode_role"),
+            "unresolved_loops": brain_plan.get("open_loop_targets") or [],
+            "resolved_loops": [],
+            "callback_targets": brain_plan.get("callback_targets") or [],
+            "continuity_constraints": {"preserve_avatar_identity": True, "preserve_series_tone": True},
+        }
+        return self.build_preview_payload(
+            request={
+                "source_type": source_type,
+                "topic": topic,
+                "script_text": script_text,
+                "filename": filename,
+                "aspect_ratio": aspect_ratio,
+                "target_platform": target_platform,
+                "style_preset": style_preset,
+                "avatar_id": avatar_id,
+                "market_code": market_code,
+                "content_goal": content_goal,
+                "conversion_mode": conversion_mode,
+            },
+            memory_bundle=memory_bundle,
+            brain_plan=brain_plan,
+            continuity_context=continuity_context,
         )
 
-        # Override source_mode for topic intake
-        if source_type == "topic":
-            base["source_mode"] = "topic_intake"
-
-        # Enrich scenes with brain strategy
-        base["scenes"] = self._enrich_scenes(base.get("scenes") or [], brain_plan, memory_bundle)
-
-        # Attach brain fields
-        base["series_id"] = brain_plan.get("selected_series_id")
-        base["episode_index"] = brain_plan.get("selected_episode_index")
-        base["brain_plan"] = brain_plan
-        base["continuity_context"] = (memory_bundle.get("continuity_context") or {})
-        base["winner_dna_summary"] = (memory_bundle.get("winner_dna_summary") or {})
-        base["winner_patterns"] = memory_bundle.get("winner_patterns") or []
-        base["memory_refs"] = memory_bundle.get("memory_refs") or {}
-
-        return base
-
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _topic_to_script(topic: str) -> str:
-        """Convert a topic string into a multi-paragraph draft script."""
-        lines = [prompt.format(topic=topic) for prompt in _TOPIC_SCENE_PROMPTS]
-        return "\n\n".join(lines)
-
-    @staticmethod
-    def _enrich_scenes(
-        scenes: list[dict[str, Any]],
-        brain_plan: dict[str, Any],
-        memory_bundle: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        scene_strategy = brain_plan.get("scene_strategy") or []
-        winner_dna = memory_bundle.get("winner_dna_summary") or {}
-        series_id = brain_plan.get("selected_series_id")
-        episode_index = brain_plan.get("selected_episode_index")
-        episode_role = brain_plan.get("episode_role")
-        open_loops = brain_plan.get("open_loop_targets") or []
-        callbacks = brain_plan.get("callback_targets") or []
-        winner_refs = brain_plan.get("winner_pattern_refs") or []
-
-        enriched = []
-        for i, scene in enumerate(scenes):
-            updated = dict(scene)
-            meta = dict(updated.get("metadata") or {})
-
-            # Inject execution_context with brain fields
-            exec_ctx = dict(meta.get("execution_context") or {})
-            if series_id is not None:
-                exec_ctx["series_id"] = series_id
-            if episode_index is not None:
-                exec_ctx["episode_index"] = episode_index
-            meta["execution_context"] = exec_ctx
-
-            # Inject scene-level brain strategy
-            strategy = scene_strategy[i] if i < len(scene_strategy) else {}
-            if strategy.get("scene_goal"):
-                meta["scene_goal"] = strategy["scene_goal"]
-            if strategy.get("pacing_weight") is not None:
-                meta["pacing_weight"] = strategy["pacing_weight"]
-
-            # Series/episode role
-            if episode_role:
-                meta["series_role"] = episode_role
-            if open_loops:
-                meta["open_loop_seed"] = open_loops[0]
-            if callbacks:
-                meta["callback_to_previous_episode"] = callbacks[0]
-            if winner_refs:
-                meta["winner_pattern_ref"] = winner_refs[0]
-            if winner_dna.get("top_pattern_id"):
-                meta["continuity_constraints"] = {
-                    "preserve_avatar_identity": True,
-                    "winner_dna_ref": winner_dna.get("top_pattern_id"),
-                }
-            meta["brain_plan_ref"] = "inline"
-
-            updated["metadata"] = meta
-            enriched.append(updated)
-
-        return enriched

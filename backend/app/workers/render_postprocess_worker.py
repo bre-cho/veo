@@ -284,19 +284,12 @@ async def process_render_postprocess(db: Session, job_id: str) -> None:
             from app.services.project_workspace_service import load_project
             _brain_feedback = BrainFeedbackService()
             project = load_project(latest_job.project_id) or {}
-            scene_statuses = [
-                {"scene_index": s.scene_index, "status": s.status}
-                for s in (list_successful_scene_tasks(db, latest_job) or [])
-            ]
             _brain_feedback.record_render_outcome(
                 db,
-                project_id=latest_job.project_id,
+                project=project,
                 render_job_id=latest_job.id,
                 final_video_url=final_video_url,
-                scene_statuses=scene_statuses,
-                continuity_context=project.get("continuity_context") or {},
-                brain_plan=project.get("brain_plan") or {},
-                winner_dna_summary=project.get("winner_dna_summary") or {},
+                status="completed",
             )
         except Exception as _brain_exc:
             logger.warning("Brain feedback (render): %s", _brain_exc)

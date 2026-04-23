@@ -88,6 +88,44 @@ class PatternLibrary:
             .all()
         )
 
+    def list_top_patterns(
+        self,
+        db: Session,
+        *,
+        market_code: str | None = None,
+        content_goal: str | None = None,
+        limit: int = 5,
+        pattern_types: list[str] | None = None,
+    ) -> list[PatternMemory]:
+        """Return top patterns filtered by type list, scoped then global fallback.
+
+        This is the preferred recall method for the Brain Layer.
+        """
+        types = pattern_types or list(_WINNER_PATTERN_TYPES)
+        query = db.query(PatternMemory).filter(PatternMemory.pattern_type.in_(types))
+        scoped = query
+        if market_code:
+            scoped = scoped.filter(PatternMemory.market_code == market_code)
+        if content_goal:
+            scoped = scoped.filter(PatternMemory.content_goal == content_goal)
+
+        rows = (
+            scoped
+            .order_by(PatternMemory.score.is_(None), PatternMemory.score.desc(), PatternMemory.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        if rows:
+            return rows
+
+        # Fallback: global top ignoring market/goal scope
+        return (
+            query
+            .order_by(PatternMemory.score.is_(None), PatternMemory.score.desc(), PatternMemory.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
     def get_top_pattern(
         self,
         db: Session,

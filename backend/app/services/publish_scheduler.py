@@ -302,17 +302,19 @@ class PublishScheduler:
         try:
             from app.services.brain.brain_feedback_service import BrainFeedbackService
             payload: dict[str, Any] = job.payload or {}
-            metadata: dict[str, Any] = payload.get("metadata") or {}
             brain_feedback = BrainFeedbackService()
             brain_feedback.record_publish_outcome(
                 db,
-                project_id=str(payload.get("project_id") or metadata.get("project_id") or ""),
-                publish_job_id=job.id,
-                platform=job.platform,
-                title=str(payload.get("title") or ""),
-                description=str(payload.get("description") or ""),
-                thumbnail_url=str(payload.get("thumbnail_url") or ""),
-                signal_metrics={},
+                payload={
+                    "project_id": payload.get("project_id") or (payload.get("metadata") or {}).get("project_id"),
+                    "market_code": (payload.get("metadata") or {}).get("market_code"),
+                    "content_goal": payload.get("content_goal"),
+                    "winner_dna_summary": payload.get("winner_dna_summary") or {},
+                    "title": payload.get("title"),
+                    "description": payload.get("description"),
+                    "thumbnail_url": payload.get("thumbnail_url"),
+                },
+                score=0.5,
             )
         except Exception:
             pass  # Non-fatal – brain write-back must never block publish flow
