@@ -1,3 +1,4 @@
+# Import these models in your SQLAlchemy metadata bootstrap if needed.
 from app.models.provider_webhook_event import ProviderWebhookEvent
 from app.models.render_incident_action import RenderIncidentAction
 from app.models.render_incident_bulk_action_item import RenderIncidentBulkActionItem

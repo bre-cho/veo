@@ -1,0 +1,453 @@
+openapi: 3.1.0
+info:
+  title: Avatar Tournament + Avatar Governance API
+  version: 1.0.0
+  description: >
+    Additive API layer for avatar ranking, governance, rollback, cooldown,
+    explainability, and tournament orchestration. Designed to sit on top of an
+    existing avatar + render pipeline without replacing the render core.
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Avatar Tournament
+  - name: Avatar Governance
+
+paths:
+  /avatar/tournament/run:
+    post:
+      tags: [Avatar Tournament]
+      summary: Run one avatar tournament for a given context
+      operationId: runAvatarTournament
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarTournamentRequest'
+      responses:
+        '200':
+          description: Tournament completed and one avatar selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarTournamentResult'
+        '422':
+          description: Validation error
+
+  /avatar/tournament/{run_id}:
+    get:
+      tags: [Avatar Tournament]
+      summary: Get tournament detail and ranked candidates
+      operationId: getAvatarTournamentById
+      parameters:
+        - in: path
+          name: run_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tournament detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarTournamentDetail'
+        '404':
+          description: Tournament not found
+
+  /avatar/governance/state/{avatar_id}:
+    get:
+      tags: [Avatar Governance]
+      summary: Read current policy state of an avatar
+      operationId: getAvatarGovernanceState
+      parameters:
+        - in: path
+          name: avatar_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current policy state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarPolicyStateView'
+        '404':
+          description: Avatar policy state not found
+
+  /avatar/governance/recalculate/{avatar_id}:
+    post:
+      tags: [Avatar Governance]
+      summary: Recalculate policy state from historical outcomes
+      operationId: recalculateAvatarGovernanceState
+      parameters:
+        - in: path
+          name: avatar_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Recalculated policy state and action summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarGovernanceRecalcResponse'
+        '404':
+          description: Avatar not found
+
+  /avatar/governance/rollback/{avatar_id}:
+    post:
+      tags: [Avatar Governance]
+      summary: Force rollback or cooldown action for an avatar
+      operationId: rollbackAvatarGovernance
+      parameters:
+        - in: path
+          name: avatar_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarRollbackRequest'
+      responses:
+        '200':
+          description: Rollback or cooldown action applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvatarPromotionDecision'
+        '422':
+          description: Validation error
+
+components:
+  schemas:
+    AvatarTournamentRequest:
+      type: object
+      required:
+        - workspace_id
+        - candidate_avatar_ids
+      properties:
+        workspace_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        topic_signature:
+          type: string
+          nullable: true
+        template_family:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+        candidate_avatar_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        force_avatar_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        exploration_ratio:
+          type: number
+          format: float
+          default: 0.15
+        baseline_avatar_id:
+          type: string
+          format: uuid
+          nullable: true
+        context:
+          type: object
+          additionalProperties: true
+          default: {}
+
+    AvatarCandidateScore:
+      type: object
+      required:
+        - avatar_id
+        - final_rank_score
+      properties:
+        avatar_id:
+          type: string
+          format: uuid
+        template_id:
+          type: string
+          format: uuid
+          nullable: true
+        predicted_score:
+          type: number
+          format: float
+          nullable: true
+        predicted_ctr:
+          type: number
+          format: float
+          nullable: true
+        predicted_retention:
+          type: number
+          format: float
+          nullable: true
+        predicted_conversion:
+          type: number
+          format: float
+          nullable: true
+        continuity_score:
+          type: number
+          format: float
+          nullable: true
+        brand_fit_score:
+          type: number
+          format: float
+          nullable: true
+        pair_fit_score:
+          type: number
+          format: float
+          nullable: true
+        governance_penalty:
+          type: number
+          format: float
+          nullable: true
+        exploration_bonus:
+          type: number
+          format: float
+          nullable: true
+        final_rank_score:
+          type: number
+          format: float
+        selection_rank:
+          type: integer
+          nullable: true
+        state:
+          type: string
+          nullable: true
+
+    AvatarSelectionDebugView:
+      type: object
+      required:
+        - avatar_id
+        - final_score
+        - explanation_lines
+      properties:
+        avatar_id:
+          type: string
+          format: uuid
+        base_score:
+          type: number
+          format: float
+          nullable: true
+        pair_bonus:
+          type: number
+          format: float
+          nullable: true
+        continuity_bonus:
+          type: number
+          format: float
+          nullable: true
+        governance_penalty:
+          type: number
+          format: float
+          nullable: true
+        exploration_bonus:
+          type: number
+          format: float
+          nullable: true
+        final_score:
+          type: number
+          format: float
+        state:
+          type: string
+          nullable: true
+        explanation_lines:
+          type: array
+          items:
+            type: string
+
+    AvatarTournamentResult:
+      type: object
+      required:
+        - tournament_run_id
+        - selected_avatar_id
+        - selection_mode
+        - ranked_candidates
+        - explanation
+      properties:
+        tournament_run_id:
+          type: string
+          format: uuid
+        selected_avatar_id:
+          type: string
+          format: uuid
+        selection_mode:
+          type: string
+        ranked_candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvatarCandidateScore'
+        explanation:
+          type: object
+          additionalProperties: true
+
+    AvatarTournamentDetail:
+      allOf:
+        - $ref: '#/components/schemas/AvatarTournamentResult'
+        - type: object
+          properties:
+            workspace_id:
+              type: string
+              format: uuid
+            project_id:
+              type: string
+              format: uuid
+              nullable: true
+            topic_signature:
+              type: string
+              nullable: true
+            template_family:
+              type: string
+              nullable: true
+            platform:
+              type: string
+              nullable: true
+            status:
+              type: string
+            selected_template_id:
+              type: string
+              format: uuid
+              nullable: true
+            candidate_debug:
+              type: array
+              items:
+                $ref: '#/components/schemas/AvatarSelectionDebugView'
+            created_at:
+              type: string
+              format: date-time
+            completed_at:
+              type: string
+              format: date-time
+              nullable: true
+
+    AvatarPolicyStateView:
+      type: object
+      required:
+        - avatar_id
+        - state
+        - priority_weight
+        - exploration_weight
+        - risk_weight
+      properties:
+        avatar_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [candidate, active, priority, cooldown, blocked, retired]
+        priority_weight:
+          type: number
+          format: float
+        exploration_weight:
+          type: number
+          format: float
+        risk_weight:
+          type: number
+          format: float
+        continuity_confidence:
+          type: number
+          format: float
+          nullable: true
+        quality_confidence:
+          type: number
+          format: float
+          nullable: true
+        recent_win_rate:
+          type: number
+          format: float
+          nullable: true
+        recent_loss_rate:
+          type: number
+          format: float
+          nullable: true
+        cooldown_until:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: object
+          additionalProperties: true
+
+    AvatarPromotionDecision:
+      type: object
+      required:
+        - avatar_id
+        - action
+        - reason_code
+        - previous_state
+        - new_state
+      properties:
+        avatar_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [promote, demote, rollback, cooldown, reactivate, no_change]
+        reason_code:
+          type: string
+        previous_state:
+          type: string
+        new_state:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: true
+
+    AvatarGovernanceRecalcResponse:
+      type: object
+      required:
+        - state
+        - decision
+      properties:
+        state:
+          $ref: '#/components/schemas/AvatarPolicyStateView'
+        decision:
+          $ref: '#/components/schemas/AvatarPromotionDecision'
+
+    AvatarRollbackRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [rollback, cooldown, reactivate]
+        reason_code:
+          type: string
+          default: manual_ops_override
+        reason_text:
+          type: string
+          nullable: true
+        cooldown_hours:
+          type: integer
+          nullable: true
+        fallback_avatar_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          default: {}
