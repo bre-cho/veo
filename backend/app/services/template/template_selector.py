@@ -7,6 +7,7 @@ Scoring rubric (additive, higher is better):
   +1.0  episode_role is escalation/continuation AND template narrative is
         reveal_escalation or story_escalation
   +0.5  winner_dna hook_core is present (bias toward known winners)
+  +W    template.metadata["default_template_weight"] (tie-breaking priority)
 
 Default fallback (no positive match at all): story_chain_retention
 """
@@ -46,7 +47,7 @@ _TOPIC_KEYWORD_MAP: dict[str, str] = {
 
 class TemplateSelector:
     def _classify_topic(self, request: dict[str, Any]) -> str:
-        raw = (request.get("topic") or request.get("script_text") or "").lower()
+        raw = f"{request.get('topic') or ''} {request.get('script_text') or ''}".lower()
         for keyword, topic_class in _TOPIC_KEYWORD_MAP.items():
             if keyword in raw:
                 return topic_class
@@ -64,9 +65,11 @@ class TemplateSelector:
         market_code = request.get("market_code")
         episode_role = continuity.get("episode_role")
 
-        best_score = -1.0
+        best_score = float("-inf")
         best_template_id = _FALLBACK_TEMPLATE_ID
         best_reasons: list[str] = []
+
+        winner_dna = memory_bundle.get("winner_dna_summary") or {}
 
         for template_id, template in TEMPLATE_REGISTRY.items():
             score = 0.0
@@ -91,10 +94,12 @@ class TemplateSelector:
                 score += 1.0
                 local_reasons.append("episode_role_match")
 
-            winner_dna = memory_bundle.get("winner_dna_summary") or {}
             if isinstance(winner_dna, dict) and winner_dna.get("hook_core") and template.hook_strategy:
                 score += 0.5
                 local_reasons.append("winner_dna_bias")
+
+            # tie-breaking: add the per-template default weight
+            score += float(template.metadata.get("default_template_weight", 0.0))
 
             if score > best_score:
                 best_score = score

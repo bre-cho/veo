@@ -100,6 +100,11 @@ class BrainManifestBuilder:
                     "open_loop_seed": next(iter(brain_plan.get("open_loop_targets") or []), None),
                     "callback_to_previous_episode": next(iter(brain_plan.get("callback_targets") or []), None),
                     "continuity_constraints": continuity_context.get("continuity_constraints") or {},
+                    # Template-driven hints from scene strategy
+                    "template_id": strategy.get("template_id"),
+                    "template_family": strategy.get("template_family"),
+                    "pacing_weight": strategy.get("pacing_weight") or metadata.get("pacing_weight"),
+                    "shot_hint": strategy.get("shot_hint") or metadata.get("shot_hint"),
                 }
             )
 
@@ -122,6 +127,7 @@ class BrainManifestBuilder:
             continuity_context=continuity_context,
             winner_dna_summary=memory_bundle.get("winner_dna_summary"),
             brain_plan=brain_plan,
+            template_prompt_bias=(brain_plan.get("notes") or {}).get("prompt_bias") or {},
         )
 
         bridged_scenes = [
@@ -151,6 +157,8 @@ class BrainManifestBuilder:
             "continuity_context": continuity_context,
             "winner_dna_summary": memory_bundle.get("winner_dna_summary"),
             "memory_refs": memory_bundle.get("memory_refs") or {},
+            "selected_template_id": (brain_plan.get("notes") or {}).get("template_id"),
+            "selected_template_family": (brain_plan.get("notes") or {}).get("template_family"),
         }
 
     def build(

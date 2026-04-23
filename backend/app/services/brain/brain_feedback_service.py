@@ -79,3 +79,24 @@ class BrainFeedbackService:
                 payload=pattern_payload,
             ),
         )
+
+        # Record which template produced this winner
+        selected_template_id = payload.get("selected_template_id")
+        if score >= 0.6 and selected_template_id:
+            self._pattern_library.save(
+                db,
+                PatternMemoryIn(
+                    pattern_type="template_winner",
+                    market_code=payload.get("market_code"),
+                    content_goal=payload.get("content_goal"),
+                    source_id=payload.get("project_id"),
+                    score=score,
+                    payload={
+                        "template_id": selected_template_id,
+                        "template_family": payload.get("selected_template_family"),
+                        "winner_dna_summary": winner_dna,
+                        "metrics": payload.get("metrics") or {},
+                        "episode_role": (payload.get("continuity_context") or {}).get("episode_role"),
+                    },
+                ),
+            )

@@ -51,6 +51,7 @@ TEMPLATE_REGISTRY: dict[str, TemplateDefinition] = {
             market_code=["US"],
             topic_classes=["ai", "control", "attention", "system"],
         ),
+        metadata={"default_template_weight": 1.0},
     ),
     "shock_reveal_chain": TemplateDefinition(
         template_id="shock_reveal_chain",
@@ -90,6 +91,7 @@ TEMPLATE_REGISTRY: dict[str, TemplateDefinition] = {
             market_code=["US"],
             topic_classes=["war", "scandal", "collapse", "ai"],
         ),
+        metadata={"default_template_weight": 0.95},
     ),
     "story_chain_retention": TemplateDefinition(
         template_id="story_chain_retention",
@@ -132,5 +134,6 @@ TEMPLATE_REGISTRY: dict[str, TemplateDefinition] = {
             market_code=["US"],
             topic_classes=["documentary", "biography", "mystery", "system"],
         ),
+        metadata={"default_template_weight": 0.9},
     ),
 }

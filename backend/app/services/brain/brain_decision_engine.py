@@ -48,7 +48,7 @@ class BrainDecisionEngine:
         # --- Map template → scene strategy ---
         scene_strategy = _mapper.map_to_scene_strategy(
             template_payload=template_payload,
-            brain_plan={"episode_role": episode_role_for_plan},
+            episode_role=episode_role_for_plan,
         )
         # Inject winner pattern ref into every scene entry
         winner_pattern_ref = (top_pattern or {}).get("id")

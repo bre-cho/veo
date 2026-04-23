@@ -36,6 +36,8 @@ class ExecutionBridgeService:
         continuity_context: dict[str, Any] | None = None,
         winner_dna_summary: dict[str, Any] | None = None,
         brain_plan: dict[str, Any] | None = None,
+        # Template System fields
+        template_prompt_bias: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         avatar: dict[str, Any] | None = None
         market: dict[str, Any] | None = None
@@ -87,6 +89,8 @@ class ExecutionBridgeService:
             "continuity_context": continuity_context,
             "winner_dna_summary": winner_dna_summary,
             "brain_plan": brain_plan,
+            # Template System fields
+            "template_prompt_bias": template_prompt_bias or {},
         }
 
     def resolve_project_context(self, db, project: dict[str, Any]) -> dict[str, Any]:
@@ -285,6 +289,28 @@ class ExecutionBridgeService:
         if isinstance(winner_dna, dict) and winner_dna.get("hook_core"):
             parts.append(f"Winner DNA: {winner_dna['hook_core']}.")
 
+        # Template System: inject tone/emotion/cta_style from selected template
+        template_bias = ctx.get("template_prompt_bias") or {}
+        if isinstance(template_bias, dict) and template_bias:
+            bias_detail = template_bias.get("prompt_bias") or {}
+            tone = (
+                bias_detail.get("tone")
+                if isinstance(bias_detail, dict)
+                else None
+            )
+            emotion = (
+                bias_detail.get("emotion")
+                if isinstance(bias_detail, dict)
+                else None
+            )
+            cta_style = template_bias.get("cta_style")
+            if tone:
+                parts.append(f"Visual tone: {tone}.")
+            if emotion:
+                parts.append(f"Emotional register: {emotion}.")
+            if cta_style:
+                parts.append(f"CTA style: {cta_style}.")
+
         if not parts:
             return prompt
 
@@ -314,6 +340,8 @@ class ExecutionBridgeService:
             "continuity_context": ctx.get("continuity_context"),
             "winner_dna_summary": ctx.get("winner_dna_summary"),
             "brain_plan": ctx.get("brain_plan"),
+            # Template System fields
+            "template_prompt_bias": ctx.get("template_prompt_bias"),
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
