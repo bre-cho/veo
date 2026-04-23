@@ -360,6 +360,7 @@ class ExecutionBridgeService:
 
     def _compact_context(self, ctx: dict[str, Any]) -> dict[str, Any]:
         brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        avatar_selection = brain_notes.get("avatar_selection") or {}
         return {
             "avatar_id": ctx.get("avatar_id"),
             "market_code": ctx.get("market_code"),
@@ -384,6 +385,8 @@ class ExecutionBridgeService:
             "avatar_continuity": ctx.get("avatar_continuity") or {},
             # Avatar Tournament fields
             "avatar_selection_debug": ctx.get("avatar_selection_debug") or {},
+            "avatar_tournament_run_id": avatar_selection.get("tournament_run_id"),
+            "avatar_selection_mode": avatar_selection.get("selection_mode"),
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
@@ -484,6 +487,19 @@ class ExecutionBridgeService:
 
         # Avatar Tournament fields
         avatar_selection_debug = ctx.get("avatar_selection_debug") or {}
-        if avatar_selection_debug:
-            metadata["avatar_selection_reason"] = avatar_selection_debug.get("ranking_summary", [])[:1]
-            metadata["avatar_policy_state"] = avatar_selection_debug.get("selection_mode")
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        avatar_selection = brain_notes.get("avatar_selection") or {}
+
+        if avatar_selection_debug or avatar_selection:
+            # Use tournament explanation if available, fall back to legacy debug payload
+            explanation = avatar_selection.get("explanation") or {}
+            ranking_summary = explanation.get("ranking_summary") or avatar_selection_debug.get("ranking_summary") or []
+            metadata["avatar_selection_reason"] = ranking_summary[:1]
+            metadata["avatar_selection_mode"] = (
+                avatar_selection.get("selection_mode")
+                or avatar_selection_debug.get("selection_mode")
+            )
+            if avatar_selection.get("tournament_run_id"):
+                metadata["avatar_tournament_run_id"] = avatar_selection["tournament_run_id"]
+            if avatar_selection.get("selection_mode"):
+                metadata["avatar_policy_state"] = avatar_selection["selection_mode"]

@@ -163,6 +163,27 @@ class PublishScheduler:
     def run_job(self, db: Session, job: PublishJob) -> PublishJob:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        # --- Avatar policy state check (non-fatal guard) ---
+        payload_meta: dict[str, Any] = ((job.payload or {}).get("metadata") or {})
+        avatar_id_for_check: str | None = (
+            payload_meta.get("avatar_id")
+            or (job.payload or {}).get("avatar_id")
+        )
+        if not self._avatar_is_publishable(db, avatar_id_for_check):
+            job.status = "queued"
+            job.error_log = {
+                "mode": job.publish_mode or _PUBLISH_MODE,
+                "error": "avatar_governance_deferred",
+                "avatar_id": avatar_id_for_check,
+                "reason": "avatar is in cooldown or blocked state",
+            }
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            raise RuntimeError(
+                f"Avatar {avatar_id_for_check!r} is in cooldown or blocked; deferring publish job {job.id}"
+            )
+
         # --- Preflight validation ---
         validator = PublishPreflightValidator()
         preflight_errors = validator.validate(job)
@@ -355,6 +376,34 @@ class PublishScheduler:
             )
         except Exception:
             pass  # Non-fatal – governance must never block publish flow
+
+    def _avatar_is_publishable(self, db: Session, avatar_id: str | None) -> bool:
+        """Return True if the avatar is allowed to be published right now.
+
+        Avatars in ``blocked`` or ``retired`` state are never publishable.
+        Avatars in ``cooldown`` are only publishable once ``cooldown_until`` has
+        passed.  All other states (candidate, active, priority) are publishable.
+        Non-fatal: any exception defaults to True so publishing is never blocked
+        by a governance DB error.
+        """
+        if not avatar_id:
+            return True
+        try:
+            from app.models.avatar_policy_state import AvatarPolicyState
+            policy = (
+                db.query(AvatarPolicyState)
+                .filter(AvatarPolicyState.avatar_id == avatar_id)
+                .first()
+            )
+            if policy is None:
+                return True
+            if policy.state in ("blocked", "retired"):
+                return False
+            if policy.state == "cooldown" and policy.cooldown_until:
+                return policy.cooldown_until <= datetime.now(timezone.utc).replace(tzinfo=None)
+            return True
+        except Exception:
+            return True  # governance check is non-fatal
 
     def retry_failed_job(self, db: Session, job_id: str) -> PublishJob | None:
         previous = self.get_job(db, job_id)

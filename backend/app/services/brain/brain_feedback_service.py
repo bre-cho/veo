@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.episode_memory import EpisodeMemory
 from app.models.avatar_performance import AvatarPerformance
 from app.schemas.patterns import PatternMemoryIn
+from app.services.avatar.avatar_governance_engine import AvatarGovernanceEngine
 from app.services.avatar.avatar_pair_optimizer import AvatarPairOptimizer
 from app.services.avatar.avatar_scorecard import AvatarScorecard
 from app.services.pattern_library import PatternLibrary
@@ -19,6 +20,7 @@ class BrainFeedbackService:
         self._pattern_library = PatternLibrary()
         self._avatar_scorecard = AvatarScorecard()
         self._avatar_pair_optimizer = AvatarPairOptimizer()
+        self._avatar_governance = AvatarGovernanceEngine()
 
     def record_render_outcome(
         self,
@@ -188,6 +190,26 @@ class BrainFeedbackService:
                 )
             except Exception:
                 pass  # avatar feedback is non-fatal
+
+        # --- Avatar Governance: evaluate outcome and apply state transitions ---
+        if avatar_id and db is not None:
+            try:
+                self._avatar_governance.evaluate_avatar_outcome(
+                    db,
+                    avatar_id=avatar_id,
+                    metrics={
+                        **(payload.get("metrics") or {}),
+                        "total_score": score,
+                    },
+                    context={
+                        "project_id": payload.get("project_id"),
+                        "topic_class": payload.get("topic_class"),
+                        "template_family": payload.get("selected_template_family"),
+                        "platform": payload.get("platform"),
+                    },
+                )
+            except Exception:
+                pass  # governance feedback is non-fatal
 
     # ------------------------------------------------------------------
     # Internal helpers

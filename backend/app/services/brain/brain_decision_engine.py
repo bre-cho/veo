@@ -5,17 +5,23 @@ Step sequence inside build_plan():
   2. Select template via TemplateSelector
   3. Map template → scene strategy via TemplateMapper
   4. Run A/B variant selection via TemplateABService
-  5. Merge winner-pattern refs + open-loop / callback targets
-  6. Build final BrainPlan + ContinuityContext
+  5. Run Avatar Tournament to select best avatar (when db + candidates available)
+  6. Merge winner-pattern refs + open-loop / callback targets
+  7. Build final BrainPlan + ContinuityContext
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+from sqlalchemy.orm import Session
 
 from app.schemas.brain_manifest import BrainPlan, ContinuityContext
 from app.services.template.template_ab_service import TemplateABService
 from app.services.template.template_mapper import TemplateMapper
 from app.services.template.template_selector import TemplateSelector
+
+logger = logging.getLogger(__name__)
 
 
 class BrainDecisionEngine:
@@ -30,9 +36,46 @@ class BrainDecisionEngine:
         request: dict[str, Any],
         memory_bundle: dict[str, Any],
         continuity: dict[str, Any],
+        db: Session | None = None,
     ) -> tuple[BrainPlan, ContinuityContext]:
         winner_patterns = memory_bundle.get("winner_patterns") or []
         top_pattern = winner_patterns[0] if winner_patterns else None
+
+        # ── Avatar Tournament: pick best avatar for this context ──────────────
+        avatar_selection_notes: dict[str, Any] = {}
+        selected_avatar_id: str | None = request.get("avatar_id")
+
+        candidate_avatar_ids: list[str] = request.get("candidate_avatar_ids") or []
+        if db is not None and candidate_avatar_ids:
+            try:
+                from app.schemas.avatar_tournament import AvatarTournamentRequest
+                from app.services.avatar.avatar_tournament_engine import AvatarTournamentEngine
+                tournament_req = AvatarTournamentRequest(
+                    workspace_id=request.get("workspace_id") or "default",
+                    project_id=request.get("project_id"),
+                    market_code=request.get("market_code"),
+                    content_goal=request.get("content_goal"),
+                    topic_class=request.get("topic_class"),
+                    platform=request.get("target_platform"),
+                    candidate_avatar_ids=candidate_avatar_ids,
+                    exploration_ratio=float(request.get("avatar_exploration_ratio") or 0.15),
+                    force_avatar_ids=list(request.get("force_avatar_ids") or []),
+                    preferred_avatar_id=request.get("avatar_id"),
+                )
+                avatar_result = AvatarTournamentEngine().run_tournament(
+                    db=db, request=tournament_req
+                )
+                selected_avatar_id = str(avatar_result.selected_avatar_id)
+                avatar_selection_notes = {
+                    "tournament_run_id": avatar_result.tournament_run_id,
+                    "selection_mode": avatar_result.selection_mode,
+                    "explanation": avatar_result.explanation,
+                }
+            except Exception as exc:
+                logger.warning(
+                    "avatar_tournament failed; falling back to request avatar_id: %s", exc
+                )
+        # ──────────────────────────────────────────────────────────────────────
 
         template_result = self._template_selector.select(
             request=request,
@@ -98,11 +141,12 @@ class BrainDecisionEngine:
                 "template_ab_enabled": run_ab,
                 "template_variants": template_variants,
                 "top_winner_pattern_id": (top_pattern or {}).get("id"),
-                "avatar_id": request.get("avatar_id"),
+                "avatar_id": selected_avatar_id or request.get("avatar_id"),
                 "avatar_identity": request.get("avatar_identity") or {},
                 "avatar_voice": request.get("avatar_voice") or {},
                 "avatar_memory": memory_bundle.get("avatar_memory") or {},
-                "avatar_selection_debug": request.get("avatar_selection_debug") or {},
+                "avatar_selection_debug": request.get("avatar_selection_debug") or avatar_selection_notes.get("explanation") or {},
+                "avatar_selection": avatar_selection_notes,
             },
         )
 

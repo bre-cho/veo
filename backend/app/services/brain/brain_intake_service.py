@@ -60,6 +60,7 @@ class BrainIntakeService:
             request=request_dict,
             memory_bundle=memory_bundle,
             continuity=continuity,
+            db=db,
         )
         return self._builder.build_preview_payload(
             request=request_dict,
