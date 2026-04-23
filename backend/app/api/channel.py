@@ -130,6 +130,7 @@ def _serialize_publish_job(job) -> dict:
         "parent_job_id": job.parent_job_id,
         "scheduled_for": job.scheduled_for.isoformat() if job.scheduled_for else None,
         "request_payload": job.request_payload,
+        "youtube_seo": (job.payload or {}).get("youtube_seo"),
         "provider_response": job.provider_response,
         "external_ids": job.external_ids,
         "error_log": job.error_log,

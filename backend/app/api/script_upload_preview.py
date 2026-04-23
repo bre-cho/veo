@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
+from app.schemas.autopilot_brain import AutopilotBrainCompileRequest
+from app.services.autopilot_brain_runtime import AutopilotBrainRuntime
 from app.services.script_ingestion import build_preview_payload, parse_script_file_bytes, validate_script_file
 
 router = APIRouter(tags=["script-upload-preview"])
+
+_brain = AutopilotBrainRuntime()
 
 
 @router.post("/api/v1/script-upload/preview")
@@ -17,6 +23,8 @@ async def script_upload_preview(
     market_code: str | None = Form(default=None),
     content_goal: str | None = Form(default=None),
     conversion_mode: str | None = Form(default=None),
+    use_autopilot_brain: bool = Form(default=True),
+    db: Session = Depends(get_db),
 ):
     try:
         content = await file.read()
@@ -33,9 +41,25 @@ async def script_upload_preview(
             content_goal=content_goal,
             conversion_mode=conversion_mode,
         )
+        brain = None
+        if use_autopilot_brain:
+            compiled = _brain.compile(
+                db=db,
+                req=AutopilotBrainCompileRequest(
+                    script_text=preview.get("script_text"),
+                    platform=target_platform,
+                    market_code=market_code,
+                    niche=content_goal,
+                    store_if_winner=False,
+                ),
+            )
+            preview["autopilot_brain"] = compiled.runtime_memory_payload
+            preview["youtube_seo"] = compiled.seo_bridge.model_dump()
+            brain = compiled.model_dump()
         return {
             "ok": True,
             "data": preview,
+            "brain": brain,
             "error": None,
             "meta": {
                 "scene_count": len(preview.get("scenes", [])),

@@ -38,6 +38,7 @@ from app.api.orchestration_timeline import router as orchestration_timeline_rout
 from app.api.decision_engine import router as decision_engine_router
 from app.api.control_plane import router as control_plane_router
 from app.api.autopilot import router as autopilot_router
+from app.api.autopilot_brain import router as autopilot_brain_router
 from app.api.production import router as production_router
 
 # ── Intelligence / ML ─────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ _ORCHESTRATION_ROUTERS = [
     decision_engine_router,
     control_plane_router,
     autopilot_router,
+    autopilot_brain_router,
     production_router,
 ]
 

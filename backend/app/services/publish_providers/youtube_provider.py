@@ -121,16 +121,21 @@ class YouTubePublishProvider(PublishProviderBase):
             "publish_mode": job.publish_mode,
             # YouTube-specific fields
             "snippet": {
-                "title": str(payload.get("title_angle") or metadata.get("channel_name") or "Untitled"),
-                "description": str(payload.get("content_goal") or ""),
+                "title": str((payload.get("youtube_seo") or {}).get("title") or payload.get("title_angle") or metadata.get("channel_name") or "Untitled"),
+                "description": str((payload.get("youtube_seo") or {}).get("description") or payload.get("content_goal") or metadata.get("description") or ""),
                 "categoryId": str(metadata.get("category_id") or _DEFAULT_CATEGORY_ID),
-                "tags": metadata.get("tags") or [],
+                "tags": (payload.get("youtube_seo") or {}).get("tags") or metadata.get("tags") or [],
             },
             "status": {
                 "privacyStatus": str(metadata.get("privacy_status") or "public"),
                 "selfDeclaredMadeForKids": bool(metadata.get("made_for_kids", False)),
             },
             "payload": payload,
+            "seo_package": payload.get("youtube_seo") or {},
+            "post_publish_actions": {
+                "pin_comment": ((payload.get("youtube_seo") or {}).get("pinned_comment")),
+                "thumbnail_brief": ((payload.get("youtube_seo") or {}).get("thumbnail_brief")),
+            },
         }
 
     def _do_request(self, body: bytes, headers: dict[str, str]) -> dict[str, Any]:
