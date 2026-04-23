@@ -57,6 +57,9 @@ async def create_project_from_script_preview(payload: ConfirmCreateProjectReques
             "continuity_context": payload.preview_payload.continuity_context,
             "winner_dna_summary": payload.preview_payload.winner_dna_summary,
             "memory_refs": payload.preview_payload.memory_refs,
+            # Template System enrichment
+            "selected_template_id": payload.preview_payload.selected_template_id,
+            "selected_template_family": payload.preview_payload.selected_template_family,
             "is_template_source": True,
             "template_extracted": False,
             "template_extract_queued": False,

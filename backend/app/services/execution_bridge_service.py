@@ -289,27 +289,28 @@ class ExecutionBridgeService:
         if isinstance(winner_dna, dict) and winner_dna.get("hook_core"):
             parts.append(f"Winner DNA: {winner_dna['hook_core']}.")
 
-        # Template System: inject tone/emotion/cta_style from selected template
-        template_bias = ctx.get("template_prompt_bias") or {}
-        if isinstance(template_bias, dict) and template_bias:
-            bias_detail = template_bias.get("prompt_bias") or {}
-            tone = (
-                bias_detail.get("tone")
-                if isinstance(bias_detail, dict)
-                else None
-            )
-            emotion = (
-                bias_detail.get("emotion")
-                if isinstance(bias_detail, dict)
-                else None
-            )
-            cta_style = template_bias.get("cta_style")
-            if tone:
-                parts.append(f"Visual tone: {tone}.")
-            if emotion:
-                parts.append(f"Emotional register: {emotion}.")
-            if cta_style:
-                parts.append(f"CTA style: {cta_style}.")
+        # Template System: inject template identity and visual bias from brain plan
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        template_id = brain_notes.get("selected_template_id")
+        template_family = brain_notes.get("selected_template_family")
+        template_prompt_bias = brain_notes.get("template_prompt_bias") or {}
+
+        if template_id:
+            parts.append(f"Template: {template_id}.")
+        if template_family:
+            parts.append(f"Template family: {template_family}.")
+
+        prompt_bias = template_prompt_bias.get("prompt_bias") or {}
+        if isinstance(prompt_bias, dict):
+            if prompt_bias.get("tone"):
+                parts.append(f"Tone bias: {prompt_bias['tone']}.")
+            if prompt_bias.get("emotion"):
+                parts.append(f"Emotion bias: {prompt_bias['emotion']}.")
+            if prompt_bias.get("contrast"):
+                parts.append(f"Contrast bias: {prompt_bias['contrast']}.")
+        cta_style = template_prompt_bias.get("cta_style")
+        if cta_style:
+            parts.append(f"CTA style: {cta_style}.")
 
         if not parts:
             return prompt
@@ -326,6 +327,7 @@ class ExecutionBridgeService:
             metadata["open_loop_bias"] = True
 
     def _compact_context(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
         return {
             "avatar_id": ctx.get("avatar_id"),
             "market_code": ctx.get("market_code"),
@@ -340,8 +342,10 @@ class ExecutionBridgeService:
             "continuity_context": ctx.get("continuity_context"),
             "winner_dna_summary": ctx.get("winner_dna_summary"),
             "brain_plan": ctx.get("brain_plan"),
-            # Template System fields
-            "template_prompt_bias": ctx.get("template_prompt_bias"),
+            # Template System fields (sourced from brain_plan.notes for consistency)
+            "selected_template_id": brain_notes.get("selected_template_id"),
+            "selected_template_family": brain_notes.get("selected_template_family"),
+            "template_prompt_bias": brain_notes.get("template_prompt_bias") or {},
         }
 
     def _is_conversion_goal(self, ctx: dict[str, Any]) -> bool:
@@ -414,3 +418,12 @@ class ExecutionBridgeService:
         winner_dna = ctx.get("winner_dna_summary") or {}
         if winner_dna:
             metadata["winner_dna_summary"] = winner_dna
+
+        # Template System: inject selected template metadata into scene metadata
+        brain_notes = (ctx.get("brain_plan") or {}).get("notes") or {}
+        if brain_notes.get("selected_template_id"):
+            metadata["selected_template_id"] = brain_notes.get("selected_template_id")
+        if brain_notes.get("selected_template_family"):
+            metadata["selected_template_family"] = brain_notes.get("selected_template_family")
+        if brain_notes.get("template_prompt_bias"):
+            metadata["template_prompt_bias"] = brain_notes.get("template_prompt_bias")

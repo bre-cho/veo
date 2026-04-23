@@ -28,11 +28,12 @@ class BrainManifestBuilder:
     def _topic_to_script(self, topic: str, plan: dict[str, Any]) -> str:
         topic = (topic or "").strip()
         role = plan.get("episode_role") or "continuation"
+        template_id = ((plan.get("notes") or {}).get("selected_template_id")) or "default_template"
         return "\n".join(
             [
                 f"Hook: {topic}",
                 f"Escalation: explain why this matters now in a {role} episode.",
-                "Reveal: connect this to the hidden pattern behind the topic.",
+                f"Reveal: shape this using template {template_id}.",
                 "CTA: tease the next unresolved secret in the series.",
             ]
         ).strip()
@@ -77,6 +78,9 @@ class BrainManifestBuilder:
             if item.get("scene_index") is not None
         }
 
+        plan_notes = brain_plan.get("notes") or {}
+        template_prompt_bias = plan_notes.get("template_prompt_bias") or {}
+
         enriched_scenes: list[dict[str, Any]] = []
         for scene in scenes:
             scene_index = int(scene.get("scene_index", 0))
@@ -97,21 +101,24 @@ class BrainManifestBuilder:
                 {
                     "series_role": strategy.get("series_role"),
                     "winner_pattern_ref": strategy.get("winner_pattern_ref"),
-                    "open_loop_seed": next(iter(brain_plan.get("open_loop_targets") or []), None),
-                    "callback_to_previous_episode": next(iter(brain_plan.get("callback_targets") or []), None),
+                    "open_loop_seed": (brain_plan.get("open_loop_targets") or [None])[0],
+                    "callback_to_previous_episode": (brain_plan.get("callback_targets") or [None])[0],
                     "continuity_constraints": continuity_context.get("continuity_constraints") or {},
                     # Template-driven hints from scene strategy
                     "template_id": strategy.get("template_id"),
                     "template_family": strategy.get("template_family"),
-                    "pacing_weight": strategy.get("pacing_weight") or metadata.get("pacing_weight"),
-                    "shot_hint": strategy.get("shot_hint") or metadata.get("shot_hint"),
+                    "template_prompt_bias": template_prompt_bias,
                 }
             )
 
             enriched = dict(scene)
             enriched["metadata"] = metadata
-            if beat and beat.shot_hint:
-                enriched["shot_hint"] = beat.shot_hint
+            if strategy.get("scene_goal"):
+                enriched["scene_goal"] = strategy.get("scene_goal")
+            if strategy.get("pacing_weight") is not None:
+                enriched["pacing_weight"] = strategy.get("pacing_weight")
+            if strategy.get("shot_hint"):
+                enriched["shot_hint"] = strategy.get("shot_hint")
             enriched_scenes.append(enriched)
 
         ctx = self._execution_bridge.resolve_context(
@@ -127,7 +134,6 @@ class BrainManifestBuilder:
             continuity_context=continuity_context,
             winner_dna_summary=memory_bundle.get("winner_dna_summary"),
             brain_plan=brain_plan,
-            template_prompt_bias=(brain_plan.get("notes") or {}).get("prompt_bias") or {},
         )
 
         bridged_scenes = [
@@ -157,8 +163,8 @@ class BrainManifestBuilder:
             "continuity_context": continuity_context,
             "winner_dna_summary": memory_bundle.get("winner_dna_summary"),
             "memory_refs": memory_bundle.get("memory_refs") or {},
-            "selected_template_id": (brain_plan.get("notes") or {}).get("template_id"),
-            "selected_template_family": (brain_plan.get("notes") or {}).get("template_family"),
+            "selected_template_id": plan_notes.get("selected_template_id"),
+            "selected_template_family": plan_notes.get("selected_template_family"),
         }
 
     def build(

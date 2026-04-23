@@ -71,6 +71,9 @@ class ScriptPreviewPayload(BaseModel):
     continuity_context: dict[str, Any] | None = None
     winner_dna_summary: dict[str, Any] | None = None
     memory_refs: dict[str, Any] | None = None
+    # Template System fields (optional, backward-compatible)
+    selected_template_id: str | None = None
+    selected_template_family: str | None = None
 
     @field_validator("script_text")
     @classmethod

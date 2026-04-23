@@ -314,9 +314,13 @@ class PublishScheduler:
                         or (payload.get("metadata") or {}).get("winner_dna_summary")
                         or {}
                     ),
+                    "selected_template_id": (payload.get("metadata") or {}).get("selected_template_id"),
+                    "selected_template_family": (payload.get("metadata") or {}).get("selected_template_family"),
                     "title": payload.get("title"),
                     "description": payload.get("description"),
                     "thumbnail_url": payload.get("thumbnail_url"),
+                    "platform": job.platform,
+                    "metrics": (payload.get("metadata") or {}).get("metrics") or {},
                 },
                 score=0.5,
             )

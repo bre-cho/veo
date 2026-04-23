@@ -53,6 +53,7 @@ from app.api.templates import router as templates_router
 from app.api.template_runtime import router as template_runtime_router
 from app.api.template_extraction import router as template_extraction_router
 from app.api.template_governance_scheduling import router as template_governance_scheduling_router
+from app.api.template_debug import router as template_debug_router
 
 # ── Audio ─────────────────────────────────────────────────────────────────
 from app.api.audio import router as audio_router
@@ -140,6 +141,7 @@ _TEMPLATE_ROUTERS = [
     template_runtime_router,
     template_extraction_router,
     template_governance_scheduling_router,
+    template_debug_router,
 ]
 
 _AUDIO_ROUTERS = [
