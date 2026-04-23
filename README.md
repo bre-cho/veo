@@ -56,3 +56,26 @@ docker compose up --build
 9. Upload assets to object storage
 10. Merge clips + burn subtitles
 11. Expose final status and final video URL
+
+## Avatar Tournament + Avatar Governance skeleton notes
+
+This repository now also includes additive skeleton modules for avatar tournament/governance flow:
+
+- SQLAlchemy models
+- Pydantic schemas
+- `services/avatar` tournament + governance engines
+- FastAPI route skeletons
+
+Integration notes:
+
+- Replace `get_db()` stubs in new API files with your real DB session dependency.
+- Register newly added models in metadata bootstrap and Alembic env.
+- Include the new routers in the API app registry.
+- Patch `brain_decision_engine`, `brain_feedback_service`, `publish_scheduler`, and `render_execution` service flows to call these modules.
+
+Recommended next steps:
+
+1. Add migrations for new tables.
+2. Persist debug/explanation payloads with richer fields.
+3. Implement DB-backed historical pair stats.
+4. Replace placeholder scoring heuristics with production avatar engines.

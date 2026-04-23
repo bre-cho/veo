@@ -1,0 +1,753 @@
+openapi: 3.1.0
+info:
+  title: Multi-Character Drama Engine API
+  version: 1.0.0
+  description: |
+    Additive API patch for a drama-aware avatar/video stack.
+    The API manages character psychology, directional relationships,
+    scene tension, power shifts, continuity, blocking, and camera plans.
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: drama-characters
+  - name: drama-relationships
+  - name: drama-scenes
+  - name: drama-arcs
+  - name: drama-compile
+
+paths:
+  /drama/characters:
+    post:
+      tags: [drama-characters]
+      summary: Create drama character profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCharacterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterProfile'
+    get:
+      tags: [drama-characters]
+      summary: List drama character profiles
+      parameters:
+        - in: query
+          name: project_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Character profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CharacterProfile'
+
+  /drama/characters/{character_id}:
+    get:
+      tags: [drama-characters]
+      summary: Get character profile
+      parameters:
+        - $ref: '#/components/parameters/CharacterId'
+      responses:
+        '200':
+          description: Character profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterProfile'
+    patch:
+      tags: [drama-characters]
+      summary: Update character profile
+      parameters:
+        - $ref: '#/components/parameters/CharacterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCharacterRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterProfile'
+
+  /drama/characters/{character_id}/preset/apply:
+    post:
+      tags: [drama-characters]
+      summary: Apply acting archetype preset seed
+      parameters:
+        - $ref: '#/components/parameters/CharacterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [preset_name]
+              properties:
+                preset_name:
+                  type: string
+                  enum: [Mentor, Manipulator, Rebel, WoundedObserver, Authority]
+      responses:
+        '200':
+          description: Preset applied
+
+  /drama/relationships:
+    post:
+      tags: [drama-relationships]
+      summary: Create or upsert directional relationship edge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRelationshipRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationshipEdge'
+    get:
+      tags: [drama-relationships]
+      summary: List directional relationship edges
+      parameters:
+        - in: query
+          name: project_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: character_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Relationship edges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RelationshipEdge'
+
+  /drama/relationships/graph:
+    get:
+      tags: [drama-relationships]
+      summary: Get relationship graph
+      parameters:
+        - in: query
+          name: project_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Relationship graph
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CharacterNode'
+                  edges:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RelationshipEdge'
+
+  /drama/relationships/graph/rebuild:
+    post:
+      tags: [drama-relationships]
+      summary: Rebuild cached relationship graph
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id]
+              properties:
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        '202':
+          description: Rebuild accepted
+
+  /drama/scenes/{scene_id}/analyze:
+    post:
+      tags: [drama-scenes]
+      summary: Analyze scene tension and conflict state
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeSceneRequest'
+      responses:
+        '200':
+          description: Scene analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneDramaState'
+
+  /drama/scenes/{scene_id}/compile:
+    post:
+      tags: [drama-scenes]
+      summary: Compile full drama package for scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompileSceneRequest'
+      responses:
+        '200':
+          description: Compiled scene package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompiledSceneDrama'
+
+  /drama/scenes/{scene_id}/state:
+    get:
+      tags: [drama-scenes]
+      summary: Get scene drama state
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      responses:
+        '200':
+          description: Scene state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SceneDramaState'
+
+  /drama/scenes/{scene_id}/subtext:
+    get:
+      tags: [drama-scenes]
+      summary: Get dialogue subtext rows for scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      responses:
+        '200':
+          description: Subtext rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DialogueSubtext'
+
+  /drama/scenes/{scene_id}/blocking:
+    get:
+      tags: [drama-scenes]
+      summary: Get blocking plan for scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      responses:
+        '200':
+          description: Blocking plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockingPlan'
+
+  /drama/scenes/{scene_id}/camera-plan:
+    get:
+      tags: [drama-scenes]
+      summary: Get camera plan for scene
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      responses:
+        '200':
+          description: Camera plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraPlan'
+
+  /drama/scenes/{scene_id}/apply-outcome:
+    post:
+      tags: [drama-scenes]
+      summary: Persist scene outcome and update downstream drama state
+      parameters:
+        - $ref: '#/components/parameters/SceneId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplySceneOutcomeRequest'
+      responses:
+        '202':
+          description: Accepted for recompute
+
+  /drama/arcs/{character_id}:
+    get:
+      tags: [drama-arcs]
+      summary: Get arc progress timeline
+      parameters:
+        - $ref: '#/components/parameters/CharacterId'
+      responses:
+        '200':
+          description: Arc progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArcProgress'
+
+  /drama/arcs/{character_id}/advance:
+    post:
+      tags: [drama-arcs]
+      summary: Advance character arc using current scene outcome
+      parameters:
+        - $ref: '#/components/parameters/CharacterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceArcRequest'
+      responses:
+        '200':
+          description: Arc updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArcProgress'
+
+  /drama/arcs/recompute:
+    post:
+      tags: [drama-arcs]
+      summary: Recompute arcs for episode or project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                  format: uuid
+                episode_id:
+                  type: string
+                  format: uuid
+      responses:
+        '202':
+          description: Recompute accepted
+
+  /drama/compile/episode:
+    post:
+      tags: [drama-compile]
+      summary: Compile all drama outputs for an episode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompileEpisodeRequest'
+      responses:
+        '200':
+          description: Episode compile output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompileEpisodeResponse'
+
+  /drama/compile/project:
+    post:
+      tags: [drama-compile]
+      summary: Compile project-level drama state package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id]
+              properties:
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Project compile output
+
+components:
+  parameters:
+    CharacterId:
+      in: path
+      name: character_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SceneId:
+      in: path
+      name: scene_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CharacterProfile:
+      type: object
+      required: [id, project_id, name, archetype]
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        external_avatar_id: {type: string, format: uuid, nullable: true}
+        name: {type: string}
+        archetype: {type: string}
+        public_persona: {type: string, nullable: true}
+        private_self: {type: string, nullable: true}
+        outer_goal: {type: string, nullable: true}
+        hidden_need: {type: string, nullable: true}
+        core_wound: {type: string, nullable: true}
+        dominant_fear: {type: string, nullable: true}
+        mask_strategy: {type: string, nullable: true}
+        pressure_response: {type: string, nullable: true}
+        speech_pattern: {type: string, nullable: true}
+        movement_pattern: {type: string, nullable: true}
+        gaze_pattern: {type: string, nullable: true}
+        acting_preset_seed: {type: object}
+        metadata: {type: object}
+
+    CreateCharacterRequest:
+      type: object
+      required: [project_id, name, archetype]
+      properties:
+        project_id: {type: string, format: uuid}
+        external_avatar_id: {type: string, format: uuid, nullable: true}
+        name: {type: string}
+        archetype: {type: string}
+        public_persona: {type: string}
+        private_self: {type: string}
+        outer_goal: {type: string}
+        hidden_need: {type: string}
+        core_wound: {type: string}
+        dominant_fear: {type: string}
+        mask_strategy: {type: string}
+
+    UpdateCharacterRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        public_persona: {type: string}
+        private_self: {type: string}
+        outer_goal: {type: string}
+        hidden_need: {type: string}
+        core_wound: {type: string}
+        dominant_fear: {type: string}
+        mask_strategy: {type: string}
+        pressure_response: {type: string}
+        speech_pattern: {type: string}
+        movement_pattern: {type: string}
+        gaze_pattern: {type: string}
+        acting_preset_seed: {type: object}
+        metadata: {type: object}
+
+    CharacterNode:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        archetype: {type: string}
+
+    RelationshipEdge:
+      type: object
+      required: [id, project_id, source_character_id, target_character_id, relation_type]
+      properties:
+        id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        source_character_id: {type: string, format: uuid}
+        target_character_id: {type: string, format: uuid}
+        relation_type: {type: string}
+        trust_level: {type: number}
+        resentment_level: {type: number}
+        dependence_level: {type: number}
+        fear_level: {type: number}
+        attraction_level: {type: number}
+        rivalry_level: {type: number}
+        perceived_power: {type: number}
+        dominance_source_over_target: {type: number}
+        hidden_agenda_score: {type: number}
+        unresolved_tension_score: {type: number}
+        metadata: {type: object}
+
+    CreateRelationshipRequest:
+      type: object
+      required: [project_id, source_character_id, target_character_id, relation_type]
+      properties:
+        project_id: {type: string, format: uuid}
+        source_character_id: {type: string, format: uuid}
+        target_character_id: {type: string, format: uuid}
+        relation_type: {type: string}
+        trust_level: {type: number, default: 0.5}
+        resentment_level: {type: number, default: 0.0}
+        dependence_level: {type: number, default: 0.0}
+        fear_level: {type: number, default: 0.0}
+        attraction_level: {type: number, default: 0.0}
+        rivalry_level: {type: number, default: 0.0}
+        perceived_power: {type: number, default: 0.5}
+        hidden_agenda_score: {type: number, default: 0.0}
+
+    AnalyzeSceneRequest:
+      type: object
+      required: [project_id, episode_id, participant_character_ids, scene_text]
+      properties:
+        project_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid}
+        participant_character_ids:
+          type: array
+          items: {type: string, format: uuid}
+        scene_text: {type: string}
+        beat_tags:
+          type: array
+          items: {type: string}
+        secret_in_play: {type: string}
+        time_pressure_hint: {type: number}
+        social_consequence_hint: {type: number}
+
+    CompileSceneRequest:
+      type: object
+      required: [project_id, episode_id]
+      properties:
+        project_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid}
+        force_recompute: {type: boolean, default: false}
+        bridge_to_render: {type: boolean, default: true}
+
+    ApplySceneOutcomeRequest:
+      type: object
+      required: [outcome_type]
+      properties:
+        outcome_type: {type: string}
+        notes: {type: string}
+        recompute_downstream: {type: boolean, default: true}
+
+    SceneDramaState:
+      type: object
+      properties:
+        scene_id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid}
+        scene_goal: {type: string}
+        visible_conflict: {type: string}
+        hidden_conflict: {type: string}
+        scene_temperature: {type: number}
+        pressure_level: {type: number}
+        exposure_risk_score: {type: number}
+        time_pressure_score: {type: number}
+        social_consequence_score: {type: number}
+        tension_score: {type: number}
+        flat_scene_flag: {type: boolean}
+        dominant_character_id: {type: string, format: uuid, nullable: true}
+        emotional_center_character_id: {type: string, format: uuid, nullable: true}
+        scene_turning_point: {type: string, nullable: true}
+        outcome_type: {type: string, nullable: true}
+
+    DialogueSubtext:
+      type: object
+      properties:
+        speaker_id: {type: string, format: uuid}
+        target_id: {type: string, format: uuid, nullable: true}
+        line_index: {type: integer}
+        line_text: {type: string}
+        literal_intent: {type: string}
+        hidden_intent: {type: string}
+        psychological_action: {type: string}
+        emotional_charge: {type: number}
+        honesty_level: {type: number}
+        mask_level: {type: number}
+        threat_level: {type: number}
+        intimacy_bid: {type: number}
+        power_move: {type: string}
+
+    PowerShift:
+      type: object
+      properties:
+        from_character_id: {type: string, format: uuid}
+        to_character_id: {type: string, format: uuid}
+        social_delta: {type: number}
+        emotional_delta: {type: number}
+        informational_delta: {type: number}
+        moral_delta: {type: number}
+        spatial_delta: {type: number}
+        narrative_control_delta: {type: number}
+        trigger_event: {type: string}
+        explanation: {type: string}
+
+    BlockingPlan:
+      type: object
+      properties:
+        scene_id: {type: string, format: uuid}
+        emotional_anchor_character_id: {type: string, format: uuid, nullable: true}
+        center_frame_owner_id: {type: string, format: uuid, nullable: true}
+        distance_strategy: {type: string}
+        eye_line_strategy: {type: string}
+        body_orientation_strategy: {type: string}
+        movement_pressure_strategy: {type: string}
+        entry_exit_control_notes: {type: string}
+        power_geometry_notes: {type: string}
+        beat_map:
+          type: array
+          items: {type: object}
+
+    CameraPlan:
+      type: object
+      properties:
+        scene_id: {type: string, format: uuid}
+        emotional_anchor_character_id: {type: string, format: uuid, nullable: true}
+        character_focus_priority:
+          type: array
+          items: {type: string, format: uuid}
+        dominant_visual_axis: {type: string}
+        lens_psychology_mode: {type: string}
+        framing_mode: {type: string}
+        eye_line_strategy: {type: string}
+        reveal_timing: {type: string}
+        pause_hold_strategy: {type: string}
+        movement_strategy: {type: string}
+        transition_strategy: {type: string}
+        lighting_strategy: {type: string}
+        shot_duration_hint_seconds: {type: number}
+        continuity_notes: {type: string}
+
+    CharacterStateDelta:
+      type: object
+      properties:
+        character_id: {type: string, format: uuid}
+        emotion:
+          type: object
+        acting:
+          type: object
+
+    RelationshipShift:
+      type: object
+      properties:
+        source: {type: string, format: uuid}
+        target: {type: string, format: uuid}
+        trust_delta: {type: number}
+        resentment_delta: {type: number}
+        dominance_delta: {type: number}
+
+    CompiledSceneDrama:
+      type: object
+      properties:
+        scene_id: {type: string, format: uuid}
+        drama_state:
+          $ref: '#/components/schemas/SceneDramaState'
+        subtext_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DialogueSubtext'
+        power_shifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PowerShift'
+        blocking_plan:
+          $ref: '#/components/schemas/BlockingPlan'
+        camera_plan:
+          $ref: '#/components/schemas/CameraPlan'
+        character_updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterStateDelta'
+        relationship_shifts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelationshipShift'
+        render_bridge:
+          type: object
+
+    ArcProgress:
+      type: object
+      properties:
+        character_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid, nullable: true}
+        arc_name: {type: string}
+        arc_stage: {type: string}
+        false_belief: {type: string}
+        pressure_index: {type: number}
+        transformation_index: {type: number}
+        collapse_risk: {type: number}
+        mask_break_level: {type: number}
+        truth_acceptance_level: {type: number}
+        relation_entanglement_index: {type: number}
+
+    AdvanceArcRequest:
+      type: object
+      required: [episode_id, source_scene_id]
+      properties:
+        episode_id: {type: string, format: uuid}
+        source_scene_id: {type: string, format: uuid}
+        reason: {type: string}
+
+    CompileEpisodeRequest:
+      type: object
+      required: [project_id, episode_id]
+      properties:
+        project_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid}
+        bridge_to_render: {type: boolean, default: true}
+        force_recompute: {type: boolean, default: false}
+
+    CompileEpisodeResponse:
+      type: object
+      properties:
+        project_id: {type: string, format: uuid}
+        episode_id: {type: string, format: uuid}
+        scenes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompiledSceneDrama'
+        continuity_warnings:
+          type: array
+          items: {type: string}

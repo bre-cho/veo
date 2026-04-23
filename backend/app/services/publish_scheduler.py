@@ -25,8 +25,10 @@ from app.services.publish_providers.campaign_budget_policy import (
     BudgetExceededError,
     CampaignBudgetPolicy,
 )
+from app.services.youtube_seo_orchestrator import YouTubeSEOOrchestrator
 
 logger = logging.getLogger(__name__)
+_seo_orchestrator = YouTubeSEOOrchestrator()
 
 # ---------------------------------------------------------------------------
 # Publish mode configuration
@@ -221,6 +223,11 @@ class PublishScheduler:
             db.refresh(job)
             raise
 
+        job.payload = _seo_orchestrator.enrich_publish_payload(
+            db=db,
+            payload=job.payload or {},
+            platform=job.platform,
+        )
         provider = _get_provider(platform=job.platform)
 
         # --- Quota check ---
