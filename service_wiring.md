@@ -1,347 +1,427 @@
-# service_wiring.md
+# MULTI_CHARACTER_DRAMA_ENGINE — service_wiring.md
 
-## Goal
-Wire avatar tournament and governance into the existing system with the least-risk additive pattern:
-- score before render
-- observe after publish
-- adjust future selection without rewriting render core
+## Wiring goal
+Attach drama intelligence to the current avatar/video stack without breaking:
+- render execution
+- provider adapters
+- project workspace
+- existing acting engine
+- storyboard compiler
+
+The drama layer should enrich scene context before rendering and persist continuity after outcomes.
 
 ---
 
-## 1) Dependency flow
+## 1) Runtime wiring overview
 
-```txt
-avatar_registry
-    + avatar_scorecard
-    + avatar_pair_optimizer
-    + avatar_continuity_engine
-    + avatar_policy_engine
-    + avatar_weight_engine
-    -> avatar_tournament_engine
-    -> brain_decision_engine
-    -> execution_bridge_service / render_execution
-
-publish outcome / analytics
-    -> brain_feedback_service
-    -> avatar_governance_engine
-    -> avatar_policy_state + promotion/guardrail events
-    -> publish_scheduler (next cycle)
+```text
+[project / episode / scene input]
+        ->
+[scene_drama_service.analyze_or_compile()]
+        ->
+[engines: intent + relation + tension + subtext + power + blocking + camera]
+        ->
+[prompt_bridge_service.build_render_bridge_payload()]
+        ->
+[existing acting/storyboard/render modules]
+        ->
+[render completed or scene outcome confirmed]
+        ->
+[continuity_service.apply_scene_outcome()]
+        ->
+[emotional update + relation update + memory traces + arc update]
 ```
 
 ---
 
-## 2) Service responsibilities
+## 2) Main service responsibilities
 
-### `services/avatar/avatar_tournament_engine.py`
-Inputs:
-- workspace/project context
-- topic_signature
-- template_family
-- platform
-- candidate avatar ids
+### `cast_service.py`
+Purpose:
+- CRUD character profiles
+- apply archetype seed preset
+- bootstrap initial state rows
 
-Calls:
-- `avatar_registry.get_candidates(...)`
-- `avatar_scorecard.build_avatar_scorecard(...)`
-- `avatar_pair_optimizer.get_pair_score(...)`
-- `avatar_continuity_engine.build_continuity_context(...)`
-- `avatar_policy_engine.get_state(...)`
-- `avatar_weight_engine.build_final_rank(...)`
-- `avatar_selection_explainer.explain(...)`
+Depends on:
+- `drama_character_profile` model
+- `drama_character_state` model
+- `archetype_presets.yaml`
 
-Outputs:
-- ranked candidates
-- selected avatar id
-- selection mode: exploit/explore/forced_test
-- tournament persistence payload
+Notes:
+- presets should seed acting defaults, not hard-lock final behavior
+- safe place to map uploaded archetypes:
+  - Mentor
+  - Manipulator
+  - Rebel
+  - WoundedObserver
+  - Authority
 
-### `services/avatar/avatar_governance_engine.py`
-Inputs:
-- actual metrics from publish/feedback
-- avatar_id
-- tournament_run_id optional
-- context
+### `relationship_service.py`
+Purpose:
+- create/update directional edges
+- rebuild graph cache
+- expose relation summaries for UI and engines
 
-Calls:
-- `avatar_policy_engine.get_state(...)`
-- `avatar_policy_engine.evaluate_thresholds(...)`
-- `avatar_rollback_service.choose_fallback(...)` when needed
+Depends on:
+- `relationship_engine.py`
+- `drama_relationship_edge` model
 
-Outputs:
-- updated state
-- promotion/demotion/cooldown/rollback event
-- guardrail event when triggered
+### `scene_drama_service.py`
+Purpose:
+- entry point for scene analyze / compile
+- load project characters + edges + prior scene state
+- call all lower-level engines in correct order
 
-### `services/avatar/avatar_policy_engine.py`
-Owns:
-- thresholds
-- transition rules
-- cooldown windows
-- exploration floors
-- decay rules
+Call order:
+1. load participants
+2. load directional edges
+3. infer character intents
+4. compute scene tension
+5. compute dialogue subtext
+6. compute power shifts
+7. compute blocking plan
+8. compute camera plan
+9. persist scene outputs
+10. optionally build render bridge payload
 
-Suggested config surface:
-```python
-AVATAR_POLICY = {
-    "priority_min_valid_outcomes": 3,
-    "cooldown_retention_drop_threshold": -0.15,
-    "rollback_retention_drop_threshold": -0.20,
-    "min_exploration_ratio": 0.10,
-    "max_priority_share": 0.80,
+### `dialogue_drama_service.py`
+Purpose:
+- compile subtext rows from line-by-line scene content or beat list
+- generate literal intent / hidden intent / psychological action
+- tag lines for pressure or reveal
+
+### `continuity_service.py`
+Purpose:
+- apply scene outcome
+- update downstream emotional states
+- update relationship edges
+- write memory traces
+- advance arc progress
+- queue asynchronous downstream recompute
+
+Mandatory update law:
+`scene outcome -> emotional shift -> relationship shift -> memory trace -> arc stage`
+
+### `arc_service.py`
+Purpose:
+- read/write arc progress
+- recompute arc from episode or project
+- detect mask-break and truth-acceptance jumps
+
+### `drama_compile_service.py`
+Purpose:
+- compile entire episode or project drama package
+- collect continuity warnings
+- expose data to UI or export
+
+### `prompt_bridge_service.py`
+Purpose:
+- convert drama outputs into payloads consumable by existing render stack
+- should not render anything itself
+- only enrich payloads
+
+Bridge payload sections:
+- acting_enrichment
+- blocking_enrichment
+- camera_enrichment
+- continuity_notes
+- lighting_psychology
+- transition_hint
+
+---
+
+## 3) Engine wiring order
+
+### analyze path
+```text
+scene_drama_service
+  -> character_intent_engine
+  -> tension_engine
+  -> subtext_engine
+  -> power_shift_engine
+  -> blocking_engine
+  -> camera_drama_engine
+```
+
+### apply outcome path
+```text
+continuity_service
+  -> emotional_update_engine
+  -> relationship_engine
+  -> betrayal_alliance_engine
+  -> chemistry_engine (optional recompute)
+  -> continuity_engine
+  -> arc_engine
+```
+
+---
+
+## 4) Adapter wiring into current repo
+
+## A. Acting adapter
+File:
+`backend/app/drama/integrations/acting_adapter.py`
+
+Purpose:
+Convert drama state into acting control hints.
+
+Suggested output:
+```json
+{
+  "character_id": "...",
+  "tempo_override": "slow_tight",
+  "gaze_pattern": "avoid_then_lock",
+  "movement_density": "minimal_rigid",
+  "pause_pattern": "long_loaded",
+  "pressure_behavior": "deepen_calm",
+  "mask_openness_blend": 0.42
 }
 ```
 
-### `services/avatar/avatar_weight_engine.py`
-Computes final score:
-```txt
-final_rank_score =
-base_score
-+ pair_bonus
-+ continuity_bonus
-+ recent_win_bonus
-+ exploration_bonus
-- governance_penalty
-- risk_penalty
-- decay_penalty
-```
+Map archetype + live pressure to acting surface.
 
-### `services/avatar/avatar_pair_learning_engine.py`
-Reads `avatar_match_results` and learns:
-- avatar × template family
-- avatar × topic signature
-- avatar × platform
+## B. Storyboard adapter
+File:
+`backend/app/drama/integrations/storyboard_adapter.py`
 
-Returns:
-- pair_bonus
-- pair_confidence
-- history_count
+Purpose:
+Inject:
+- power holder
+- emotional anchor
+- blocking notes
+- reveal timing
+- shot duration hint
 
-### `services/avatar/avatar_rollback_service.py`
-Used only when:
-- retention crash
-- continuity hard break
-- repeated failure under rollout
+## C. Render prompt adapter
+File:
+`backend/app/drama/integrations/render_prompt_adapter.py`
 
-Returns:
-- fallback avatar id
-- rollback action payload
-- cooldown duration
+Purpose:
+Translate drama-aware camera and lighting plan into prompt fragments for existing provider adapters.
 
-### `services/avatar/avatar_selection_explainer.py`
-Produces:
-- explanation lines for debug UI/API
-- “why selected” payload for manifest/render metadata
+This adapter should use camera semantics grounded in the uploaded materials:
+- static / pan / tilt / push-in / dolly / truck / arc
+- overhead / low angle / high angle / OTS / tracking / dutch
+- speed-ramp / slow motion / whip pan / focus pull
+- timing guidance by phase (hook, demo, pressure, payoff) fileciteturn0file0L1-L49 fileciteturn0file1L75-L123
+
+## D. Project workspace adapter
+File:
+`backend/app/drama/integrations/project_workspace_adapter.py`
+
+Purpose:
+Read scenes from current project workspace format and return normalized beat payloads for drama analysis.
 
 ---
 
-## 3) Brain wiring
+## 5) FastAPI router wiring
 
-### `services/brain/brain_decision_engine.py`
-Inject this before final preview/render decision is built:
+In central router registration:
 
 ```python
-avatar_selection = avatar_tournament_engine.run_tournament(
-    workspace_id=workspace_id,
-    project_id=project_id,
-    topic_signature=topic_signature,
-    template_family=template_family,
-    platform=platform,
-    candidate_avatar_ids=candidate_avatar_ids,
-    baseline_avatar_id=baseline_avatar_id,
-    context=decision_context,
+from app.drama.api import (
+    drama_characters,
+    drama_relationships,
+    drama_scenes,
+    drama_arcs,
+    drama_compile,
 )
 
-decision.avatar_id = avatar_selection.selected_avatar_id
-decision.avatar_selection_mode = avatar_selection.selection_mode
-decision.avatar_selection_debug = avatar_selection.explanation
-decision.avatar_tournament_run_id = avatar_selection.tournament_run_id
+api_router.include_router(drama_characters.router, prefix="/drama/characters", tags=["drama-characters"])
+api_router.include_router(drama_relationships.router, prefix="/drama/relationships", tags=["drama-relationships"])
+api_router.include_router(drama_scenes.router, prefix="/drama/scenes", tags=["drama-scenes"])
+api_router.include_router(drama_arcs.router, prefix="/drama/arcs", tags=["drama-arcs"])
+api_router.include_router(drama_compile.router, prefix="/drama/compile", tags=["drama-compile"])
 ```
 
-Fallback rule:
-- if tournament cannot score enough candidates, use current stable avatar or existing decision path
-- never hard-fail render just because tournament layer is degraded
+---
 
-### `services/brain/brain_feedback_service.py`
-After actual publish metrics are available:
+## 6) Celery / worker wiring
 
+### `drama_scene_worker.py`
+Trigger on:
+- scene created
+- scene edited
+- user requests recompile
+- episode compile
+
+Tasks:
+- analyze scene
+- compile scene outputs
+- persist plans
+- emit telemetry event
+
+### `continuity_rebuild_worker.py`
+Trigger on:
+- apply_scene_outcome with recompute_downstream=true
+- upstream scene content changed
+
+Tasks:
+- walk following scenes in episode order
+- rebuild emotional states
+- rebuild relation shifts
+- rebuild arc projections
+- flag continuity breaks
+
+### `drama_arc_worker.py`
+Trigger on:
+- episode compile
+- explicit arc recompute
+- major event types like betrayal / confession / collapse
+
+Tasks:
+- recalc arc scores
+- update stage
+- write warnings if arc jump is too large
+
+---
+
+## 7) Transaction boundaries
+
+### Safe DB transaction pattern
+Use one transaction for:
+- scene state
+- subtext items
+- blocking plan
+- camera plan
+- power shifts
+
+Use a separate transaction or async job for:
+- downstream recompute
+- long continuity rebuild
+- project-level compile
+
+Reason:
+avoid tying user request latency to entire episode recompute.
+
+---
+
+## 8) Suggested dependency injection
+
+### Scene path
 ```python
-governance_result = avatar_governance_engine.evaluate_avatar_outcome(
-    avatar_id=avatar_id,
-    tournament_run_id=tournament_run_id,
-    metrics=publish_metrics,
-    context=feedback_context,
+SceneDramaService(
+    cast_service=CastService(...),
+    relationship_service=RelationshipService(...),
+    tension_engine=TensionEngine(...),
+    subtext_engine=SubtextEngine(...),
+    power_shift_engine=PowerShiftEngine(...),
+    blocking_engine=BlockingEngine(...),
+    camera_drama_engine=CameraDramaEngine(...),
+    prompt_bridge_service=PromptBridgeService(...),
 )
 ```
 
-Write back:
-- `avatar_policy_states`
-- `avatar_promotion_events`
-- `avatar_guardrail_events`
-- optional update of `avatar_match_results.actual_*`
-
----
-
-## 4) Publish wiring
-
-### `services/publish/publish_scheduler.py`
-When building candidate queue:
-- respect `cooldown_until`
-- prioritize `state=priority`
-- keep exploration floor alive
-- cap repeated dominance from one avatar
-
-Suggested selection rules:
-1. Exclude blocked/retired
-2. Skip cooldown unless manual override
-3. Reserve 10–20% exploration slots
-4. Prefer stable pair winners, not only raw avatar winners
-
-Pseudo:
+### Outcome path
 ```python
-if policy.state in {"blocked", "retired"}:
-    skip()
-elif policy.state == "cooldown" and not manual_override:
-    skip()
-elif exploration_slot_open:
-    consider(candidate_pool_with_exploration_weight)
-else:
-    consider(priority_pool_with_governance_rules)
+ContinuityService(
+    emotional_update_engine=EmotionalUpdateEngine(...),
+    relationship_engine=RelationshipEngine(...),
+    betrayal_alliance_engine=BetrayalAllianceEngine(...),
+    continuity_engine=ContinuityEngine(...),
+    arc_engine=ArcEngine(...),
+)
 ```
 
 ---
 
-## 5) Render wiring
+## 9) Camera + blocking mapping rules
 
-### `services/render/execution_bridge_service.py`
-Inject avatar context into render payload:
+Use uploaded camera files as deterministic rule input, not just inspiration.
 
-```python
-render_context["avatar_id"] = decision.avatar_id
-render_context["avatar_tournament_run_id"] = decision.avatar_tournament_run_id
-render_context["avatar_selection_mode"] = decision.avatar_selection_mode
-render_context["avatar_selection_reason"] = decision.avatar_selection_debug
-render_context["avatar_policy_state"] = avatar_policy_state.state
-render_context["avatar_continuity_payload"] = continuity_payload
-```
+### Scene camera mapping examples
+- authority holds frame -> static / low-angle / controlled push-in
+- weak exposure -> high-angle / longer hold / restricted movement
+- system isolation -> overhead / top-down layout
+- confrontation -> over-the-shoulder / tracking / push-in
+- unstable psyche -> dutch / handheld / off-axis reveal
+- emotional realization -> slow push-in / focus pull / pause hold
+- relationship complexity -> arc move
+- urgency / shock -> whip pan / speed ramp
+- payoff -> crane or controlled pull-out depending emotional meaning fileciteturn0file0L15-L49 fileciteturn0file1L25-L123
 
-### `services/render/render_execution.py`
-Persist metadata for traceability:
-- avatar_id
-- tournament_run_id
-- selection mode
-- selection reason
-- policy state snapshot
-
-Important:
-- do not alter provider adapter contracts unless they already support metadata passthrough
-- if metadata fields are unsupported by providers, keep them in internal execution manifest only
+### Shot duration hints
+Use:
+- 2–3s for establishing authority/emphasis angles
+- 3–5s for tracking/dolly beats
+- 4–6s for arc exploration
+- 1–2s for dutch / whip / vertigo accents
+These timing conventions are aligned with the uploaded guides. fileciteturn0file1L1-L24
 
 ---
 
-## 6) API wiring
+## 10) Frontend data flow
 
-### `api/avatar_tournament.py`
-Suggested routes:
-- `POST /api/v1/avatar/tournament/run`
-- `GET /api/v1/avatar/tournament/{run_id}`
+### `/drama/scenes/[sceneId]`
+API calls:
+1. GET scene state
+2. GET subtext
+3. GET blocking plan
+4. GET camera plan
 
-Route → Service:
-```txt
-route -> avatar_tournament_engine
-route -> avatar_selection_explainer (if you separate explanation reconstruction)
-```
+### `/drama/relationships`
+API calls:
+1. GET graph
+2. optional diff history endpoint later
 
-### `api/avatar_governance.py`
-Suggested routes:
-- `GET /api/v1/avatar/governance/state/{avatar_id}`
-- `POST /api/v1/avatar/governance/recalculate/{avatar_id}`
-- `POST /api/v1/avatar/governance/rollback/{avatar_id}`
-
-Route → Service:
-```txt
-route -> avatar_policy_engine
-route -> avatar_governance_engine
-route -> avatar_rollback_service
-```
+### `/drama/arcs/[characterId]`
+API calls:
+1. GET arc timeline
+2. optionally read latest memory traces
 
 ---
 
-## 7) Persistence update points
+## 11) Telemetry wiring
 
-### On tournament run start
-Create `avatar_tournament_runs` row with:
-- context
-- candidate pool
-- selection mode default pending/running
+Emit metrics on:
+- tension_score
+- flat_scene_flag
+- power_shift_magnitude
+- trust_shift_magnitude
+- continuity_break_count
+- arc_jump_warning_count
+- render_bridge_applied
 
-### On tournament completion
-Update:
-- selected avatar
-- ranked results in `avatar_match_results`
-- completed timestamps
-
-### On publish outcome
-Update winning match row:
-- actual_ctr
-- actual_retention
-- actual_watch_time
-- actual_conversion
-- fitness_score
-- result_label
-
-### On policy transition
-Insert:
-- `avatar_promotion_events`
-- optional `avatar_guardrail_events`
-
----
-
-## 8) Safety / degradation strategy
-
-This layer must be soft-fail:
-- if pair-learning is empty, score without pair bonus
-- if policy state missing, initialize `candidate`
-- if governance calculation fails, do not block publish; log event and keep last known policy
-- if tournament service unavailable, use current stable avatar path
-
-Recommended guard:
-```python
-try:
-    avatar_selection = avatar_tournament_engine.run_tournament(...)
-except Exception:
-    logger.exception("avatar_tournament_failed")
-    avatar_selection = stable_avatar_fallback(...)
+Suggested event names:
+```text
+drama.scene.compiled
+drama.scene.flat_flagged
+drama.scene.outcome.applied
+drama.continuity.rebuild.completed
+drama.arc.updated
+drama.render_bridge.generated
 ```
 
 ---
 
-## 9) Suggested tests
+## 12) Backward compatibility rules
 
-### Unit
-- weight calculation
-- policy state transition
-- rollback decision
-- exploration floor enforcement
-
-### Integration
-- tournament run persists results
-- feedback updates policy state
-- scheduler skips cooldown avatars
-- render manifest contains avatar metadata
-
-### E2E smoke
-1. Create avatars
-2. Run tournament
-3. Select avatar
-4. Render with selected avatar
-5. Feed poor retention
-6. Observe cooldown/rollback
-7. Run next tournament and confirm changed priority
+1. If `DRAMA_ENGINE_ENABLED=false`, existing render flow must remain untouched.
+2. If a scene has no drama state, render with current defaults.
+3. `external_avatar_id` remains optional.
+4. Do not require drama profiles for all projects in phase 1.
+5. Missing camera plan should fall back to current storyboard camera defaults.
 
 ---
 
-## 10) Non-goals in this patch
-- No ML model requirement
-- No provider API rewrite
-- No hard dependency on external analytics stack
-- No UI implementation requirement beyond API readiness
+## 13) Verify checklist after merge
+
+### API
+- create character works
+- apply preset works
+- create directional relationship works
+- analyze scene returns tension score
+- compile scene persists subtext + blocking + camera
+- apply outcome updates downstream state
+
+### DB
+- all drama tables migrate cleanly
+- indexes created
+- no conflicts with current tables
+
+### Render bridge
+- existing render route accepts drama enrichment without error
+- scenes without drama still render normally
+
+### Continuity
+- editing scene N triggers downstream rebuild on scene N+1...N+k

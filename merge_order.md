@@ -1,195 +1,279 @@
-# merge_order.md
+# MULTI_CHARACTER_DRAMA_ENGINE — merge_order.md
 
-## Objective
-Add avatar tournament + governance with the least-risk merge path:
-- additive DB/models first
-- isolated services second
-- feedback wiring third
-- decision/render wiring fourth
-- ops/debug endpoints last
+## Merge goal
+Introduce the drama engine in **safe additive phases** so the current avatar/video system keeps running while drama intelligence grows around it.
+
+Do **not** start by touching render core.
 
 ---
 
-## Merge 7 — Schema + model foundation
-Add only new tables/models/schemas first. No behavior changes yet.
+## PHASE 1 — Foundation tables + models + schemas
+**Risk:** Low  
+**Why first:** Creates stable persistence contract without touching execution flow.
 
 ### Add
-- `backend/app/models/avatar_tournament_run.py`
-- `backend/app/models/avatar_match_result.py`
-- `backend/app/models/avatar_policy_state.py`
-- `backend/app/models/avatar_promotion_event.py`
-- `backend/app/models/avatar_guardrail_event.py`
-- `backend/app/schemas/avatar_tournament.py`
-- `backend/app/schemas/avatar_governance.py`
-- `backend/app/schemas/avatar_selection_debug.py`
-
-### Also
-- Add migration from `schema.sql`
-- Ensure imports do not create circular dependency
+- `schema.sql` equivalent via Alembic
+- all `models/`
+- all `schemas/`
+- `rules/archetype_presets.yaml`
+- `rules/camera_psychology_rules.yaml`
+- minimal CRUD APIs:
+  - characters
+  - relationships
+  - arcs read
+- frontend stubs optional
 
 ### Verify
-- app boots
-- ORM models import cleanly
-- migration up/down works
-- no route/service behavior changed yet
+- migration up succeeds
+- create character works
+- create relationship works
+- list graph works
+- no existing route regression
+
+### Stop criteria
+Only proceed when DB + CRUD are stable.
 
 ---
 
-## Merge 8 — Isolated engines
-Add independent services that can be tested in isolation before they influence production flow.
+## PHASE 2 — Scene analysis core
+**Risk:** Medium-low  
+**Why second:** Scene intelligence can run in isolation and return JSON before touching render.
 
 ### Add
-- `backend/app/services/avatar/avatar_tournament_engine.py`
-- `backend/app/services/avatar/avatar_governance_engine.py`
-- `backend/app/services/avatar/avatar_policy_engine.py`
-- `backend/app/services/avatar/avatar_weight_engine.py`
-- `backend/app/services/avatar/avatar_pair_learning_engine.py`
-- `backend/app/services/avatar/avatar_rollback_service.py`
-- `backend/app/services/avatar/avatar_selection_explainer.py`
+- `character_intent_engine.py`
+- `relationship_engine.py`
+- `tension_engine.py`
+- `subtext_engine.py`
+- `power_shift_engine.py`
+- `scene_drama_service.py`
+- `drama_scenes.py` analyze + compile routes
+
+### Behavior
+- accept scene text / beat payload
+- return:
+  - scene tension
+  - conflict
+  - subtext items
+  - power shifts
 
 ### Verify
-- service unit tests pass
-- tournament engine ranks candidates with dummy data
-- governance engine computes state transitions without touching publish/render paths
-- fallback path exists when historical data is empty
+- analyze scene returns stable payload
+- flat scene flag triggers correctly
+- power shift rows persist
+- repeated compile is idempotent
 
 ---
 
-## Merge 9 — Feedback learning path
-Wire actual outcomes into tournament/governance tables before using tournament to make live decisions.
-
-### Modify
-- `backend/app/services/avatar/avatar_scorecard.py`
-- `backend/app/services/avatar/avatar_pair_optimizer.py`
-- `backend/app/services/brain/brain_feedback_service.py`
-
-### Goal
-- save predicted metrics into tournament result rows
-- save actual metrics after publish
-- compute fitness and state transitions offline/softly
-
-### Verify
-- after publish metrics arrive, `avatar_match_results` gets actual values
-- `avatar_policy_states` is created/updated
-- promotion/guardrail events are written
-- no effect on avatar selection yet
-
----
-
-## Merge 10 — Decision path injection
-Now let the brain use tournament ranking in a soft-fail way.
-
-### Modify
-- `backend/app/services/brain/brain_decision_engine.py`
-- `backend/app/services/publish/publish_scheduler.py`
-
-### Goal
-- select avatar through tournament when available
-- keep stable fallback if tournament layer degrades
-- preserve exploration ratio
-- respect cooldown/blocked states
-
-### Verify
-- decision payload contains selected avatar
-- scheduler skips cooldown avatars
-- stable fallback still works if tournament engine errors
-- no hard regression in preview/project flow
-
----
-
-## Merge 11 — Render bridge injection
-Attach selection/debug/policy data to execution metadata without changing core provider behavior.
-
-### Modify
-- `backend/app/services/render/execution_bridge_service.py`
-- `backend/app/services/render/render_execution.py`
-
-### Goal
-- trace exactly why one avatar was chosen
-- persist tournament and policy metadata with the execution
-
-### Verify
-- render manifest includes `avatar_id`
-- render manifest includes `avatar_tournament_run_id`
-- render manifest includes selection mode/reason
-- provider adapters still receive valid payloads
-
----
-
-## Merge 12 — Debug + ops routes
-Expose read/ops endpoints after core wiring is stable.
+## PHASE 3 — Blocking + camera psychology
+**Risk:** Medium  
+**Why here:** Now that scene tension exists, camera/blocking can become consequence of psychology instead of decoration.
 
 ### Add
-- `backend/app/api/avatar_tournament.py`
-- `backend/app/api/avatar_governance.py`
+- `blocking_engine.py`
+- `camera_drama_engine.py`
+- `drama_blocking_plans` + `drama_camera_plans` usage
+- scene endpoints:
+  - `/blocking`
+  - `/camera-plan`
+
+### Critical rule
+Camera mapping must use the uploaded Hollywood camera language:
+- low/high/overhead/dutch/OTS
+- static/pan/tilt/dolly/tracking/arc
+- whip/speed-ramp/focus-pull/slow-mo
+- timing hints per shot type fileciteturn0file0L1-L49 fileciteturn0file1L1-L123
 
 ### Verify
-- `POST /api/v1/avatar/tournament/run` works
-- `GET /api/v1/avatar/tournament/{run_id}` works
-- `GET /api/v1/avatar/governance/state/{avatar_id}` works
-- rollback/cooldown endpoint updates policy state as expected
+- confrontation scenes choose meaningful OTS / push-in / low/high angle patterns
+- exposure scenes can trigger high-angle or overhead where appropriate
+- power-holding scenes can trigger stable / minimal-move / low-angle plans
+- camera plan stored and readable
 
 ---
 
-## Recommended rollback strategy by merge
-If anything breaks:
+## PHASE 4 — Outcome + continuity
+**Risk:** Medium-high  
+**Why here:** This is where state starts changing across scenes.
 
-### Rollback from Merge 12
-- disable new API routers only
+### Add
+- `emotional_update_engine.py`
+- `continuity_engine.py`
+- `arc_engine.py`
+- `continuity_service.py`
+- `drama_arc_worker.py`
+- `continuity_rebuild_worker.py`
+- route:
+  - `/apply-outcome`
+  - `/arcs/{character_id}/advance`
+  - `/arcs/recompute`
 
-### Rollback from Merge 11
-- remove render metadata injection
-- keep tournament/governance persistence intact
+### Mandatory law
+`scene outcome -> emotional shift -> relationship shift -> memory trace -> arc update`
 
-### Rollback from Merge 10
-- switch brain decision back to current stable avatar selection path
-- keep offline feedback collection intact
-
-### Rollback from Merge 9
-- stop writing governance actions, keep tables/migrations
-
-### Rollback from Merge 8
-- keep DB foundation, disable service imports
-
-### Rollback from Merge 7
-- only if migration itself is invalid
-
----
-
-## Smoke checklist after full pack
-1. Migrate DB
-2. Boot API
-3. Boot worker
-4. Create or load 2–3 avatars
-5. Run manual tournament
-6. Confirm one avatar selected
-7. Start one render
-8. Confirm render metadata has avatar context
-9. Feed mock publish metrics
-10. Confirm policy state changes
-11. Trigger poor retention
-12. Confirm cooldown or rollback
-13. Run next tournament
-14. Confirm ranking/selection changed accordingly
+### Verify
+- betrayal lowers trust and raises resentment
+- confession reduces mask_strength and can raise openness
+- updating scene N rebuilds state for N+1 onward
+- continuity warnings appear on contradictions
 
 ---
 
-## Production hard rules
-- tournament/governance must soft-fail, never hard-block render by default
-- blocked/retired avatars never auto-schedule
-- cooldown avatars require manual override or cooldown expiry
-- priority avatars cannot consume 100% traffic; exploration must remain alive
-- pair winners matter more than raw avatar winners
+## PHASE 5 — Render bridge
+**Risk:** Medium-high  
+**Why now:** Only bridge once drama outputs are already stable.
+
+### Add
+- `acting_adapter.py`
+- `storyboard_adapter.py`
+- `render_prompt_adapter.py`
+- `prompt_bridge_service.py`
+
+### Integration rule
+Do not rewrite render core.  
+Only enrich existing payloads with:
+- acting hints
+- blocking notes
+- camera notes
+- continuity notes
+- lighting psychology
+
+### Verify
+- existing render still works with bridge disabled
+- existing render works with bridge enabled
+- prompt payload now contains drama-aware camera language
+- acting payload reflects archetype + live pressure state
 
 ---
 
-## Fastest safe implementation order
-If you want the shortest path to visible value:
+## PHASE 6 — Episode/project compile + UI
+**Risk:** Medium  
+**Why after backend stabilization:** mostly orchestration and visibility.
 
-1. Merge 7
-2. Merge 8
-3. Merge 9
-4. Run offline data collection for a few cycles
-5. Merge 10 with fallback
-6. Merge 11
-7. Merge 12
+### Add
+- `drama_compile_service.py`
+- `/compile/episode`
+- `/compile/project`
+- frontend panels:
+  - relationship graph
+  - scene tension panel
+  - blocking preview
+  - camera plan
+  - arc progress
+
+### Verify
+- episode compile surfaces continuity warnings
+- graph UI reflects directional edges
+- scene detail page shows subtext + power shifts + camera plan
+
+---
+
+## PHASE 7 — Advanced optional upgrades
+**Risk:** Higher  
+**Defer until core stable**
+
+### Add later
+- chemistry engine
+- betrayal prediction model
+- scene tournament
+- best-scene variant ranking
+- winner DNA memory for relationship archetypes
+- multi-episode drama optimization
+
+---
+
+## File-by-file recommended order
+
+### 1. Database first
+1. alembic migration 0001 core tables
+2. alembic migration 0002 output tables
+3. alembic migration 0003 indexes and constraints
+
+### 2. Core contracts
+4. models/*
+5. schemas/*
+
+### 3. Low-risk APIs
+6. api/drama_characters.py
+7. api/drama_relationships.py
+
+### 4. Core engines
+8. engines/character_intent_engine.py
+9. engines/relationship_engine.py
+10. engines/tension_engine.py
+11. engines/subtext_engine.py
+12. engines/power_shift_engine.py
+
+### 5. Scene service + routes
+13. services/scene_drama_service.py
+14. api/drama_scenes.py
+
+### 6. Spatial/camera layer
+15. engines/blocking_engine.py
+16. engines/camera_drama_engine.py
+
+### 7. Continuity layer
+17. engines/emotional_update_engine.py
+18. engines/continuity_engine.py
+19. engines/arc_engine.py
+20. services/continuity_service.py
+21. services/arc_service.py
+22. api/drama_arcs.py
+
+### 8. Bridge layer
+23. integrations/acting_adapter.py
+24. integrations/storyboard_adapter.py
+25. integrations/render_prompt_adapter.py
+26. services/prompt_bridge_service.py
+
+### 9. Compile layer
+27. services/drama_compile_service.py
+28. api/drama_compile.py
+
+### 10. Async + UI
+29. workers/*
+30. frontend/drama/*
+31. components/drama/*
+
+---
+
+## Rollback strategy
+
+If any issue appears:
+1. set `DRAMA_ENGINE_ENABLED=false`
+2. keep tables, but skip enrichment
+3. leave render core untouched
+4. disable workers:
+   - drama_scene_worker
+   - drama_arc_worker
+   - continuity_rebuild_worker
+
+Because the patch is additive, rollback should be runtime-flag first, not schema delete.
+
+---
+
+## Minimal smoke test plan
+
+### After phase 1
+- create 2 characters
+- create 2 directional edges
+- read graph
+
+### After phase 2
+- compile one confrontation scene
+- confirm tension score + subtext + power shifts exist
+
+### After phase 3
+- confirm camera plan includes psychologically valid move
+- confirm blocking plan includes center-frame ownership or eye-line strategy
+
+### After phase 4
+- apply betrayal outcome
+- confirm trust down / resentment up / memory trace created / arc updated
+
+### After phase 5
+- render one scene with drama bridge enabled
+- compare prompt payload before vs after
+
+### After phase 6
+- compile full episode
+- confirm continuity warnings present if contradictions exist
