@@ -71,8 +71,8 @@ class SceneDramaService:
 
         scene_context = {
             **scene_context,
-            "participants": scene_context.get("participants") or participants,
-            "dominant_character_id": scene_context.get("dominant_character_id") or dominant_character_id,
+            "participants": scene_context["participants"] if "participants" in scene_context else participants,
+            "dominant_character_id": scene_context["dominant_character_id"] if "dominant_character_id" in scene_context else dominant_character_id,
         }
 
         intents = [self.intent_engine.derive(profile, scene_context) for profile in profiles]
