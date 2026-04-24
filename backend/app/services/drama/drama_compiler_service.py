@@ -25,8 +25,10 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.drama.arc_engine import ArcEngine
+from app.services.drama.betrayal_alliance_engine import BetrayalAllianceEngine
 from app.services.drama.camera_drama_engine import CameraDramaEngine
 from app.services.drama.character_intent_engine import CharacterIntentEngine
+from app.services.drama.chemistry_engine import ChemistryEngine
 from app.services.drama.continuity_engine import DramaContinuityEngine
 from app.services.drama.emotional_update_engine import EmotionalUpdateEngine
 from app.services.drama.power_shift_engine import PowerShiftEngine
@@ -105,6 +107,8 @@ class DramaCompilerService:
         self._emotional_update = EmotionalUpdateEngine()
         self._arc_engine = ArcEngine()
         self._continuity_engine = DramaContinuityEngine()
+        self._chemistry_engine = ChemistryEngine()
+        self._betrayal_engine = BetrayalAllianceEngine()
 
     # ------------------------------------------------------------------
     # Public API
@@ -228,8 +232,11 @@ class DramaCompilerService:
             "scene_aftertaste": beat.get("aftertaste"),
         }
 
-        # ── Step 5: power shifts ─────────────────────────────────────────
+        # ── Step 5: power shifts (single-axis + multi-dim) ───────────────
         power_shifts = self._power_shift_engine.compute(beat, scene_drama, relationships)
+        multidim_power_shifts = self._power_shift_engine.compute_multidim(
+            beat, scene_drama, relationships
+        )
         if power_shifts:
             scene_drama["power_shift_delta"] = power_shifts[0].get("magnitude", 0.0)
             scene_drama["trust_shift_delta"] = abs(
@@ -253,6 +260,16 @@ class DramaCompilerService:
                 outcome_type=outcome_type if outcome_type != "neutral" else None,
             )
             blocking_directives.append(directive)
+
+        # Full scene camera plan (section 15)
+        camera_plan = self._camera_engine.build_scene_camera_plan(
+            scene_id=scene_id,
+            characters=characters,
+            state_map=state_map,
+            scene_drama=scene_drama,
+            blocking_directives=blocking_directives,
+            outcome_type=outcome_type,
+        )
 
         # ── Step 7: character acting decisions ───────────────────────────
         character_acting: list[dict[str, Any]] = []
@@ -301,7 +318,7 @@ class DramaCompilerService:
             })
 
             # Arc advance
-            arc_progress = arc_map.get(cid) or {"arc_stage": "ordinary_world"}
+            arc_progress = arc_map.get(cid) or {"arc_stage": "mask_stable"}
             arc_result = self._arc_engine.evaluate(
                 arc_progress, outcome_type, update_result["updated_state"]
             )
@@ -313,34 +330,56 @@ class DramaCompilerService:
                 **arc_result,
             })
 
+        # ── Step 8b: chemistry + betrayal/alliance ────────────────────────
+        chemistry_map = self._chemistry_engine.compute_all_pairs(characters, relationships)
+        betrayal_alliance_map = self._betrayal_engine.evaluate_all_pairs(
+            characters, relationships, scene_drama
+        )
+
         # ── Step 9: scene law validation ─────────────────────────────────
         violations = self._continuity_engine.validate_scene_law(scene_drama)
+        if tension.get("flat_scene"):
+            violations.append("FLAT_SCENE: tension score below threshold — consider adding conflict")
 
         # ── Assemble response ─────────────────────────────────────────────
+        # Build full 3-layer dialogue subtext
+        full_subtexts: list[dict[str, Any]] = []
+        for cid, s_map in subtext_map.items():
+            state = state_map[cid]
+            primary_emotion = self._primary_emotion_from_state(state)
+            primary_rel = self._pick_primary_relationship(cid, characters, relationships)
+            spoken_intent = str(beat.get("spoken_intent") or "inform")
+            full_subtext = self._subtext_engine.generate_full(
+                spoken_intent=spoken_intent,
+                primary_emotion=primary_emotion,
+                scene_objective=intent_map.get(cid, {}).get("scene_objective"),
+                relationship_state=primary_rel,
+                speaker_id=cid,
+                scene_id=scene_id,
+            )
+            full_subtexts.append(full_subtext)
+
         return {
             "ok": True,
             "scene_drama": scene_drama,
+            "tension_analysis": tension,
             "character_acting": character_acting,
             "power_shifts": power_shifts,
+            "multidim_power_shifts": multidim_power_shifts,
             "blocking_directives": blocking_directives,
-            "dialogue_subtexts": [
-                {
-                    "character_id": cid,
-                    "spoken_intent": str(beat.get("spoken_intent") or "inform"),
-                    "real_intent": intent_map[cid]["hidden_goal"],
-                    "subtext_label": subtext_map[cid],
-                    "scene_objective": intent_map[cid]["scene_objective"],
-                }
-                for cid in subtext_map
-            ],
+            "camera_plan": camera_plan,
+            "dialogue_subtexts": full_subtexts,
             "arc_updates": arc_updates,
             "inner_state_updates": inner_state_updates,
-            "tension_analysis": tension,
+            "chemistry_map": chemistry_map,
+            "betrayal_alliance_map": betrayal_alliance_map,
             "scene_law_violations": violations,
             "metadata": {
                 "character_count": len(characters),
                 "relationship_count": len(relationships),
                 "memory_trace_count": len(memory_traces),
+                "flat_scene": tension.get("flat_scene", False),
+                "tension_score": tension.get("tension_score", 0.0),
             },
         }
 
