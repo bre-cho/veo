@@ -13,6 +13,31 @@ class SceneDramaAnalyzeRequest(BaseModel):
     scene_context: Optional[Dict[str, Any]] = None
 
 
+class AnalyzeSceneRequest(SceneDramaAnalyzeRequest):
+    """OpenAPI-compatible alias."""
+
+
+class CompileSceneRequest(BaseModel):
+    project_id: UUID
+    episode_id: UUID | None = None
+    scene_context: Dict[str, Any] = Field(default_factory=dict)
+    scene_analysis: Dict[str, Any] = Field(default_factory=dict)
+    previous_scene_state: Optional[Dict[str, Any]] = None
+    character_arc_state: Optional[Dict[str, Any]] = None
+
+
+class ApplySceneOutcomeRequest(BaseModel):
+    project_id: UUID
+    episode_id: UUID | None = None
+    scene_id: UUID
+    outcome_type: str
+    turning_point: str | None = None
+    trust_shift_delta: float = 0.0
+    exposure_shift_delta: float = 0.0
+    dependency_shift_delta: float = 0.0
+    recompute_downstream: bool = True
+
+
 class SceneIntentRead(BaseModel):
     character_id: str
     outer_goal: Optional[str] = None
