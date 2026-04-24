@@ -108,8 +108,8 @@ def main() -> int:
         return 2
 
     if not outputs:
-        print("[WARN] No succeeded AudioRenderOutput rows found — nothing to verify.")
-        return 0
+        print("[ERROR] No succeeded AudioRenderOutput rows found — verification cannot prove artifact availability.")
+        return 1
 
     url_fields = ("mixed_audio_url", "final_muxed_video_url", "voice_track_url", "music_track_url")
     checks: list[tuple[str, str, str]] = []  # (output_id, field, full_url)
