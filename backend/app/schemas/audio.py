@@ -85,6 +85,8 @@ class MusicAssetResponse(BaseModel):
     mood: str | None = None
     bpm: int | None = None
     public_url: str | None = None
+    status: str = "succeeded"
+    error_message: str | None = None
 
 
 class AudioMixJobCreateRequest(BaseModel):

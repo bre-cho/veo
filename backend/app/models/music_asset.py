@@ -26,4 +26,6 @@ class MusicAsset(Base):
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     public_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     license_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="succeeded", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

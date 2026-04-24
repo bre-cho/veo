@@ -13,7 +13,7 @@ else
 fi
 
 echo "Starting FastAPI..."
-if [[ "${APP_ENV:-dev}" == "dev" ]]; then
+if [[ "${APP_ENV:-production}" == "dev" ]]; then
   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 else
   uvicorn app.main:app --host 0.0.0.0 --port 8000

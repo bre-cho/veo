@@ -209,6 +209,8 @@ async def list_music_assets(db: Session = Depends(get_db)):
             mood=row.mood,
             bpm=row.bpm,
             public_url=row.public_url,
+            status=row.status,
+            error_message=row.error_message,
         ) for row in rows
     ]
 
@@ -237,6 +239,27 @@ async def post_music_asset(payload: MusicAssetCreateRequest, db: Session = Depen
         mood=row.mood,
         bpm=row.bpm,
         public_url=row.public_url,
+        status=row.status,
+        error_message=row.error_message,
+    )
+
+
+@router.get("/music-assets/{music_asset_id}", response_model=MusicAssetResponse)
+async def get_music_asset(music_asset_id: str, db: Session = Depends(get_db)):
+    row = db.query(MusicAsset).filter(MusicAsset.id == music_asset_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Music asset not found")
+    return MusicAssetResponse(
+        id=row.id,
+        display_name=row.display_name,
+        source_mode=row.source_mode,
+        provider=row.provider,
+        prompt_text=row.prompt_text,
+        mood=row.mood,
+        bpm=row.bpm,
+        public_url=row.public_url,
+        status=row.status,
+        error_message=row.error_message,
     )
 
 
@@ -265,6 +288,8 @@ async def post_music_asset_upload(
         mood=row.mood,
         bpm=row.bpm,
         public_url=row.public_url,
+        status=row.status,
+        error_message=row.error_message,
     )
 
 
