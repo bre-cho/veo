@@ -118,6 +118,7 @@ class AudioPreviewJobResponse(BaseModel):
     job_id: str
     status: str
     preview_url: str | None = None
+    output_url: str | None = None
     error_message: str | None = None
 
 

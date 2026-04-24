@@ -12,6 +12,7 @@ from app.drama.schemas.relationship import (
     RelationshipRead,
     RelationshipUpdate,
 )
+from app.drama.engines.relationship_engine import RelationshipEngine
 from app.drama.services.relationship_service import RelationshipService
 
 router = APIRouter(prefix="/api/v1/drama/relationships", tags=["drama_relationships"])
@@ -59,12 +60,38 @@ def rebuild_relationship_graph(
     project_id: UUID,
     db: Session = Depends(get_db),
 ) -> dict:
-    # TODO: wire to RelationshipEngine.rebuild_graph(project_id)
-    existing = RelationshipService(db).list_for_project(project_id)
+    service = RelationshipService(db)
+    engine = RelationshipEngine()
+    existing = service.list_for_project(project_id)
+    graph_index = engine.build_graph_index(existing)
+    node_ids: set[str] = set()
+    for source_id, targets in graph_index.items():
+        node_ids.add(source_id)
+        node_ids.update(targets.keys())
+    edges_serialized = [
+        {
+            "source_character_id": snap.source_character_id,
+            "target_character_id": snap.target_character_id,
+            "relation_type": snap.relation_type,
+            "trust_level": snap.trust_level,
+            "dependence_level": snap.dependence_level,
+            "resentment_level": snap.resentment_level,
+            "attraction_level": snap.attraction_level,
+            "rivalry_level": snap.rivalry_level,
+            "dominance_source_over_target": snap.dominance_source_over_target,
+            "hidden_agenda_score": snap.hidden_agenda_score,
+            "unresolved_tension_score": snap.unresolved_tension_score,
+        }
+        for targets in graph_index.values()
+        for snap in targets.values()
+    ]
     return {
         "project_id": str(project_id),
         "status": "rebuilt",
+        "node_count": len(node_ids),
         "edge_count": len(existing),
+        "nodes": [{"character_id": node_id} for node_id in sorted(node_ids)],
+        "edges": edges_serialized,
     }
 
 
