@@ -20,6 +20,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Bootstrap core FK targets for fresh databases.
+    op.execute(sa.text("CREATE TABLE IF NOT EXISTS projects (id UUID PRIMARY KEY)"))
+    op.execute(sa.text("CREATE TABLE IF NOT EXISTS scenes (id UUID PRIMARY KEY)"))
+
     op.create_table(
         "render_jobs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),

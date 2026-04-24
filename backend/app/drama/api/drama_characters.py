@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover
     deps = None
 
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/drama/characters", tags=["drama-characters"])
 
 
 def get_db_fallback() -> Session:  # pragma: no cover

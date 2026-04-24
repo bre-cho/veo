@@ -10,6 +10,7 @@ from app.models.render_operator_access_profile import RenderOperatorAccessProfil
 from app.models.render_scene_task import RenderSceneTask
 from app.models.render_timeline_event import RenderTimelineEvent
 from app.models.state_transition_event import StateTransitionEvent
+import app.drama.models  # noqa: F401
 
 __all__ = [
     "RenderJob",

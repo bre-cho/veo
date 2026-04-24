@@ -8,14 +8,7 @@ from sqlalchemy import JSON, DateTime, Float, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-try:
-    # Most FastAPI monorepos using SQLAlchemy 2.0 style will have a shared Base.
-    from app.db.base_class import Base
-except Exception:  # pragma: no cover - fallback for skeleton importability
-    from sqlalchemy.orm import DeclarativeBase
-
-    class Base(DeclarativeBase):  # type: ignore[no-redef]
-        pass
+from app.db.base import Base
 
 
 class DramaCharacterProfile(Base):
