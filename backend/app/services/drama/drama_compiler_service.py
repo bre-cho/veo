@@ -367,6 +367,7 @@ class DramaCompilerService:
             "power_shifts": power_shifts,
             "multidim_power_shifts": multidim_power_shifts,
             "blocking_directives": blocking_directives,
+            "relationships": relationships,
             "camera_plan": camera_plan,
             "dialogue_subtexts": full_subtexts,
             "arc_updates": arc_updates,

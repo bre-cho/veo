@@ -39,6 +39,15 @@ Legacy debug
   POST   /api/v1/drama/characters/intent
   POST   /api/v1/drama/tension
   GET    /api/v1/drama/archetype-presets
+
+Phase 3 (items 21–26)
+  POST   /api/v1/drama/compile/acting-bridge
+  POST   /api/v1/drama/compile/render-bridge
+  POST   /api/v1/drama/validate/fake-drama
+  POST   /api/v1/drama/telemetry/scene
+  POST   /api/v1/drama/telemetry/episode
+  POST   /api/v1/drama/tournament/run
+  GET    /api/v1/drama/tournament/dna
 """
 from __future__ import annotations
 
@@ -55,6 +64,14 @@ from app.services.drama.arc_engine import ArcEngine
 from app.services.drama.betrayal_alliance_engine import BetrayalAllianceEngine
 from app.services.drama.chemistry_engine import ChemistryEngine
 from app.services.drama.relationship_engine import RelationshipEngine
+from app.services.drama.drama_acting_bridge import DramaActingBridge
+from app.services.drama.fake_drama_validator import FakeDramaValidator
+from app.services.drama.drama_telemetry_engine import DramaTelemetryEngine
+from app.services.drama.render_bridge_service import RenderBridgeService
+from app.services.drama.scene_tournament_engine import (
+    SceneTournamentEngine,
+    list_winner_dna,
+)
 
 router = APIRouter(tags=["drama"])
 
@@ -65,6 +82,11 @@ _arc_engine = ArcEngine()
 _betrayal_engine = BetrayalAllianceEngine()
 _chemistry_engine = ChemistryEngine()
 _relationship_engine = RelationshipEngine()
+_acting_bridge = DramaActingBridge()
+_fake_validator = FakeDramaValidator()
+_telemetry_engine = DramaTelemetryEngine()
+_render_bridge = RenderBridgeService()
+_tournament_engine = SceneTournamentEngine()
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +276,66 @@ class SceneAnalyzeRequest(BaseModel):
     character_states: list[dict[str, Any]] = Field(default_factory=list)
     relationships: list[dict[str, Any]] = Field(default_factory=list)
     memory_traces: list[dict[str, Any]] = Field(default_factory=list)
+    arc_progresses: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RenderBridgeRequest(BaseModel):
+    """Request for the render-bridge compile endpoint (items 21 & 25)."""
+
+    project_id: str
+    scene_id: str
+    episode_id: str | None = None
+    beat: dict[str, Any]
+    characters: list[dict[str, Any]]
+    character_states: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    memory_traces: list[dict[str, Any]] = Field(default_factory=list)
+    arc_progresses: list[dict[str, Any]] = Field(default_factory=list)
+    scene_history: list[dict[str, Any]] = Field(default_factory=list)
+    previous_states: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class FakeDramaValidateRequest(BaseModel):
+    """Request for fake-drama validation."""
+
+    drama_result: dict[str, Any]
+    scene_history: list[dict[str, Any]] = Field(default_factory=list)
+    previous_states: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    characters: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SceneTelemetryRequest(BaseModel):
+    """Request for scene-level telemetry computation."""
+
+    scene_id: str
+    project_id: str
+    episode_id: str | None = None
+    drama_result: dict[str, Any]
+    fake_drama_violations: list[str] = Field(default_factory=list)
+
+
+class EpisodeTelemetryRequest(BaseModel):
+    """Request for episode-level telemetry aggregation."""
+
+    project_id: str
+    episode_id: str
+    scene_telemetry_list: list[dict[str, Any]]
+    drama_results: list[dict[str, Any]]
+
+
+class TournamentRequest(BaseModel):
+    """Request for the scene tournament engine."""
+
+    project_id: str
+    scene_id: str
+    episode_id: str | None = None
+    base_beat: dict[str, Any]
+    characters: list[dict[str, Any]]
+    character_states: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    memory_traces: list[dict[str, Any]] = Field(default_factory=list)
+    arc_progresses: list[dict[str, Any]] = Field(default_factory=list)
+    num_variants: int = 3
 
 
 class SceneApplyOutcomeRequest(BaseModel):
@@ -747,3 +829,154 @@ def compute_tension(payload: TensionRequest) -> dict[str, Any]:
 def get_drama_archetype_presets() -> dict[str, Any]:
     """Return all built-in drama archetype presets."""
     return {"ok": True, "data": DRAMA_ARCHETYPE_PRESETS}
+
+
+# ---------------------------------------------------------------------------
+# Item 21: Drama → Avatar Acting Model bridge
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/drama/compile/acting-bridge")
+def compile_drama_acting_bridge(payload: RenderBridgeRequest) -> dict[str, Any]:
+    """Compile a scene and return per-character Avatar Acting Model inputs.
+
+    The Drama Engine provides causal context (why characters act as they do)
+    and the Avatar Acting Model uses it for physical expression decisions.
+    """
+    drama_result = _compiler.compile(
+        project_id=payload.project_id,
+        scene_id=payload.scene_id,
+        episode_id=payload.episode_id,
+        beat=payload.beat,
+        characters=payload.characters,
+        character_states=payload.character_states,
+        relationships=payload.relationships,
+        memory_traces=payload.memory_traces,
+        arc_progresses=payload.arc_progresses,
+    )
+    acting_inputs = _acting_bridge.build_acting_inputs(drama_result)
+    return {
+        "ok": True,
+        "scene_id": payload.scene_id,
+        "acting_inputs": acting_inputs,
+        "drama_summary": {
+            "outcome_type": drama_result.get("scene_drama", {}).get("outcome_type"),
+            "dominant_character_id": drama_result.get("scene_drama", {}).get("dominant_character_id"),
+            "scene_temperature": drama_result.get("tension_analysis", {}).get("scene_temperature"),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Item 22: Telemetry / Scorecard
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/drama/telemetry/scene")
+def compute_scene_telemetry(payload: SceneTelemetryRequest) -> dict[str, Any]:
+    """Compute scene-level telemetry / scorecard from a compiled drama result."""
+    result = _telemetry_engine.compute_scene_telemetry(
+        scene_id=payload.scene_id,
+        project_id=payload.project_id,
+        episode_id=payload.episode_id,
+        drama_result=payload.drama_result,
+        fake_drama_violations=payload.fake_drama_violations,
+    )
+    char_telemetry = _telemetry_engine.compute_character_telemetry(
+        scene_id=payload.scene_id,
+        project_id=payload.project_id,
+        drama_result=payload.drama_result,
+    )
+    return {"ok": True, "scene": result, "characters": char_telemetry}
+
+
+@router.post("/api/v1/drama/telemetry/episode")
+def compute_episode_telemetry(payload: EpisodeTelemetryRequest) -> dict[str, Any]:
+    """Aggregate episode-level telemetry from multiple scene compilations."""
+    result = _telemetry_engine.compute_episode_telemetry(
+        project_id=payload.project_id,
+        episode_id=payload.episode_id,
+        scene_telemetry_list=payload.scene_telemetry_list,
+        drama_results=payload.drama_results,
+    )
+    return {"ok": True, "episode": result}
+
+
+# ---------------------------------------------------------------------------
+# Item 23: Anti-fake-drama validation
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/drama/validate/fake-drama")
+def validate_fake_drama(payload: FakeDramaValidateRequest) -> dict[str, Any]:
+    """Validate a compiled drama result against the 5 anti-fake-drama rules."""
+    violations = _fake_validator.validate(
+        drama_result=payload.drama_result,
+        scene_history=payload.scene_history or None,
+        previous_states=payload.previous_states or None,
+        characters=payload.characters or None,
+    )
+    return {
+        "ok": True,
+        "violations": violations,
+        "violation_count": len(violations),
+        "passed": len(violations) == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Item 25: Render bridge output
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/drama/compile/render-bridge")
+def compile_render_bridge(payload: RenderBridgeRequest) -> dict[str, Any]:
+    """Compile a scene and return the full render-bridge payload.
+
+    Combines Drama Engine output, telemetry, fake-drama validation and camera
+    planning into the format consumed by the render pipeline.
+    """
+    drama_result = _compiler.compile(
+        project_id=payload.project_id,
+        scene_id=payload.scene_id,
+        episode_id=payload.episode_id,
+        beat=payload.beat,
+        characters=payload.characters,
+        character_states=payload.character_states,
+        relationships=payload.relationships,
+        memory_traces=payload.memory_traces,
+        arc_progresses=payload.arc_progresses,
+    )
+    bridge_payload = _render_bridge.build(
+        scene_id=payload.scene_id,
+        project_id=payload.project_id,
+        episode_id=payload.episode_id,
+        drama_result=drama_result,
+        scene_history=payload.scene_history or None,
+        previous_states=payload.previous_states or None,
+    )
+    return {"ok": True, **bridge_payload}
+
+
+# ---------------------------------------------------------------------------
+# Item 26: Scene Tournament Engine
+# ---------------------------------------------------------------------------
+
+@router.post("/api/v1/drama/tournament/run")
+def run_scene_tournament(payload: TournamentRequest) -> dict[str, Any]:
+    """Generate 2–4 scene variants, score them, return the winner and store DNA."""
+    result = _tournament_engine.run_tournament(
+        project_id=payload.project_id,
+        scene_id=payload.scene_id,
+        episode_id=payload.episode_id,
+        base_beat=payload.base_beat,
+        characters=payload.characters,
+        character_states=payload.character_states or None,
+        relationships=payload.relationships or None,
+        memory_traces=payload.memory_traces or None,
+        arc_progresses=payload.arc_progresses or None,
+        num_variants=payload.num_variants,
+    )
+    return {"ok": True, **result}
+
+
+@router.get("/api/v1/drama/tournament/dna")
+def get_tournament_dna() -> dict[str, Any]:
+    """Return all stored winner DNA entries for relationship archetypes."""
+    return {"ok": True, "dna_store": list_winner_dna()}
