@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pprint import pprint
 
 items = [
@@ -27,7 +27,7 @@ items = [
 
 policy = {
     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1": {"state": "priority", "cooldown_until": None},
-    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2": {"state": "cooldown", "cooldown_until": datetime.utcnow() + timedelta(days=2)},
+    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2": {"state": "cooldown", "cooldown_until": datetime.now(UTC) + timedelta(days=2)},
     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3": {"state": "candidate", "cooldown_until": None},
 }
 
@@ -38,7 +38,7 @@ def avatar_is_publishable(state: dict | None) -> bool:
     if state["state"] in {"blocked", "retired"}:
         return False
     if state["state"] == "cooldown" and state["cooldown_until"]:
-        return state["cooldown_until"] <= datetime.utcnow()
+        return state["cooldown_until"] <= datetime.now(UTC)
     return True
 
 

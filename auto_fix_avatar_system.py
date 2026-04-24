@@ -22,11 +22,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
-
-BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
 REPO_ROOT = Path(__file__).parent
 BACKEND_ROOT = REPO_ROOT / "backend"
@@ -224,6 +221,26 @@ except Exception:
     pass
 """
 
+# ── avatar_governance_engine: compatibility wrapper for feedback callers ───
+
+_GOVERNANCE_COMPAT_BLOCK = """\
+    def process_feedback(
+        self,
+        db: Session,
+        *,
+        avatar_id: str,
+        metrics: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> AvatarPromotionDecision:
+        # Backward-compatible alias used by older feedback integrations.
+        return self.evaluate_avatar_outcome(
+            db,
+            avatar_id=avatar_id,
+            metrics=metrics,
+            context=context,
+        )
+"""
+
 # ---------------------------------------------------------------------------
 # Patch functions
 # ---------------------------------------------------------------------------
@@ -319,6 +336,10 @@ def patch_scheduler() -> bool:
     content = read_file(p)
     original = content
 
+    # Ensure AvatarPolicyState import helper is available for injected scoring block.
+    if "AvatarPolicyState as _APS" not in content:
+        content, _ = safe_insert_after(content, r"^import logging", _SCHED_IMPORT_BLOCK)
+
     # Look for item_score assignment patterns in build_publish_queue or related
     if "_sched_policy_state" not in content and "item_score" in content:
         content, _ = safe_insert_after(
@@ -331,6 +352,31 @@ def patch_scheduler() -> bool:
         print("  🔧 Patched publish_scheduler.py")
         return True
     print("  ✅ publish_scheduler.py — no changes needed")
+    return False
+
+
+def patch_governance() -> bool:
+    p = FILES["governance"]
+    if not p.exists():
+        print(f"  ⚠️  Missing: {p}")
+        return False
+
+    content = read_file(p)
+    original = content
+
+    if "def process_feedback(" not in content:
+        content, _ = safe_insert_before(
+            content,
+            r"^    # ── Internal helpers",
+            _GOVERNANCE_COMPAT_BLOCK,
+        )
+
+    if content != original:
+        ensure_backup(p)
+        write_file(p, content)
+        print("  🔧 Patched avatar_governance_engine.py")
+        return True
+    print("  ✅ avatar_governance_engine.py — no changes needed")
     return False
 
 
@@ -377,6 +423,7 @@ def main() -> None:
     changed |= patch_bridge()
     changed |= patch_feedback()
     changed |= patch_scheduler()
+    changed |= patch_governance()
 
     if not changed:
         print("\nℹ️  All blocks already present — nothing to patch.")

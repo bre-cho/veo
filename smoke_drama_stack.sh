@@ -39,12 +39,7 @@ AUTHORITY=$(json_post "/drama/characters" "{
   \"dominant_fear\": \"Losing the room\"
 }")
 echo "$AUTHORITY"
-AUTHORITY_ID=$(python - "$AUTHORITY" <<'PY'
-import json
-import sys
-print(json.loads(sys.argv[1]).get("id", ""))
-PY
-)
+AUTHORITY_ID=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("id", ""))' <<<"$AUTHORITY")
 
 echo "[2/8] Create Rebel character"
 REBEL=$(json_post "/drama/characters" "{
@@ -57,19 +52,14 @@ REBEL=$(json_post "/drama/characters" "{
   \"dominant_fear\": \"Submission\"
 }")
 echo "$REBEL"
-REBEL_ID=$(python - "$REBEL" <<'PY'
-import json
-import sys
-print(json.loads(sys.argv[1]).get("id", ""))
-PY
-)
+REBEL_ID=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("id", ""))' <<<"$REBEL")
 
 if [[ -z "$AUTHORITY_ID" || -z "$REBEL_ID" ]]; then
   echo "Could not parse character IDs. Check router response contract." >&2
   exit 1
 fi
 
-echo "[3/8] Create relationship Authority -> Rebel"
+echo "[3/8] Upsert relationship Authority -> Rebel"
 json_post "/drama/relationships" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"source_character_id\": \"${AUTHORITY_ID}\",
@@ -83,11 +73,12 @@ json_post "/drama/relationships" "{
 }"
 
 echo "[4/8] Analyze scene"
-ANALYSIS=$(json_post "/drama/scenes/analyze" "{
+ANALYZE_RESP=$(json_post "/drama/scenes/analyze" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"scene_id\": \"${SCENE_ID}\",
   \"character_ids\": [\"${AUTHORITY_ID}\", \"${REBEL_ID}\"],
   \"scene_context\": {
+    \"episode_id\": \"${EPISODE_ID}\",
     \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
     \"visible_conflict\": \"discipline\",
     \"hidden_conflict\": \"control of narrative\",
@@ -95,17 +86,19 @@ ANALYSIS=$(json_post "/drama/scenes/analyze" "{
     \"key_secret_in_play\": \"Authority already knew the betrayal\"
   }
 }")
-echo "$ANALYSIS"
+echo "$ANALYZE_RESP"
 
 echo "[5/8] Compile render bridge"
-json_post "/drama/compile/scene" "{
+json_post "/drama/scenes/${SCENE_ID}/compile" "{
+  \"project_id\": \"${PROJECT_ID}\",
+  \"episode_id\": \"${EPISODE_ID}\",
   \"scene_context\": {
-    \"project_id\": \"${PROJECT_ID}\",
-    \"scene_id\": \"${SCENE_ID}\"
+    \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
+    \"visible_conflict\": \"discipline\",
+    \"hidden_conflict\": \"control of narrative\",
+    \"pressure_level\": 0.82
   },
-  \"scene_analysis\": ${ANALYSIS},
-  \"previous_scene_state\": null,
-  \"character_arc_state\": null
+  \"scene_analysis\": ${ANALYZE_RESP}
 }"
 
 echo "[6/8] Persist via worker-compatible endpoint if available"
@@ -128,7 +121,9 @@ fi
 
 echo "[8/8] Recompute episode continuity"
 set +e
-json_post "/drama/admin/episodes/${EPISODE_ID}/recompute?starting_scene_id=${SCENE_ID}&scene_ids=${SCENE_ID}" "{}"
+curl -fsS -X POST "${BASE_URL}/drama/admin/episodes/${EPISODE_ID}/recompute?starting_scene_id=${SCENE_ID}&scene_ids=${SCENE_ID}" \
+  -H "Content-Type: application/json" \
+  "${AUTH_HEADER[@]}"
 RECOMPUTE_EPISODE_STATUS=$?
 set -e
 if [[ "$RECOMPUTE_EPISODE_STATUS" -ne 0 ]]; then

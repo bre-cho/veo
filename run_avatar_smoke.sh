@@ -4,7 +4,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 DECISION_ENDPOINT="${DECISION_ENDPOINT:-/api/v1/decision/test}"
 RENDER_ENDPOINT="${RENDER_ENDPOINT:-/api/v1/projects/22222222-2222-2222-2222-222222222222/render}"
-FEEDBACK_ENDPOINT="${FEEDBACK_ENDPOINT:-/api/v1/feedback/test}"
+FEEDBACK_ENDPOINT="${FEEDBACK_ENDPOINT:-/api/v1/brain/feedback/publish}"
 WORKDIR="$(cd "$(dirname "$0")" && pwd)"
 
 need_cmd() {
