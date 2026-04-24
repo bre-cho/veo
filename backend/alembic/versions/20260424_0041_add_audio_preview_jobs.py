@@ -24,6 +24,7 @@ def upgrade() -> None:
         sa.Column("style_preset", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("preview_url", sa.Text(), nullable=True),
+        sa.Column("output_url", sa.Text(), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),

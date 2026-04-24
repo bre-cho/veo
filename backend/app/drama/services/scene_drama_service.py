@@ -15,10 +15,9 @@ from app.drama.models.drama_relationship_edge import DramaRelationshipEdge
 
 
 class SceneDramaService:
-    """Orchestrates phase-2 scene analysis without persisting scene states yet.
+    """Orchestrates phase-2 scene analysis.
 
-    This service is deliberately read-heavy and side-effect light so teams can merge and
-    verify the analysis path before wiring DB tables/workers.
+    Scene states are persisted via the scene_drama_worker and route handlers.
     """
 
     def __init__(self, db: Session) -> None:

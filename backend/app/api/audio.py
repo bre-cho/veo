@@ -164,6 +164,7 @@ async def get_audio_preview(job_id: str, db: Session = Depends(get_db)):
         job_id=job.id,
         status=job.status,
         preview_url=job.preview_url,
+        output_url=job.output_url,
         error_message=job.error_message,
     )
 
