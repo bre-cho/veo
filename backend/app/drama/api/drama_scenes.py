@@ -67,6 +67,21 @@ def analyze_scene_by_id(
         )
         db.add(state)
     state.analysis_payload = result
+
+    drama_state = result.get("drama_state", {})
+    state.scene_goal = (payload.scene_context or {}).get("scene_goal")
+    state.visible_conflict = (payload.scene_context or {}).get("visible_conflict")
+    state.hidden_conflict = (payload.scene_context or {}).get("hidden_conflict")
+    state.scene_temperature = float(drama_state.get("tension_score", 0.0))
+    state.pressure_level = float(drama_state.get("pressure_level", 0.0))
+    state.dominant_character_id = drama_state.get("dominant_character_id")
+    state.turning_point = drama_state.get("turning_point")
+    state.outcome_type = drama_state.get("outcome_type")
+    state.power_shift_delta = float(drama_state.get("power_shift_delta", 0.0))
+    state.trust_shift_delta = float(drama_state.get("trust_shift_delta", 0.0))
+    state.exposure_shift_delta = float(drama_state.get("exposure_shift_delta", 0.0))
+    state.dependency_shift_delta = float(drama_state.get("dependency_shift_delta", 0.0))
+
     db.commit()
 
     return SceneDramaAnalyzeResponse(**result)
