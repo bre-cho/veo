@@ -109,6 +109,11 @@ class AudioRenderOutputResponse(BaseModel):
     error_message: str | None = None
 
 
+class AudioPreviewResponse(BaseModel):
+    status: str
+    preview_url: str
+
+
 class AudioPreviewRequest(BaseModel):
     voice_profile_id: str
     text: str
