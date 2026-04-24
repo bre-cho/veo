@@ -74,6 +74,12 @@ class LocalFrameSampler:
         try:
             return self._pil_extract(source)
         except Exception:
+            from app.core.config import settings  # noqa: PLC0415
+            if settings.app_env.strip().lower() == "production" and not settings.allow_stub_embedding:
+                raise RuntimeError(
+                    f"PIL image extraction failed for '{source}' and stub embeddings are disabled in production. "
+                    "Set ALLOW_STUB_EMBEDDING=true to permit stubs, or ensure PIL/Pillow is installed."
+                )
             return _stub_embedding(source.encode()), 0.5
 
     def _pil_extract(self, source: str) -> tuple[list[float], float]:
