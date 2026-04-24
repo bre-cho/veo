@@ -3,6 +3,9 @@
 Uses a real model endpoint when ``MEDIA_EMBEDDING_MODEL_ENDPOINT`` is set,
 falls back to ``LocalFrameSampler`` (lightweight HOG-based CPU embedding),
 and finally to a SHA-256 stub only when PIL is unavailable.
+
+In production (``APP_ENV=production``) the SHA-256 stub is disabled unless
+``ALLOW_STUB_EMBEDDING=true`` is explicitly set.
 """
 from __future__ import annotations
 
@@ -180,6 +183,9 @@ class MediaEmbeddingExtractor:
             pass
 
         # Final fallback: SHA-256 stub
+        from app.core.config import settings as _settings  # noqa: PLC0415
+        if _settings.app_env == "production" and not _settings.allow_stub_embedding:
+            raise RuntimeError("Stub embedding is disabled in production")
         quality = 0.4
         self._last_extraction = {
             "extraction_source": "stub",

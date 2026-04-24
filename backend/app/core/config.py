@@ -116,6 +116,8 @@ class Settings(BaseModel):
         "Do not speculate or fabricate information.",
     )
 
+    allow_stub_embedding: bool = _get_bool("ALLOW_STUB_EMBEDDING", False)
+
     # ML / prediction settings
     ml_enabled: bool = _get_bool("ML_ENABLED", True)
     ml_model_path: str = os.getenv("ML_MODEL_PATH", "/app/storage/ml_render_predictor.json")
