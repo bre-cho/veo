@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -16,6 +17,7 @@ from app.schemas.audio import (
     AudioMixJobCreateRequest,
     AudioRenderOutputResponse,
     AudioPreviewRequest,
+    AudioPreviewResponse,
     MusicAssetCreateRequest,
     MusicAssetResponse,
     NarrationJobCreateRequest,
@@ -31,6 +33,8 @@ from app.services.audio.elevenlabs_adapter import ElevenLabsAdapter
 from app.services.audio.music_selection_service import create_music_asset, generate_music_asset, save_uploaded_music_asset
 from app.services.audio.narration_service import create_narration_job, run_narration_job
 from app.services.audio.voice_clone_service import create_voice_profile, save_voice_sample
+from app.services.object_storage import upload_file_to_object_storage
+from app.core.config import settings
 
 router = APIRouter(prefix="/api/v1/audio", tags=["audio-studio"])
 
@@ -128,14 +132,31 @@ async def post_voice_sample(
     )
 
 
-@router.post("/preview")
+@router.post("/preview", response_model=AudioPreviewResponse)
 async def post_audio_preview(payload: AudioPreviewRequest, db: Session = Depends(get_db)):
     profile = db.query(VoiceProfile).filter(VoiceProfile.id == payload.voice_profile_id).first()
     if profile is None or not profile.provider_voice_id:
         raise HTTPException(status_code=404, detail="Voice profile with provider_voice_id not found")
     adapter = ElevenLabsAdapter()
     audio_bytes = await adapter.synthesize_speech(voice_id=profile.provider_voice_id, text=payload.text)
-    return {"ok": True, "bytes_length": len(audio_bytes)}
+
+    preview_id = uuid.uuid4().hex
+    preview_filename = f"{preview_id}.mp3"
+    storage_key = f"audio/previews/{preview_filename}"
+
+    preview_dir = Path(settings.audio_output_dir) / "previews"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    local_path = preview_dir / preview_filename
+    local_path.write_bytes(audio_bytes)
+
+    preview_url: str
+    try:
+        stored = upload_file_to_object_storage(local_path=str(local_path), key=storage_key, content_type="audio/mpeg")
+        preview_url = stored.public_url or f"{settings.storage_public_base_url.rstrip('/')}/audio_outputs/previews/{preview_filename}"
+    except Exception:
+        preview_url = f"{settings.storage_public_base_url.rstrip('/')}/audio_outputs/previews/{preview_filename}"
+
+    return AudioPreviewResponse(status="succeeded", preview_url=preview_url)
 
 
 @router.post("/narration-jobs", response_model=NarrationJobResponse)
