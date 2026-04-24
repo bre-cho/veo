@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +36,10 @@ app.add_middleware(
 _storage_dir = PROJECT_STORAGE_DIR.parent
 _storage_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=str(_storage_dir)), name="storage")
+
+_artifacts_dir = Path("/app/artifacts")
+_artifacts_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/artifacts", StaticFiles(directory=str(_artifacts_dir)), name="artifacts")
 
 register_all_routers(app)
 

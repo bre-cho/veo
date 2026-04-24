@@ -110,8 +110,15 @@ class AudioRenderOutputResponse(BaseModel):
 
 
 class AudioPreviewResponse(BaseModel):
+    job_id: str
     status: str
-    preview_url: str
+
+
+class AudioPreviewJobResponse(BaseModel):
+    job_id: str
+    status: str
+    preview_url: str | None = None
+    error_message: str | None = None
 
 
 class AudioPreviewRequest(BaseModel):

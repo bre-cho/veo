@@ -39,6 +39,7 @@ __all__ = [
     "MusicAsset",
     "AudioMixProfile",
     "AudioRenderOutput",
+    "AudioPreviewJob",
     "ProductionRun",
     "ProductionTimelineEvent",
     "RenderJobSummary",
@@ -123,6 +124,7 @@ from app.models.narration_segment import NarrationSegment
 from app.models.music_asset import MusicAsset
 from app.models.audio_mix_profile import AudioMixProfile
 from app.models.audio_render_output import AudioRenderOutput
+from app.models.audio_preview_job import AudioPreviewJob
 from app.models.production_run import ProductionRun
 from app.models.production_timeline_event import ProductionTimelineEvent
 from app.models.render_job_summary import RenderJobSummary
