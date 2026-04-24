@@ -1,0 +1,45 @@
+Mentor:
+  tempo: slow
+  gaze: stable
+  movement: minimal
+  pause_pattern: long
+  pressure_response: deepen_calm
+  dominance_style: quiet_control
+  defense_style: absorb_then_reframe
+  likely_subtext: "I already know more than I say"
+
+Manipulator:
+  micro_expression: micro_smile
+  speech_rhythm: off_beat
+  gaze_pattern: avoid_then_lock
+  pressure_response: deflect_seduce_reframe
+  dominance_style: psychological_control
+  defense_style: charm_blame_frame_shift
+  likely_subtext: "I control the meaning of this moment"
+
+Rebel:
+  body_leads_words: true
+  energy: high
+  gaze: direct
+  pressure_response: explode_or_exit
+  dominance_style: force_presence
+  defense_style: confrontation_or_withdrawal
+  likely_subtext: "You will not control me"
+
+WoundedObserver:
+  speech_amount: low
+  pause_pattern: fragmented
+  gaze_pattern: avoid_sustained_contact
+  pressure_response: silence_swallow_feeling
+  dominance_style: hidden_reading
+  defense_style: retreat_inward
+  likely_subtext: "I see everything but cannot safely say it"
+
+Authority:
+  movement: economical
+  voice: compressed
+  distance: maintained
+  pressure_response: look_down_slow_tighten
+  dominance_style: structural_control
+  defense_style: silent_intimidation
+  likely_subtext: "You exist inside my frame"
