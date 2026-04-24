@@ -323,6 +323,7 @@ class DramaCompilerService:
             "character_acting": character_acting,
             "power_shifts": power_shifts,
             "blocking_directives": blocking_directives,
+            "relationships": relationships,
             "dialogue_subtexts": [
                 {
                     "character_id": cid,

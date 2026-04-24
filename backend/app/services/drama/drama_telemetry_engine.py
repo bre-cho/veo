@@ -209,7 +209,6 @@ class DramaTelemetryEngine:
                 "mask_stable", "first_crack", "dark_night",
                 "transformed_state",
             ]
-            prev_idx = 0
             curr_idx = arc_stage_order.index(arc_stage) if arc_stage in arc_stage_order else 0
             arc_momentum = round(curr_idx / max(len(arc_stage_order) - 1, 1), 3)
 

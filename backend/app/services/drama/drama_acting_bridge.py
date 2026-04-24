@@ -113,6 +113,7 @@ class DramaActingBridge:
         arc_updates = drama_result.get("arc_updates", [])
         dialogue_subtexts = drama_result.get("dialogue_subtexts", [])
         tension_analysis = drama_result.get("tension_analysis", {})
+        relationships: list[dict[str, Any]] = drama_result.get("relationships", [])
 
         # Build quick-lookup maps
         state_update_map: dict[str, dict[str, Any]] = {
@@ -162,11 +163,18 @@ class DramaActingBridge:
                 tension_analysis=tension_analysis,
             )
 
+            # Collect all relationship edges involving this character
+            char_relationships = [
+                r for r in (relationships or [])
+                if r.get("source_character_id") == cid or r.get("target_character_id") == cid
+            ]
+            primary_relationship = char_relationships[0] if char_relationships else None
+
             results.append({
                 "character_id": cid,
                 "avatar_profile": avatar_profile,
                 "beat": beat,
-                "relationship_state": acting_entry.get("camera_directive"),
+                "relationship_state": primary_relationship,
                 "memory_traces": [],
                 "drama_context": drama_context,
             })
