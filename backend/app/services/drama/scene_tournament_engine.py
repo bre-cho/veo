@@ -10,7 +10,6 @@ variant, keyed by relationship archetype pair (e.g. "authority_vs_rebel").
 """
 from __future__ import annotations
 
-import random
 from typing import Any
 
 from app.services.drama.drama_compiler_service import DramaCompilerService

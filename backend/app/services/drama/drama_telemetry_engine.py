@@ -85,9 +85,19 @@ class DramaTelemetryEngine:
         )
         power_shift_magnitude = _to_100(power_shift_mag)
 
-        # trust_shift_magnitude (0–100): abs trust delta from scene_drama
+        # trust_shift_magnitude (0–100): max abs trust delta across power-shift
+        # relationship deltas; fall back to scene_drama for compatibility.
+        trust_shift_deltas = [
+            abs(rel_delta.get("trust_shift_delta", 0.0))
+            for ps in power_shifts
+            for rel_delta in ps.get("relationship_deltas", [])
+            if isinstance(rel_delta, dict) and rel_delta.get("trust_shift_delta") is not None
+        ]
         trust_shift_magnitude = _to_100(
-            abs(scene_drama.get("trust_shift_delta", 0.0))
+            max(
+                trust_shift_deltas,
+                default=abs(scene_drama.get("trust_shift_delta", 0.0)),
+            )
         )
 
         # exposure_risk_score (0–100): secret load + exposure shift

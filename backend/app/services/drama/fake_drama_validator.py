@@ -55,17 +55,30 @@ def _check_rule2_no_constant_explosion(
     if not scene_history:
         return None  # no history to compare against
 
+    heated_temps = {"explosive", "heated"}
+    previous_temp = scene_history[-1].get("scene_temperature") or scene_history[-1].get("temperature", "cold")
+
+    if current_temp in heated_temps and previous_temp in heated_temps:
+        return (
+            "rule2_constant_explosion: scene is "
+            f"'{current_temp}' and the previous scene was also "
+            f"'{previous_temp}' — insert restraint, silence or micro-shift."
+        )
+
     recent_temps = [
         h.get("scene_temperature") or h.get("temperature", "cold")
         for h in scene_history[-3:]
     ]
 
-    explosion_streak = sum(1 for t in recent_temps if t in {"explosive", "heated"})
-    if current_temp in {"explosive", "heated"} and explosion_streak >= 2:
+    if (
+        current_temp in heated_temps
+        and len(recent_temps) == 3
+        and all(t in heated_temps for t in recent_temps)
+    ):
         return (
             "rule2_constant_explosion: scene is "
-            f"'{current_temp}' but {explosion_streak} previous scenes were "
-            "also heated/explosive — insert restraint, silence or micro-shift."
+            f"'{current_temp}' after 3 consecutive previous heated/explosive scenes "
+            "— insert restraint, silence or micro-shift."
         )
     return None
 

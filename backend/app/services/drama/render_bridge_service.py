@@ -43,9 +43,16 @@ def _emotion_dict_from_state(emotion_state: dict[str, Any]) -> dict[str, float]:
 def _acting_dict_from_entry(acting_entry: dict[str, Any]) -> dict[str, str]:
     """Build an acting instruction dict from a character_acting entry."""
     line_delivery = acting_entry.get("line_delivery") or {}
+    gaze = (
+        acting_entry.get("gaze")
+        or acting_entry.get("gaze_style")
+        or acting_entry.get("gaze_preset")
+        or "neutral"
+    )
     return {
         "tempo": str(line_delivery.get("tempo") or "moderate"),
-        "gaze": str(acting_entry.get("micro_expression") or "neutral"),
+        "gaze": str(gaze),
+        "micro_expression": str(acting_entry.get("micro_expression") or "neutral"),
         "movement": str(acting_entry.get("body_language") or "neutral_balanced"),
         "voice_pressure": str(line_delivery.get("voice_pressure") or "normal"),
         "pause": str(line_delivery.get("pause") or "measured"),
@@ -129,7 +136,11 @@ def _build_relationship_shifts(power_shifts: list[dict[str, Any]]) -> list[dict[
         out.append({
             "source": ps.get("from_character_id", ""),
             "target": ps.get("to_character_id", ""),
-            "trust_delta": round(float(rel_deltas.get("trust_level") or 0.0), 3),
+            "trust_delta": round(float(
+                rel_deltas.get("trust_shift_delta")
+                if rel_deltas.get("trust_shift_delta") is not None
+                else rel_deltas.get("trust_level") or 0.0
+            ), 3),
             "resentment_delta": round(float(rel_deltas.get("resentment_level") or 0.0), 3),
             "dominance_delta": round(-float(ps.get("magnitude") or 0.0), 3),
             "fear_delta": round(float(rel_deltas.get("fear_level") or 0.0), 3),

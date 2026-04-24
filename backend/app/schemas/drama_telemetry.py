@@ -83,7 +83,7 @@ class EpisodeTelemetrySchema(BaseModel):
 
     betrayal_count: int = 0
     alliance_flip_count: int = 0
-    unresolved_tension_load: float = 0.0    # sum of unresolved tension across scenes
+    unresolved_tension_load: float = 0.0    # mean unresolved tension across scenes
     emotional_continuity_quality: float = 0.0  # 0–1, how consistent emotion arcs are
     dominant_relationship_arc_strength: float = 0.0  # strength of the primary relationship arc
 
@@ -159,5 +159,6 @@ class RenderBridgeOutputSchema(BaseModel):
     relationship_shifts: list[RenderBridgeRelationshipShiftSchema] = Field(default_factory=list)
     camera_plan: RenderBridgeCameraPlanSchema = Field(default_factory=RenderBridgeCameraPlanSchema)
     blocking_plan: list[RenderBridgeBlockingPlanSchema] = Field(default_factory=list)
+    fake_drama_violations: list[str] = Field(default_factory=list)
     telemetry: SceneTelemetrySchema | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

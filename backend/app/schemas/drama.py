@@ -2,18 +2,25 @@
 
 Classes
 -------
-CharacterProfileSchema       — fixed character DNA
-CharacterStateSchema         — per-scene mutable state
-RelationshipEdgeSchema       — directed relationship between two characters
-SceneDramaStateSchema        — drama analysis of a single scene
-DialogueSubtextSchema        — spoken vs. real intent breakdown
-PowerShiftSchema             — power delta from scene outcome
-BlockingDirectiveSchema      — spatial/blocking instruction driven by drama
-DramaArcSchema               — arc progression snapshot
-DramaActingOutputSchema      — per-character acting decision for a scene
-DramaCompileRequest          — full compile request payload
-DramaCompileResponse         — full compile response payload
-InnerStateUpdateSchema       — update applied after scene outcome
+CharacterProfileSchema           — fixed character DNA
+CharacterStateSchema             — per-scene mutable state
+RelationshipEdgeSchema           — directed relationship between two characters
+SceneDramaStateSchema            — drama analysis of a single scene
+SceneTensionSchema               — 7-component tension breakdown + flat_scene flag
+DialogueSubtextSchema            — spoken vs. real intent breakdown (3-layer)
+DialogueSubtextFullSchema        — full per-line subtext record (section 9.3)
+MultiDimensionalPowerShiftSchema — 6-axis power shift (section 10.3)
+PowerShiftSchema                 — legacy single-axis power shift
+BlockingDirectiveSchema          — spatial/blocking instruction driven by drama
+BlockingPlanSchema               — full scene blocking plan (section 14)
+CameraDramaPlanSchema            — full camera psychology plan (section 15.2)
+DramaArcSchema                   — arc progression snapshot (drama stages, section 16)
+ChemistrySchema                  — multi-dimension chemistry between two characters (section 13)
+BetrayalAllianceSchema           — alliance state + betrayal probability (section 12)
+DramaActingOutputSchema          — per-character acting decision for a scene
+DramaCompileRequest              — full compile request payload
+DramaCompileResponse             — full compile response payload
+InnerStateUpdateSchema           — update applied after scene outcome
 """
 from __future__ import annotations
 
@@ -84,11 +91,35 @@ class CharacterStateSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 class RelationshipEdgeSchema(BaseModel):
+    """Directed A → B relationship edge with full edge scores.
+
+    Relation types (section 7.1): mentor, rival, superior, subordinate, ally,
+    enemy, protector, dependent, pursuer, avoidant, ex-trust, covert-attraction,
+    manipulator-target, shared-secret, betrayer-betrayed.
+
+    Edge scores (section 7.2): all 0–1 scale from the perspective of the
+    *source* character toward the *target*.
+    """
+
     id: str | None = None
     project_id: str
     source_character_id: str
     target_character_id: str
     relation_type: str = "neutral"
+
+    # Core edge scores (section 7.2)
+    trust: float = 0.5
+    fear: float = 0.0
+    dependence: float = 0.0
+    resentment: float = 0.0
+    attraction: float = 0.0
+    moral_superiority: float = 0.0
+    perceived_power: float = 0.5
+    hidden_agenda: float = 0.0
+    shame_exposure_risk: float = 0.0
+    emotional_hook_strength: float = 0.0
+
+    # Legacy / derived fields kept for backwards compat
     intimacy_level: float = 0.3
     trust_level: float = 0.5
     dependence_level: float = 0.0
@@ -101,6 +132,7 @@ class RelationshipEdgeSchema(BaseModel):
     hidden_agenda_score: float = 0.0
     recent_betrayal_score: float = 0.0
     unresolved_tension_score: float = 0.0
+
     status: str = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -132,7 +164,36 @@ class SceneDramaStateSchema(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Dialogue subtext
+# Scene tension (7-component formula, section 8)
+# ---------------------------------------------------------------------------
+
+class SceneTensionSchema(BaseModel):
+    """7-component tension score (section 8.3).
+
+    Each component is 0–1. ``tension_score`` is the weighted sum normalised
+    to 0–100.  ``flat_scene`` is raised when the scene has no meaningful
+    collision, risk, or shift.
+    """
+
+    scene_temperature: str = "neutral"
+    pressure_level: float = 0.5
+    tension_score: float = 50.0  # 0–100 normalised
+
+    goal_collision: float = 0.0
+    hidden_agenda_asymmetry: float = 0.0
+    emotional_exposure_risk: float = 0.0
+    power_imbalance: float = 0.0
+    unresolved_prior_memory: float = 0.0
+    time_pressure: float = 0.0
+    social_consequence: float = 0.0
+
+    tension_sources: list[str] = Field(default_factory=list)
+    dominant_tension_type: str = "latent"
+    flat_scene: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Dialogue subtext (3-layer, section 9)
 # ---------------------------------------------------------------------------
 
 class DialogueSubtextSchema(BaseModel):
@@ -145,8 +206,58 @@ class DialogueSubtextSchema(BaseModel):
     power_move: str | None = None
 
 
+class DialogueSubtextFullSchema(BaseModel):
+    """Full 3-layer per-line subtext record (section 9.3)."""
+
+    id: str | None = None
+    scene_id: str
+    speaker_id: str
+    target_id: str | None = None
+
+    line_text: str | None = None
+    literal_intent: str | None = None
+    hidden_intent: str | None = None
+    psychological_action: str | None = None
+
+    # Dialogue act type (section 9.2)
+    dialogue_act: str = "direct"  # attack / probe / withhold / seduce / shame /
+    #   reassure / dominate / retreat / bait / confess / redirect / expose /
+    #   deny / test_loyalty
+
+    # Charge dimensions (0–1)
+    emotional_charge: float = 0.5
+    honesty_level: float = 0.5
+    mask_level: float = 0.5
+    threat_level: float = 0.0
+    intimacy_bid: float = 0.0
+    power_move: str | None = None
+    expected_target_reaction: str | None = None
+
+
 # ---------------------------------------------------------------------------
-# Power shift
+# Multi-dimensional power shift (section 10)
+# ---------------------------------------------------------------------------
+
+class MultiDimensionalPowerShiftSchema(BaseModel):
+    """6-axis power shift record (section 10.3)."""
+
+    scene_id: str
+    from_character_id: str
+    to_character_id: str
+
+    social_delta: float = 0.0
+    emotional_delta: float = 0.0
+    informational_delta: float = 0.0
+    moral_delta: float = 0.0
+    spatial_delta: float = 0.0
+    narrative_control_delta: float = 0.0
+
+    trigger_event: str | None = None
+    explanation: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Power shift (legacy single-axis kept for compile response)
 # ---------------------------------------------------------------------------
 
 class PowerShiftSchema(BaseModel):
@@ -175,16 +286,70 @@ class BlockingDirectiveSchema(BaseModel):
     drama_reason: str | None = None
 
 
+class BlockingPlanSchema(BaseModel):
+    """Full scene blocking plan (section 14)."""
+
+    scene_id: str
+    character_directives: list[BlockingDirectiveSchema] = Field(default_factory=list)
+
+    # Scene-level blocking cues
+    distance_change: str | None = None          # "closing" / "widening"
+    who_steps_first: str | None = None           # character_id
+    who_turns_away_first: str | None = None
+    who_sits: str | None = None
+    who_controls_exit: str | None = None
+    who_occupies_center: str | None = None
+    who_is_cornered: str | None = None
+    blocking_notes: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
-# Arc
+# Camera drama plan (section 15)
+# ---------------------------------------------------------------------------
+
+class CameraDramaPlanSchema(BaseModel):
+    """Full camera psychology plan (section 15.2)."""
+
+    scene_id: str
+    character_focus_priority: list[str] = Field(default_factory=list)
+    emotional_anchor_character_id: str | None = None
+    dominant_visual_axis: str | None = None
+
+    # Lens psychology mode (section 15.3 examples mapped to slugs)
+    lens_psychology_mode: str | None = None  # pressure / alienation / instability / dread
+    framing_mode: str | None = None          # tight / wide / off-centre / over-shoulder
+    eye_line_strategy: str | None = None     # dominant / subordinate / avoidant / locked
+
+    reveal_timing: str | None = None         # immediate / delayed / withheld
+    pause_hold_strategy: str | None = None
+    movement_strategy: str | None = None     # creeping_push / static / drift / pull_back
+
+    blocking_sync_notes: str | None = None
+    continuity_notes: str | None = None
+    shot_sequence: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Arc (drama-specific stages, section 16)
 # ---------------------------------------------------------------------------
 
 class DramaArcSchema(BaseModel):
+    """Arc progression snapshot with drama-specific stages (section 16.1).
+
+    Stages: mask_stable → pressure_crack → defensive_escalation →
+    first_exposure → collapse_rupture → truth_encounter →
+    reorganization → transformed_state
+    """
+
     character_id: str
     project_id: str
     episode_id: str | None = None
     arc_name: str = "main"
-    arc_stage: str = "ordinary_world"
+
+    # Drama arc stages (section 16.1)
+    arc_stage: str = "mask_stable"
+    arc_type: str | None = None  # section 16.2 e.g. "control_to_vulnerability"
+
     false_belief: str | None = None
     pressure_index: float = 0.0
     transformation_index: float = 0.0
@@ -192,6 +357,56 @@ class DramaArcSchema(BaseModel):
     mask_break_level: float = 0.0
     truth_acceptance_level: float = 0.0
     relation_entanglement_index: float = 0.0
+    false_belief_challenge_level: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Chemistry (section 13)
+# ---------------------------------------------------------------------------
+
+class ChemistrySchema(BaseModel):
+    """Multi-dimension chemistry between two characters (section 13)."""
+
+    source_character_id: str
+    target_character_id: str
+
+    tempo_compatibility: float = 0.5       # 0 = mismatch, 1 = sync
+    eye_contact_tolerance: float = 0.5
+    interruption_rhythm: float = 0.5       # 0 = one overrides, 1 = mutual
+    mutual_reading_accuracy: float = 0.5
+    emotional_danger: float = 0.0
+    attraction_vs_fear_blend: float = 0.5  # 0 = pure fear, 1 = pure attraction
+    speech_completion_tendency: float = 0.5
+    silence_comfort_index: float = 0.5
+
+    chemistry_score: float = 0.0
+    chemistry_type: str = "neutral"        # forbidden_tension / power_clash / mutual_pull / etc.
+    tension_type: str = "latent"
+
+
+# ---------------------------------------------------------------------------
+# Betrayal / Alliance (section 12)
+# ---------------------------------------------------------------------------
+
+class BetrayalAllianceSchema(BaseModel):
+    """Alliance state + betrayal probability between two characters (section 12)."""
+
+    source_character_id: str
+    target_character_id: str
+
+    # Alliance state (section 12.1)
+    alliance_state: str | None = None  # tactical / emotional / conditional /
+    #   dependency_based / secret / none
+
+    # Betrayal state (section 12.2)
+    betrayal_state: str | None = None  # overt / passive / loyalty_failure /
+    #   self_protection / ideological / none
+
+    betrayal_probability: float = 0.0   # 0–1
+    reconciliation_probability: float = 0.5
+    alliance_strength: float = 0.5      # 0 = broken, 1 = solid
+    future_tension_seed: str | None = None
+    trigger_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +465,17 @@ class DramaCompileResponse(BaseModel):
 
     ok: bool = True
     scene_drama: SceneDramaStateSchema
+    tension_analysis: SceneTensionSchema | None = None
     character_acting: list[DramaActingOutputSchema] = Field(default_factory=list)
     power_shifts: list[PowerShiftSchema] = Field(default_factory=list)
+    multidim_power_shifts: list[MultiDimensionalPowerShiftSchema] = Field(default_factory=list)
     blocking_directives: list[BlockingDirectiveSchema] = Field(default_factory=list)
-    dialogue_subtexts: list[DialogueSubtextSchema] = Field(default_factory=list)
+    blocking_plan: BlockingPlanSchema | None = None
+    camera_plan: CameraDramaPlanSchema | None = None
+    dialogue_subtexts: list[DialogueSubtextFullSchema] = Field(default_factory=list)
     arc_updates: list[DramaArcSchema] = Field(default_factory=list)
     inner_state_updates: list[InnerStateUpdateSchema] = Field(default_factory=list)
+    chemistry_map: list[ChemistrySchema] = Field(default_factory=list)
+    betrayal_alliance_map: list[BetrayalAllianceSchema] = Field(default_factory=list)
+    scene_law_violations: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

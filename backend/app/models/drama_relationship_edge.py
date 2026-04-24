@@ -42,6 +42,18 @@ class DramaRelationshipEdge(Base):
     attraction_level: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     rivalry_level: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
+    # Section 7.2 core edge scores
+    trust: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    fear: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    dependence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    resentment: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    attraction: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    moral_superiority: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    perceived_power: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    hidden_agenda: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    shame_exposure_risk: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    emotional_hook_strength: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
     # Power dynamics
     dominance_source_over_target: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     perceived_loyalty: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
