@@ -65,7 +65,7 @@ def mux_audio_to_video(db: Session, audio_output_id: str) -> AudioRenderOutput:
         stored = upload_file_to_object_storage(local_path=str(muxed_path), key=key, content_type="video/mp4")
         output.final_muxed_video_url = stored.public_url
     except Exception:
-        output.final_muxed_video_url = f"/artifacts/video/mux/{output.id}/final_muxed_video.mp4"
+        output.final_muxed_video_url = f"/artifacts/audio/mux/{output.id}/final_muxed_video.mp4"
 
     output.status = "succeeded"
     db.commit()

@@ -106,7 +106,7 @@ async def run_narration_job(db: Session, narration_job_id: str) -> NarrationJob:
             segment.output_url = stored.public_url
         except Exception:
             segment.output_storage_key = storage_key
-            segment.output_url = None
+            segment.output_url = f"/artifacts/audio/narration/{job.id}/{segment_path.name}"
 
         combined_audio += audio_bytes
         total_duration += int(segment.estimated_duration_ms or 0)
@@ -120,7 +120,7 @@ async def run_narration_job(db: Session, narration_job_id: str) -> NarrationJob:
         job.output_url = stored.public_url
     except Exception:
         job.output_storage_key = final_key
-        job.output_url = None
+        job.output_url = f"/artifacts/audio/narration/{job.id}/narration_combined.mp3"
 
     job.output_local_path = str(final_path)
     job.duration_ms = total_duration

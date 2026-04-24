@@ -44,7 +44,7 @@ class Settings(BaseModel):
     autopilot_control_fabric_enabled: bool = _get_bool("AUTOPILOT_CONTROL_FABRIC_ENABLED", True)
 
     audio_upload_dir: str = os.getenv("AUDIO_UPLOAD_DIR", "/app/storage/audio_uploads")
-    audio_output_dir: str = os.getenv("AUDIO_OUTPUT_DIR", "/app/storage/audio_outputs")
+    audio_output_dir: str = os.getenv("AUDIO_OUTPUT_DIR", "/app/artifacts/audio")
     audio_output_format: str = os.getenv("AUDIO_OUTPUT_FORMAT", "mp3_44100_128")
     audio_upload_to_object_storage: bool = _get_bool("AUDIO_UPLOAD_TO_OBJECT_STORAGE", True)
     ffmpeg_binary: str = os.getenv("FFMPEG_BINARY", "ffmpeg")

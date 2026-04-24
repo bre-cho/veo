@@ -65,6 +65,7 @@ def save_uploaded_music_asset(
         asset.public_url = stored.public_url
     except Exception:
         asset.storage_key = storage_key
+        asset.public_url = f"/artifacts/audio/music/{asset.id}/{filename}"
     asset.status = "succeeded"
     db.commit()
     db.refresh(asset)
@@ -101,6 +102,7 @@ async def generate_music_asset(db: Session, asset_id: str) -> MusicAsset:
             asset.public_url = stored.public_url
         except Exception:
             asset.storage_key = storage_key
+            asset.public_url = f"/artifacts/audio/music/{asset.id}/generated_music.mp3"
         asset.status = "succeeded"
     except Exception as exc:
         asset.status = "failed"
