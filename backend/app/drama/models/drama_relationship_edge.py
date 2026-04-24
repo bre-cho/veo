@@ -34,7 +34,7 @@ class DramaRelationshipEdge(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    project_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     source_character_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("drama_character_profiles.id", ondelete="CASCADE"),

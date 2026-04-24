@@ -34,7 +34,7 @@ class CastService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list_characters(self, project_id: str) -> list[DramaCharacterProfile]:
+    def list_characters(self, project_id: UUID) -> list[DramaCharacterProfile]:
         stmt: Select[tuple[DramaCharacterProfile]] = (
             select(DramaCharacterProfile)
             .where(DramaCharacterProfile.project_id == project_id)

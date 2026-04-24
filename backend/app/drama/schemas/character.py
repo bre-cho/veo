@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CharacterCreate(BaseModel):
-    project_id: str = Field(..., min_length=1, max_length=128)
+    project_id: UUID
     name: str = Field(..., min_length=1, max_length=255)
     archetype: str = Field(..., min_length=1, max_length=100)
 
@@ -88,7 +88,7 @@ class CharacterRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    project_id: str
+    project_id: UUID
     name: str
     archetype: str
     public_persona: Optional[str] = None

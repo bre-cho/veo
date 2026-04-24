@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RelationshipCreate(BaseModel):
-    project_id: str = Field(..., min_length=1, max_length=128)
+    project_id: UUID
     source_character_id: UUID
     target_character_id: UUID
     relation_type: str = Field(..., min_length=1, max_length=64)
@@ -51,7 +51,7 @@ class RelationshipRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    project_id: str
+    project_id: UUID
     source_character_id: UUID
     target_character_id: UUID
     relation_type: str
