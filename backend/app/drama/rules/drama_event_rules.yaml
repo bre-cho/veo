@@ -1,0 +1,10 @@
+events:
+  - betrayal
+  - public_defeat
+  - private_confession
+  - false_accusation
+  - rescue
+  - abandonment
+  - frame_control_flip
+  - loyalty_test
+  - secret_reveal

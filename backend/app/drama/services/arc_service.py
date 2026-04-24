@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.drama.models.arc_progress import DramaArcProgress
+from app.drama.models.scene_drama_state import DramaSceneState
 
 
 class DramaArcService:
@@ -68,6 +69,77 @@ class DramaArcService:
             "latest_scene_id": analysis.get("scene_id"),
             "notes": "Auto-updated from scene analysis.",
         }
+
+    def list_for_character(self, character_id: UUID, limit: int = 50) -> list[DramaArcProgress]:
+        stmt = (
+            select(DramaArcProgress)
+            .where(DramaArcProgress.character_id == character_id)
+            .order_by(desc(DramaArcProgress.updated_at))
+            .limit(limit)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def recompute_for_episode(self, project_id: str | UUID, episode_id: str | UUID) -> int:
+        stmt = (
+            select(DramaSceneState)
+            .where(DramaSceneState.project_id == project_id)
+            .where(DramaSceneState.episode_id == episode_id)
+            .order_by(DramaSceneState.created_at.asc())
+        )
+        scene_states = list(self.db.execute(stmt).scalars().all())
+        updated = 0
+        for state in scene_states:
+            analysis = state.analysis_payload or {}
+            dominant_id = analysis.get("dominant_character_id") or state.dominant_character_id
+            if dominant_id is None:
+                continue
+            current_arc = self.get_latest_arc(character_id=dominant_id, episode_id=state.episode_id)
+            payload = self.build_arc_payload(
+                character_id=dominant_id,
+                analysis={
+                    "project_id": state.project_id,
+                    "episode_id": state.episode_id,
+                    "scene_id": state.scene_id,
+                    "drama_state": {
+                        "tension_score": state.scene_temperature,
+                        "exposure_shift_delta": state.exposure_shift_delta,
+                    },
+                },
+                current_arc=current_arc,
+            )
+            self.create_or_update_arc(payload)
+            updated += 1
+        return updated
+
+    def recompute_for_project(self, project_id: str | UUID) -> int:
+        stmt = (
+            select(DramaSceneState)
+            .where(DramaSceneState.project_id == project_id)
+            .order_by(DramaSceneState.created_at.asc())
+        )
+        scene_states = list(self.db.execute(stmt).scalars().all())
+        touched: dict[UUID, bool] = {}
+        for state in scene_states:
+            dominant_id = state.dominant_character_id
+            if dominant_id is None:
+                continue
+            current_arc = self.get_latest_arc(character_id=dominant_id, episode_id=state.episode_id)
+            payload = self.build_arc_payload(
+                character_id=dominant_id,
+                analysis={
+                    "project_id": state.project_id,
+                    "episode_id": state.episode_id,
+                    "scene_id": state.scene_id,
+                    "drama_state": {
+                        "tension_score": state.scene_temperature,
+                        "exposure_shift_delta": state.exposure_shift_delta,
+                    },
+                },
+                current_arc=current_arc,
+            )
+            self.create_or_update_arc(payload)
+            touched[dominant_id] = True
+        return len(touched)
 
 
 class ArcService(DramaArcService):

@@ -3,6 +3,9 @@ from app.drama.engines.relationship_engine import RelationshipEngine
 from app.drama.engines.tension_engine import TensionEngine
 from app.drama.engines.subtext_engine import SubtextEngine
 from app.drama.engines.power_shift_engine import PowerShiftEngine
+from app.drama.engines.emotional_update_engine import EmotionalUpdateEngine
+from app.drama.engines.betrayal_alliance_engine import BetrayalAllianceEngine
+from app.drama.engines.chemistry_engine import ChemistryEngine
 from app.drama.engines.blocking_engine import BlockingEngine
 from app.drama.engines.camera_drama_engine import CameraDramaEngine
 from app.drama.engines.continuity_engine import ContinuityEngine
@@ -15,6 +18,9 @@ __all__ = [
     "TensionEngine",
     "SubtextEngine",
     "PowerShiftEngine",
+    "EmotionalUpdateEngine",
+    "BetrayalAllianceEngine",
+    "ChemistryEngine",
     "BlockingEngine",
     "CameraDramaEngine",
     "ContinuityEngine",

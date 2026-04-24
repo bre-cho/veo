@@ -31,7 +31,12 @@ def process_scene(scene_id: str, scene_context: dict) -> dict:
         memory_service = DramaMemoryService(db)
         arc_service = DramaArcService(db)
 
-        analysis = analysis_service.analyze_scene(scene_context)
+        analysis = analysis_service.analyze_scene(
+            project_id=scene_context["project_id"],
+            scene_id=scene_context["scene_id"],
+            character_ids=scene_context.get("character_ids") or [c["character_id"] for c in scene_context.get("characters", [])],
+            scene_context=scene_context,
+        )
         compile_payload = compiler_service.compile_scene_payload(analysis)
 
         scene_state = db.query(DramaSceneState).filter(DramaSceneState.scene_id == scene_context["scene_id"]).one_or_none()

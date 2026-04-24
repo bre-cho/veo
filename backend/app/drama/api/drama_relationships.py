@@ -67,3 +67,21 @@ def rebuild_relationship_graph(
         "edge_count": len(existing),
         "message": "Phase 2 skeleton route ready for relationship graph rebuild.",
     }
+
+
+@router.get("/graph")
+def get_relationship_graph(
+    project_id: UUID,
+    db: Session = Depends(get_db),
+) -> dict:
+    service = RelationshipService(db)
+    edges = service.list_for_project(project_id)
+    node_ids = set()
+    for edge in edges:
+        node_ids.add(str(edge.source_character_id))
+        node_ids.add(str(edge.target_character_id))
+    return {
+        "project_id": str(project_id),
+        "nodes": [{"character_id": node_id} for node_id in sorted(node_ids)],
+        "edges": [RelationshipRead.model_validate(edge).model_dump() for edge in edges],
+    }

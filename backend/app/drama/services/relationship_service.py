@@ -28,7 +28,7 @@ class RelationshipService:
     def list_for_project(self, project_id: UUID) -> List[DramaRelationshipEdge]:
         return (
             self.db.query(DramaRelationshipEdge)
-            .filter(DramaRelationshipEdge.project_id == project_id)
+            .filter(DramaRelationshipEdge.project_id == str(project_id))
             .all()
         )
 
@@ -75,7 +75,7 @@ class RelationshipService:
     ) -> DramaRelationshipEdge:
         edge = (
             self.db.query(DramaRelationshipEdge)
-            .filter(DramaRelationshipEdge.project_id == project_id)
+            .filter(DramaRelationshipEdge.project_id == str(project_id))
             .filter(DramaRelationshipEdge.source_character_id == source_character_id)
             .filter(DramaRelationshipEdge.target_character_id == target_character_id)
             .one_or_none()
@@ -83,7 +83,7 @@ class RelationshipService:
 
         if edge is None:
             edge = DramaRelationshipEdge(
-                project_id=project_id,
+                project_id=str(project_id),
                 source_character_id=source_character_id,
                 target_character_id=target_character_id,
                 **defaults,

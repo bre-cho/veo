@@ -1,0 +1,18 @@
+authority:
+  shot: low_angle
+  move: controlled_push_in
+weakness:
+  shot: high_angle
+  move: hold
+isolation:
+  shot: overhead
+  move: static
+confrontation:
+  shot: over_the_shoulder
+  move: tracking
+instability:
+  shot: dutch
+  move: handheld
+realization:
+  shot: close_up
+  move: slow_push_in
