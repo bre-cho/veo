@@ -39,10 +39,12 @@ AUTHORITY=$(json_post "/drama/characters" "{
   \"dominant_fear\": \"Losing the room\"
 }")
 echo "$AUTHORITY"
-AUTHORITY_ID=$(python - <<PY
-import json,sys
-print(json.loads(sys.argv[1]).get('id',''))
-PY "$AUTHORITY")
+AUTHORITY_ID=$(python - "$AUTHORITY" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1]).get("id", ""))
+PY
+)
 
 echo "[2/8] Create Rebel character"
 REBEL=$(json_post "/drama/characters" "{
@@ -55,18 +57,20 @@ REBEL=$(json_post "/drama/characters" "{
   \"dominant_fear\": \"Submission\"
 }")
 echo "$REBEL"
-REBEL_ID=$(python - <<PY
-import json,sys
-print(json.loads(sys.argv[1]).get('id',''))
-PY "$REBEL")
+REBEL_ID=$(python - "$REBEL" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1]).get("id", ""))
+PY
+)
 
 if [[ -z "$AUTHORITY_ID" || -z "$REBEL_ID" ]]; then
   echo "Could not parse character IDs. Check router response contract." >&2
   exit 1
 fi
 
-echo "[3/8] Upsert relationship Authority -> Rebel"
-json_post "/drama/relationships/upsert" "{
+echo "[3/8] Create relationship Authority -> Rebel"
+json_post "/drama/relationships" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"source_character_id\": \"${AUTHORITY_ID}\",
   \"target_character_id\": \"${REBEL_ID}\",
@@ -79,28 +83,29 @@ json_post "/drama/relationships/upsert" "{
 }"
 
 echo "[4/8] Analyze scene"
-json_post "/drama/scenes/analyze" "{
+ANALYSIS=$(json_post "/drama/scenes/analyze" "{
   \"project_id\": \"${PROJECT_ID}\",
-  \"episode_id\": \"${EPISODE_ID}\",
   \"scene_id\": \"${SCENE_ID}\",
-  \"participating_character_ids\": [\"${AUTHORITY_ID}\", \"${REBEL_ID}\"],
-  \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
-  \"visible_conflict\": \"discipline\",
-  \"hidden_conflict\": \"control of narrative\",
-  \"pressure_level\": 0.82,
-  \"key_secret_in_play\": \"Authority already knew the betrayal\"
-}"
+  \"character_ids\": [\"${AUTHORITY_ID}\", \"${REBEL_ID}\"],
+  \"scene_context\": {
+    \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
+    \"visible_conflict\": \"discipline\",
+    \"hidden_conflict\": \"control of narrative\",
+    \"pressure_level\": 0.82,
+    \"key_secret_in_play\": \"Authority already knew the betrayal\"
+  }
+}")
+echo "$ANALYSIS"
 
 echo "[5/8] Compile render bridge"
 json_post "/drama/compile/scene" "{
-  \"project_id\": \"${PROJECT_ID}\",
-  \"episode_id\": \"${EPISODE_ID}\",
-  \"scene_id\": \"${SCENE_ID}\",
-  \"participating_character_ids\": [\"${AUTHORITY_ID}\", \"${REBEL_ID}\"],
-  \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
-  \"visible_conflict\": \"discipline\",
-  \"hidden_conflict\": \"control of narrative\",
-  \"pressure_level\": 0.82
+  \"scene_context\": {
+    \"project_id\": \"${PROJECT_ID}\",
+    \"scene_id\": \"${SCENE_ID}\"
+  },
+  \"scene_analysis\": ${ANALYSIS},
+  \"previous_scene_state\": null,
+  \"character_arc_state\": null
 }"
 
 echo "[6/8] Persist via worker-compatible endpoint if available"
@@ -114,7 +119,7 @@ fi
 
 echo "[7/8] Recall memory"
 set +e
-json_get "/drama/memory/recall?character_id=${REBEL_ID}&trigger=authority_pressure&limit=5"
+json_get "/drama/memory/characters/${REBEL_ID}/recall?trigger=authority_pressure&limit=5"
 RECALL_STATUS=$?
 set -e
 if [[ "$RECALL_STATUS" -ne 0 ]]; then
@@ -123,7 +128,7 @@ fi
 
 echo "[8/8] Recompute episode continuity"
 set +e
-json_post "/drama/admin/recompute-episode" "{\"project_id\": \"${PROJECT_ID}\", \"episode_id\": \"${EPISODE_ID}\"}"
+json_post "/drama/admin/episodes/${EPISODE_ID}/recompute?starting_scene_id=${SCENE_ID}&scene_ids=${SCENE_ID}" "{}"
 RECOMPUTE_EPISODE_STATUS=$?
 set -e
 if [[ "$RECOMPUTE_EPISODE_STATUS" -ne 0 ]]; then

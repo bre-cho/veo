@@ -8,13 +8,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-try:
-    from app.db.base_class import Base
-except Exception:  # pragma: no cover
-    from sqlalchemy.orm import DeclarativeBase
-
-    class Base(DeclarativeBase):  # type: ignore[no-redef]
-        pass
+from app.db.base import Base
 
 
 class DramaCharacterState(Base):
@@ -64,4 +58,4 @@ class DramaCharacterState(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    character: Mapped["DramaCharacterProfile"] = relationship(backref="state_rows")  # type: ignore[name-defined]
+    character: Mapped["DramaCharacterProfile"] = relationship("DramaCharacterProfile", backref="state_rows")

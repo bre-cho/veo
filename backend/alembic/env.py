@@ -33,6 +33,7 @@ from app.models.render_scene_task import RenderSceneTask
 from app.models.rag_document import RagDocument
 from app.models.ml_recommendation_log import MlRecommendationLog
 from app.models.autovis import AvatarRole  # registers all autovis models via Base.metadata
+import app.drama.models  # noqa: F401
 
 
 target_metadata = Base.metadata

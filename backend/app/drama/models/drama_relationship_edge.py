@@ -8,13 +8,7 @@ from sqlalchemy import DateTime, Float, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-try:
-    from app.db.base_class import Base
-except Exception:  # pragma: no cover
-    from sqlalchemy.orm import DeclarativeBase
-
-    class Base(DeclarativeBase):  # type: ignore[no-redef]
-        pass
+from app.db.base import Base
 
 
 class DramaRelationshipEdge(Base):
@@ -74,9 +68,9 @@ class DramaRelationshipEdge(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    source_character: Mapped["DramaCharacterProfile"] = relationship(  # type: ignore[name-defined]
-        foreign_keys=[source_character_id]
+    source_character: Mapped["DramaCharacterProfile"] = relationship(
+        "DramaCharacterProfile", foreign_keys=[source_character_id]
     )
-    target_character: Mapped["DramaCharacterProfile"] = relationship(  # type: ignore[name-defined]
-        foreign_keys=[target_character_id]
+    target_character: Mapped["DramaCharacterProfile"] = relationship(
+        "DramaCharacterProfile", foreign_keys=[target_character_id]
     )

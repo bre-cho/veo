@@ -92,7 +92,7 @@ from app.api.publish_webhooks import router as publish_webhooks_router
 from app.api.avatar_acting import router as avatar_acting_router
 
 # ── Multi-Character Drama Engine ─────────────────────────────────────────
-from app.api.drama import router as drama_router
+from app.drama.api import ALL_DRAMA_ROUTERS
 
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
@@ -203,7 +203,10 @@ _PHASE_10_12_ROUTERS = [
     storyboard_extended_router,
     publish_compliance_router,
     avatar_acting_router,
-    drama_router,
+]
+
+_DRAMA_ROUTERS = [
+    *ALL_DRAMA_ROUTERS,
 ]
 
 
@@ -222,6 +225,7 @@ def register_all_routers(app: FastAPI) -> None:
         _AVATAR_TOURNAMENT_ROUTERS,
         _CREATIVE_ROUTERS,
         _PHASE_10_12_ROUTERS,
+        _DRAMA_ROUTERS,
     ):
         for router in group:
             app.include_router(router)

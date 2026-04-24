@@ -16,44 +16,62 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
     # Phase 4.4: winning_scene_graphs table
-    op.create_table(
-        "winning_scene_graphs",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("storyboard_id", sa.String(36), nullable=False),
-        sa.Column("platform", sa.String(64), nullable=True),
-        sa.Column("conversion_score", sa.Float(), nullable=False),
-        sa.Column("scene_sequence", sa.JSON(), nullable=True),
-        sa.Column("dependency_graph", sa.JSON(), nullable=True),
-        sa.Column("recorded_at", sa.DateTime(timezone=False), nullable=True),
-    )
-    op.create_index("ix_winning_scene_graphs_storyboard_id", "winning_scene_graphs", ["storyboard_id"])
-    op.create_index("ix_winning_scene_graphs_platform", "winning_scene_graphs", ["platform"])
-    op.create_index("ix_winning_scene_graphs_conversion_score", "winning_scene_graphs", ["conversion_score"])
-    op.create_index("ix_winning_scene_graphs_recorded_at", "winning_scene_graphs", ["recorded_at"])
+    if not inspector.has_table("winning_scene_graphs"):
+        op.create_table(
+            "winning_scene_graphs",
+            sa.Column("id", sa.String(36), primary_key=True),
+            sa.Column("storyboard_id", sa.String(36), nullable=False),
+            sa.Column("platform", sa.String(64), nullable=True),
+            sa.Column("conversion_score", sa.Float(), nullable=False),
+            sa.Column("scene_sequence", sa.JSON(), nullable=True),
+            sa.Column("dependency_graph", sa.JSON(), nullable=True),
+            sa.Column("recorded_at", sa.DateTime(timezone=False), nullable=True),
+        )
+        op.create_index("ix_winning_scene_graphs_storyboard_id", "winning_scene_graphs", ["storyboard_id"])
+        op.create_index("ix_winning_scene_graphs_platform", "winning_scene_graphs", ["platform"])
+        op.create_index("ix_winning_scene_graphs_conversion_score", "winning_scene_graphs", ["conversion_score"])
+        op.create_index("ix_winning_scene_graphs_recorded_at", "winning_scene_graphs", ["recorded_at"])
 
     # Phase 4.3: EpisodeMemory new fields
-    op.add_column(
-        "episode_memories",
-        sa.Column("winning_scene_sequence", sa.JSON(), nullable=True),
-    )
-    op.add_column(
-        "episode_memories",
-        sa.Column("series_arc", sa.JSON(), nullable=True),
-    )
-    op.add_column(
-        "episode_memories",
-        sa.Column("character_callbacks", sa.JSON(), nullable=True),
-    )
+    if inspector.has_table("episode_memories"):
+        cols = {col["name"] for col in inspector.get_columns("episode_memories")}
+        if "winning_scene_sequence" not in cols:
+            op.add_column(
+                "episode_memories",
+                sa.Column("winning_scene_sequence", sa.JSON(), nullable=True),
+            )
+        if "series_arc" not in cols:
+            op.add_column(
+                "episode_memories",
+                sa.Column("series_arc", sa.JSON(), nullable=True),
+            )
+        if "character_callbacks" not in cols:
+            op.add_column(
+                "episode_memories",
+                sa.Column("character_callbacks", sa.JSON(), nullable=True),
+            )
 
 
 def downgrade() -> None:
-    op.drop_column("episode_memories", "character_callbacks")
-    op.drop_column("episode_memories", "series_arc")
-    op.drop_column("episode_memories", "winning_scene_sequence")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
 
-    op.drop_index("ix_winning_scene_graphs_recorded_at", table_name="winning_scene_graphs")
-    op.drop_index("ix_winning_scene_graphs_conversion_score", table_name="winning_scene_graphs")
-    op.drop_index("ix_winning_scene_graphs_platform", table_name="winning_scene_graphs")
-    op.drop_index("ix_winning_scene_graphs_storyboard_id", table_name="winning_scene_graphs")
-    op.drop_table("winning_scene_graphs")
+    if inspector.has_table("episode_memories"):
+        cols = {col["name"] for col in inspector.get_columns("episode_memories")}
+        if "character_callbacks" in cols:
+            op.drop_column("episode_memories", "character_callbacks")
+        if "series_arc" in cols:
+            op.drop_column("episode_memories", "series_arc")
+        if "winning_scene_sequence" in cols:
+            op.drop_column("episode_memories", "winning_scene_sequence")
+
+    if inspector.has_table("winning_scene_graphs"):
+        op.drop_index("ix_winning_scene_graphs_recorded_at", table_name="winning_scene_graphs")
+        op.drop_index("ix_winning_scene_graphs_conversion_score", table_name="winning_scene_graphs")
+        op.drop_index("ix_winning_scene_graphs_platform", table_name="winning_scene_graphs")
+        op.drop_index("ix_winning_scene_graphs_storyboard_id", table_name="winning_scene_graphs")
+        op.drop_table("winning_scene_graphs")
