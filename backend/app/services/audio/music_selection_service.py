@@ -32,6 +32,7 @@ def create_music_asset(
         bpm=bpm,
         force_instrumental=force_instrumental,
         license_note=license_note,
+        status="queued" if source_mode == "generate" else "succeeded",
     )
     db.add(asset)
     db.commit()
@@ -64,6 +65,7 @@ def save_uploaded_music_asset(
         asset.public_url = stored.public_url
     except Exception:
         asset.storage_key = storage_key
+    asset.status = "succeeded"
     db.commit()
     db.refresh(asset)
     return asset
@@ -76,24 +78,34 @@ async def generate_music_asset(db: Session, asset_id: str) -> MusicAsset:
     if asset.source_mode != "generate":
         return asset
 
-    adapter = ElevenLabsAdapter()
-    audio_bytes = await adapter.compose_music(
-        prompt_text=asset.prompt_text,
-        duration_seconds=settings.default_music_duration_seconds,
-        force_instrumental=asset.force_instrumental,
-    )
-    target_dir = Path(settings.audio_output_dir) / "music" / asset.id
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / "generated_music.mp3"
-    target_path.write_bytes(audio_bytes)
-    asset.local_path = str(target_path)
-    storage_key = f"audio/music/{asset.id}/generated_music.mp3"
+    asset.status = "processing"
+    asset.error_message = None
+    db.commit()
+
     try:
-        stored = upload_file_to_object_storage(local_path=str(target_path), key=storage_key, content_type="audio/mpeg")
-        asset.storage_key = stored.key
-        asset.public_url = stored.public_url
-    except Exception:
-        asset.storage_key = storage_key
+        adapter = ElevenLabsAdapter()
+        audio_bytes = await adapter.compose_music(
+            prompt_text=asset.prompt_text,
+            duration_seconds=settings.default_music_duration_seconds,
+            force_instrumental=asset.force_instrumental,
+        )
+        target_dir = Path(settings.audio_output_dir) / "music" / asset.id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / "generated_music.mp3"
+        target_path.write_bytes(audio_bytes)
+        asset.local_path = str(target_path)
+        storage_key = f"audio/music/{asset.id}/generated_music.mp3"
+        try:
+            stored = upload_file_to_object_storage(local_path=str(target_path), key=storage_key, content_type="audio/mpeg")
+            asset.storage_key = stored.key
+            asset.public_url = stored.public_url
+        except Exception:
+            asset.storage_key = storage_key
+        asset.status = "succeeded"
+    except Exception as exc:
+        asset.status = "failed"
+        asset.error_message = str(exc)
+
     db.commit()
     db.refresh(asset)
     return asset

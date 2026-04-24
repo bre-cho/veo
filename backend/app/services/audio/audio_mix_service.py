@@ -104,9 +104,9 @@ def mix_audio_tracks(db: Session, audio_output_id: str) -> AudioRenderOutput:
         stored = upload_file_to_object_storage(local_path=str(mixed_path), key=key, content_type="audio/mpeg")
         output.mixed_audio_url = stored.public_url
     except Exception:
-        output.mixed_audio_url = None
+        output.mixed_audio_url = f"/artifacts/audio/mix/{output.id}/mixed_audio.mp3"
 
-    output.status = "completed"
+    output.status = "succeeded"
     db.commit()
     db.refresh(output)
     return output

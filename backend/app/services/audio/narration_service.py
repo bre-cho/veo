@@ -124,7 +124,7 @@ async def run_narration_job(db: Session, narration_job_id: str) -> NarrationJob:
 
     job.output_local_path = str(final_path)
     job.duration_ms = total_duration
-    job.status = "completed"
+    job.status = "succeeded"
     db.commit()
     db.refresh(job)
     return job
