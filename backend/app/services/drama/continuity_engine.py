@@ -82,6 +82,8 @@ class DramaContinuityEngine:
     def validate_scene_law(self, scene_drama: dict[str, Any]) -> list[str]:
         """Check SCENE LAW: every scene must have at least one shift.
 
+        Also checks flat_scene if tension data is included.
+
         Returns
         -------
         list of violation strings (empty = compliant).
@@ -96,4 +98,11 @@ class DramaContinuityEngine:
         has_shift = any(abs(float(scene_drama.get(s) or 0.0)) > 0.01 for s in shifts)
         if not has_shift:
             violations.append("SCENE_LAW: no measurable shift detected — scene is flat")
+
+        # Flat-scene flag from tension analysis
+        if scene_drama.get("flat_scene") is True:
+            violations.append(
+                "FLAT_SCENE: tension score below threshold — consider adding conflict"
+            )
+
         return violations
