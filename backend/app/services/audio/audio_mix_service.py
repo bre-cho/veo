@@ -95,6 +95,16 @@ def mix_audio_tracks(db: Session, audio_output_id: str) -> AudioRenderOutput:
     if completed.returncode != 0:
         output.status = "failed"
         output.error_message = completed.stderr[-4000:]
+        try:
+            log_path = target_dir / "ffmpeg_error.log"
+            log_path.write_text(
+                f"cmd: {' '.join(cmd)}\n"
+                f"returncode: {completed.returncode}\n"
+                f"--- stdout ---\n{completed.stdout}\n"
+                f"--- stderr ---\n{completed.stderr}\n"
+            )
+        except OSError:
+            pass
         db.commit()
         return output
 
