@@ -60,3 +60,17 @@ jobs:
 
       - name: Run Alembic heads
         run: python -m alembic -c alembic.ini heads
+
+      - name: Compile backend
+        run: python -m compileall app
+
+      - name: Apply Alembic migrations
+        run: python -m alembic -c alembic.ini upgrade head
+
+      - name: Verify audio artifact URLs
+        # working-directory is backend/, so scripts/ resolves to backend/scripts/
+        # Equivalent to: python backend/scripts/verify_audio_artifacts.py from repo root
+        run: |
+          python scripts/verify_audio_artifacts.py \
+            --base-url http://localhost:8000 \
+            --db-url "$DATABASE_URL"

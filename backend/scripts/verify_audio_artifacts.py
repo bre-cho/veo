@@ -2,7 +2,7 @@
 """E2E script: verify that audio artifact URLs return HTTP 200.
 
 Usage:
-    python scripts/verify_audio_artifacts.py [--base-url http://localhost:8000] [--db-url postgresql+psycopg://...]
+    python backend/scripts/verify_audio_artifacts.py [--base-url http://localhost:8000] [--db-url postgresql+psycopg://...]
 
 The script queries the database for recently completed AudioRenderOutput rows,
 collects all non-null artifact URLs (mixed_audio_url, final_muxed_video_url,
