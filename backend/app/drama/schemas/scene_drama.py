@@ -69,4 +69,5 @@ class SceneDramaAnalyzeResponse(BaseModel):
     tension_breakdown: Optional[Dict[str, Any]] = None
     relationship_snapshot: Optional[Dict[str, Any]] = None
     relationship_shifts: Optional[List[Any]] = None
+    scene_context: Optional[Dict[str, Any]] = None
     status: str
