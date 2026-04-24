@@ -1,0 +1,80 @@
+# Unified Tree
+
+```text
+full_monorepo_drama_patch_consolidated_pack/
+    import_normalization.md
+    merge_checklist_final.md
+    router_registration_map.md
+    smoke_test_checklist.md
+backend/
+    __init__.py
+    app/
+        __init__.py
+        drama/
+            __init__.py
+            models/
+                __init__.py
+                arc_progress.py
+                drama_character_profile.py
+                drama_character_state.py
+                drama_relationship_edge.py
+                memory_trace.py
+                scene_drama_state.py
+            schemas/
+                __init__.py
+                blocking.py
+                camera_plan.py
+                character.py
+                drama_memory.py
+                drama_state.py
+                relationship.py
+                scene_drama.py
+            services/
+                __init__.py
+                arc_service.py
+                cast_service.py
+                continuity_service.py
+                drama_compiler_service.py
+                memory_service.py
+                relationship_service.py
+                scene_drama_service.py
+                scene_recompute_service.py
+                state_query_service.py
+            api/
+                __init__.py
+                drama_admin.py
+                drama_arcs.py
+                drama_characters.py
+                drama_compile.py
+                drama_memory.py
+                drama_relationships.py
+                drama_scenes.py
+                drama_state.py
+            rules/
+                __init__.py
+                archetype_presets.yaml
+            engines/
+                __init__.py
+                arc_engine.py
+                blocking_engine.py
+                camera_drama_engine.py
+                character_intent_engine.py
+                continuity_engine.py
+                memory_recall_engine.py
+                power_shift_engine.py
+                relationship_engine.py
+                subtext_engine.py
+                tension_engine.py
+            workers/
+                __init__.py
+                continuity_rebuild_worker.py
+                drama_scene_worker.py
+            ops/
+                __init__.py
+                drama_metrics.py
+                worker_retry_policy.py
+docs/
+    dead_letter_policy.md
+    drama_workers.md
+    ops_runbook.md
+```
