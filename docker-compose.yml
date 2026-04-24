@@ -69,6 +69,7 @@ services:
     volumes:
       - ./backend:/app
       - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,6 +97,7 @@ services:
     volumes:
       - ./backend:/app
       - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,6 +119,7 @@ services:
     volumes:
       - ./backend:/app
       - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,3 +229,4 @@ volumes:
   minio_data:
   render_storage:
   frontend_node_modules:
+  artifacts_data:
