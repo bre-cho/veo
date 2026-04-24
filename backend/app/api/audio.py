@@ -33,6 +33,12 @@ from app.services.audio.music_selection_service import create_music_asset, save_
 from app.services.audio.narration_service import create_narration_job
 from app.services.audio.voice_clone_service import create_voice_profile, save_voice_sample
 from app.models.audio_preview_job import AudioPreviewJob
+from app.workers.audio_preview_worker import run_audio_preview_task
+from app.workers.narration_worker import run_narration_job_task
+from app.workers.music_worker import generate_music_asset_task
+from app.workers.audio_mix_worker import mix_audio_tracks_task
+from app.workers.video_mux_worker import mux_audio_to_video_task
+from celery import chain as celery_chain
 
 router = APIRouter(prefix="/api/v1/audio", tags=["audio-studio"])
 
@@ -148,7 +154,6 @@ async def post_audio_preview(payload: AudioPreviewRequest, db: Session = Depends
     db.commit()
     db.refresh(job)
 
-    from app.workers.audio_preview_worker import run_audio_preview_task
     run_audio_preview_task.delay(job.id)
 
     return AudioPreviewResponse(job_id=job.id, status="queued")
@@ -179,7 +184,6 @@ async def post_narration_job(payload: NarrationJobCreateRequest, db: Session = D
         breath_pacing_preset=payload.breath_pacing_preset,
         provider=payload.provider,
     )
-    from app.workers.narration_worker import run_narration_job_task
     run_narration_job_task.delay(row.id)
     return _narration_job_to_response(db, row)
 
@@ -223,7 +227,6 @@ async def post_music_asset(payload: MusicAssetCreateRequest, db: Session = Depen
         license_note=payload.license_note,
     )
     if row.source_mode == "generate":
-        from app.workers.music_worker import generate_music_asset_task
         generate_music_asset_task.delay(row.id)
     return MusicAssetResponse(
         id=row.id,
@@ -274,11 +277,8 @@ async def post_mix_job(payload: AudioMixJobCreateRequest, db: Session = Depends(
         music_asset_id=payload.music_asset_id,
         mix_profile_id=payload.mix_profile_id,
     )
-    from app.workers.audio_mix_worker import mix_audio_tracks_task
-    from app.workers.video_mux_worker import mux_audio_to_video_task
     if payload.mux_to_video:
-        from celery import chain
-        chain(mix_audio_tracks_task.s(row.id), mux_audio_to_video_task.si(row.id)).delay()
+        celery_chain(mix_audio_tracks_task.s(row.id), mux_audio_to_video_task.si(row.id)).delay()
     else:
         mix_audio_tracks_task.delay(row.id)
     return AudioRenderOutputResponse(
