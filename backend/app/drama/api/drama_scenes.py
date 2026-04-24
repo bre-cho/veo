@@ -83,9 +83,11 @@ def compile_scene(
         scene_state = DramaSceneState(scene_id=scene_id, project_id=payload.project_id, episode_id=payload.episode_id)
         db.add(scene_state)
 
+    effective_analysis = payload.scene_analysis or (scene_state.analysis_payload or {})
+
     compiled = DramaCompilerService().compile_scene(
         scene_context={"scene_id": str(scene_id), **(payload.scene_context or {})},
-        scene_analysis=payload.scene_analysis or (scene_state.analysis_payload or {}),
+        scene_analysis=effective_analysis,
         previous_scene_state=payload.previous_scene_state,
         character_arc_state=payload.character_arc_state,
     )
@@ -117,7 +119,7 @@ def compile_scene(
     camera_row.notes = "\n".join(camera_plan.get("camera_notes", [])) if camera_plan.get("camera_notes") else None
     db.add(camera_row)
 
-    subtext_map = (payload.scene_analysis or {}).get("subtext_map", [])
+    subtext_map = effective_analysis.get("subtext_map", [])
     if subtext_map:
         db.query(DramaDialogueSubtext).filter(DramaDialogueSubtext.scene_id == scene_id).delete()
         for idx, item in enumerate(subtext_map):
@@ -137,10 +139,10 @@ def compile_scene(
                 )
             )
 
-    power_shift = (payload.scene_analysis or {}).get("power_shift") or {}
+    power_shift = effective_analysis.get("power_shift") or {}
     if power_shift:
-        dominant_id = power_shift.get("from_character_id") or (payload.scene_analysis or {}).get("dominant_character_id")
-        target_id = power_shift.get("to_character_id") or (payload.scene_analysis or {}).get("threatened_character_id")
+        dominant_id = power_shift.get("from_character_id") or effective_analysis.get("dominant_character_id")
+        target_id = power_shift.get("to_character_id") or effective_analysis.get("threatened_character_id")
         if dominant_id and target_id:
             db.query(DramaPowerShift).filter(DramaPowerShift.scene_id == scene_id).delete()
             db.add(

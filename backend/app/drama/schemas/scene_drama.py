@@ -46,7 +46,7 @@ class SceneIntentRead(BaseModel):
     mask_strategy: Optional[str] = None
     likely_scene_intent: str
     pressure_response: Optional[str] = None
-    notes: List[str] = []
+    notes: List[str] = Field(default_factory=list)
 
 
 class SceneTensionRead(BaseModel):
