@@ -13,6 +13,10 @@ from app.drama.services.scene_drama_service import SceneDramaService
 from app.drama.services.drama_compiler_service import DramaCompilerService
 
 
+def _to_uuid(value) -> UUID | None:
+    return UUID(str(value)) if value else None
+
+
 @shared_task(name="app.drama.workers.process_scene")
 def process_scene(scene_id: str, scene_context: dict) -> dict:
     """Phase 4 orchestration worker.
@@ -62,9 +66,9 @@ def process_scene(scene_id: str, scene_context: dict) -> dict:
         scene_state.hidden_conflict = drama_state.get("hidden_conflict")
         scene_state.scene_temperature = float(drama_state.get("tension_score", 0.0))
         scene_state.pressure_level = float(drama_state.get("pressure_level", 0.0))
-        scene_state.dominant_character_id = drama_state.get("dominant_character_id")
-        scene_state.emotional_center_character_id = drama_state.get("emotional_center_character_id")
-        scene_state.threatened_character_id = drama_state.get("threatened_character_id")
+        scene_state.dominant_character_id = _to_uuid(drama_state.get("dominant_character_id"))
+        scene_state.emotional_center_character_id = _to_uuid(drama_state.get("emotional_center_character_id"))
+        scene_state.threatened_character_id = _to_uuid(drama_state.get("threatened_character_id"))
         scene_state.turning_point = drama_state.get("turning_point")
         scene_state.outcome_type = drama_state.get("outcome_type")
         scene_state.power_shift_delta = float(drama_state.get("power_shift_delta", 0.0))

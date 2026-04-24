@@ -31,6 +31,10 @@ from app.drama.services.drama_compiler_service import DramaCompilerService
 router = APIRouter(prefix="/api/v1/drama/scenes", tags=["drama_scenes"])
 
 
+def _to_uuid(value) -> UUID | None:
+    return UUID(str(value)) if value else None
+
+
 @router.post("/analyze", response_model=SceneDramaAnalyzeResponse)
 def analyze_scene(
     payload: SceneDramaAnalyzeRequest,
@@ -63,7 +67,7 @@ def analyze_scene_by_id(
         state = DramaSceneState(
             scene_id=scene_id,
             project_id=payload.project_id,
-            episode_id=(payload.scene_context or {}).get("episode_id"),
+            episode_id=_to_uuid((payload.scene_context or {}).get("episode_id")),
         )
         db.add(state)
     state.analysis_payload = result
@@ -74,7 +78,7 @@ def analyze_scene_by_id(
     state.hidden_conflict = (payload.scene_context or {}).get("hidden_conflict")
     state.scene_temperature = float(drama_state.get("tension_score", 0.0))
     state.pressure_level = float(drama_state.get("pressure_level", 0.0))
-    state.dominant_character_id = drama_state.get("dominant_character_id")
+    state.dominant_character_id = _to_uuid(drama_state.get("dominant_character_id"))
     state.turning_point = drama_state.get("turning_point")
     state.outcome_type = drama_state.get("outcome_type")
     state.power_shift_delta = float(drama_state.get("power_shift_delta", 0.0))
@@ -144,8 +148,8 @@ def compile_scene(
                     episode_id=payload.episode_id,
                     scene_id=scene_id,
                     line_index=idx,
-                    speaker_id=item.get("speaker_id"),
-                    target_id=item.get("target_id"),
+                    speaker_id=_to_uuid(item.get("speaker_id")),
+                    target_id=_to_uuid(item.get("target_id")),
                     literal_intent=item.get("literal_intent") or item.get("psychological_action"),
                     hidden_intent=item.get("hidden_intent"),
                     psychological_action=item.get("psychological_action"),
@@ -165,8 +169,8 @@ def compile_scene(
                     project_id=payload.project_id,
                     episode_id=payload.episode_id,
                     scene_id=scene_id,
-                    from_character_id=dominant_id,
-                    to_character_id=target_id,
+                    from_character_id=_to_uuid(dominant_id),
+                    to_character_id=_to_uuid(target_id),
                     trigger_event=power_shift.get("trigger_event"),
                     social_delta=float(power_shift.get("social_delta", 0.0) or 0.0),
                     emotional_delta=float(power_shift.get("emotional_delta", 0.0) or 0.0),

@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 from app.drama.models.memory_trace import DramaMemoryTrace
 
 
+def to_uuid(value) -> UUID | None:
+    return UUID(str(value)) if value else None
+
 class DramaMemoryService:
     """Persistence layer for character memory traces.
 
@@ -82,10 +85,10 @@ class DramaMemoryService:
             emotional_weight = abs(float(shift.get("trust_delta", 0.0))) + abs(float(shift.get("resentment_delta", 0.0)))
             payloads.append(
                 {
-                    "project_id": analysis.get("project_id"),
-                    "episode_id": analysis.get("episode_id"),
-                    "character_id": source_id,
-                    "related_character_id": target_id,
+                    "project_id": to_uuid(analysis.get("project_id")),
+                    "episode_id": to_uuid(analysis.get("episode_id")),
+                    "character_id": to_uuid(source_id),
+                    "related_character_id": to_uuid(target_id),
                     "source_scene_id": scene_id,
                     "event_type": outcome.get("outcome_type", "scene_shift"),
                     "meaning_label": outcome.get("turning_point") or "scene_shift",
