@@ -9,7 +9,7 @@ from app.drama.models.arc_progress import DramaArcProgress
 from app.drama.models.scene_drama_state import DramaSceneState
 
 
-def to_uuid(value) -> UUID | None:
+def _to_uuid(value) -> UUID | None:
     return UUID(str(value)) if value else None
 
 
@@ -58,8 +58,8 @@ class DramaArcService:
             next_stage = "pressure_crack"
 
         return {
-            "project_id": to_uuid(analysis.get("project_id")),
-            "episode_id": to_uuid(analysis.get("episode_id")),
+            "project_id": _to_uuid(analysis.get("project_id")),
+            "episode_id": _to_uuid(analysis.get("episode_id")),
             "character_id": character_id,
             "arc_name": (current_arc.arc_name if current_arc else "primary_arc"),
             "arc_stage": next_stage,
@@ -70,7 +70,7 @@ class DramaArcService:
             "mask_break_level": mask_break,
             "truth_acceptance_level": min(1.0, (current_arc.truth_acceptance_level if current_arc else 0.0) + max(0.0, exposure) * 0.5),
             "relation_entanglement_index": min(1.0, (current_arc.relation_entanglement_index if current_arc else 0.0) + 0.05),
-            "latest_scene_id": to_uuid(analysis.get("scene_id")),
+            "latest_scene_id": _to_uuid(analysis.get("scene_id")),
             "notes": "Auto-updated from scene analysis.",
         }
 
