@@ -233,7 +233,7 @@ class CameraDramaEngine:
             if cid == anchor_id:
                 anchor_archetype = str(c.get("archetype") or "observer")
                 break
-        lens_mode = _ARCHETYPE_LENS.get(anchor_archetype, "medium_two_shot")
+        lens_mode = _ARCHETYPE_LENS.get(anchor_archetype, "wide_with_distance")
 
         # Override lens mode for outcome
         if outcome_type == "exposure":

@@ -101,6 +101,10 @@ class ArcEngine:
         """
         current_stage = str(arc_progress.get("arc_stage") or "mask_stable")
         arc_type = str(arc_progress.get("arc_type") or "control_to_vulnerability")
+
+        # Migrate legacy stage to drama stage if not in either known list
+        if current_stage not in _ALL_STAGES:
+            current_stage = "mask_stable"
         pressure = float(arc_progress.get("pressure_index") or 0.0)
         transformation = float(arc_progress.get("transformation_index") or 0.0)
         collapse_risk = float(arc_progress.get("collapse_risk") or 0.0)

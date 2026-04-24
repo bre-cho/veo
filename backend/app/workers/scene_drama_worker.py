@@ -93,17 +93,16 @@ def scene_drama_task(
 
 
 def _log_result_summary(scene_id: str, result: dict[str, Any]) -> None:
-    tension = result.get("tension_analysis") or {}
     metadata = result.get("metadata") or {}
     flat = metadata.get("flat_scene", False)
-    score = metadata.get("tension_score", 0.0)
+    tension_value = metadata.get("tension_score", 0.0)
     violations = result.get("scene_law_violations") or []
 
     logger.info(
         "scene_drama_task DONE scene=%s tension=%.1f flat=%s violations=%d",
-        scene_id, score, flat, len(violations),
+        scene_id, tension_value, flat, len(violations),
     )
     if flat:
         logger.warning("scene=%s flagged as flat_scene — consider revising beat", scene_id)
-    for v in violations:
-        logger.warning("scene=%s law_violation: %s", scene_id, v)
+    for violation in violations:
+        logger.warning("scene=%s law_violation: %s", scene_id, violation)

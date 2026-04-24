@@ -337,9 +337,9 @@ class DramaCompilerService:
         )
 
         # ── Step 9: scene law validation ─────────────────────────────────
-        violations = self._continuity_engine.validate_scene_law(scene_drama)
-        if tension.get("flat_scene"):
-            violations.append("FLAT_SCENE: tension score below threshold — consider adding conflict")
+        # Inject flat_scene signal so continuity engine can include it in violations
+        scene_drama_with_flat = {**scene_drama, "flat_scene": tension.get("flat_scene", False)}
+        violations = self._continuity_engine.validate_scene_law(scene_drama_with_flat)
 
         # ── Assemble response ─────────────────────────────────────────────
         # Build full 3-layer dialogue subtext
