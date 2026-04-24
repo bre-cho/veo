@@ -56,6 +56,25 @@ class SceneDramaService:
         edges = self._load_edges(project_id, character_ids)
         graph_index = self.relationship_engine.build_graph_index(edges)
 
+        # Build participants from loaded profiles so blocking/camera engines get real data.
+        participants = [
+            {
+                "character_id": str(profile.id),
+                "name": profile.name,
+                "archetype": profile.archetype,
+            }
+            for profile in profiles
+        ]
+
+        # Infer dominant character before engine calls so power_shift_engine can use it.
+        dominant_character_id = infer_dominant_character(graph_index)
+
+        scene_context = {
+            **scene_context,
+            "participants": scene_context.get("participants") or participants,
+            "dominant_character_id": scene_context.get("dominant_character_id") or dominant_character_id,
+        }
+
         intents = [self.intent_engine.derive(profile, scene_context) for profile in profiles]
         tension = self.tension_engine.score(intents, graph_indexed_edges(graph_index), scene_context)
 
@@ -76,7 +95,21 @@ class SceneDramaService:
 
         power_shift = self.power_shift_engine.compute(scene_context, graph_indexed_edges(graph_index))
 
-        dominant_character_id = infer_dominant_character(graph_index)
+        # Enrich power_shift with keys consumed by BlockingEngine and CameraDramaEngine.
+        power_shift = {
+            **power_shift,
+            "dominant_character_id": dominant_character_id,
+            "threatened_character_id": scene_context.get("threatened_character_id"),
+            "outcome_type": scene_context.get("outcome_type", "scene_shift"),
+        }
+
+        # Build tension_breakdown with the keys consumed by blocking/camera engines.
+        breakdown = tension.get("breakdown", {})
+        tension_breakdown = {
+            **breakdown,
+            "tension_score": tension.get("tension_score", 0.0),
+            "exposure_risk": breakdown.get("emotional_exposure_risk", 0.0),
+        }
 
         drama_state = {
             "tension_score": tension.get("tension_score", 0.0),
@@ -101,7 +134,7 @@ class SceneDramaService:
             "power_shift": power_shift,
             "dominant_character_id": dominant_character_id,
             "drama_state": drama_state,
-            "tension_breakdown": tension.get("breakdown", {}),
+            "tension_breakdown": tension_breakdown,
             "relationship_snapshot": graph_index,
             "relationship_shifts": power_shift.get("relationship_shifts", []),
             "scene_context": scene_context,
