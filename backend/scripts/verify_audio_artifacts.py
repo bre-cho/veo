@@ -120,8 +120,8 @@ def main() -> int:
                 checks.append((str(row["id"]), field, _resolve_url(args.base_url, raw)))
 
     if not checks:
-        print("[WARN] No artifact URLs found in the selected rows — nothing to verify.")
-        return 0
+        print("[ERROR] Succeeded rows found, but no artifact URLs to verify.")
+        return 1
 
     failures: list[tuple[str, str, str, int | str]] = []
     for output_id, field, url in checks:
