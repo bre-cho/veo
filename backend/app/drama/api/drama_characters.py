@@ -33,7 +33,7 @@ DBSession = Annotated[Session, Depends(deps.get_db if deps else get_db_fallback)
 
 @router.get("", response_model=list[CharacterRead])
 def list_drama_characters(
-    project_id: Annotated[str, Query(min_length=1, max_length=128)],
+    project_id: Annotated[UUID, Query()],
     db: DBSession,
 ) -> list[CharacterRead]:
     service = CastService(db)

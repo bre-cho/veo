@@ -38,9 +38,6 @@ import app.drama.models  # noqa: F401
 
 target_metadata = Base.metadata
 
-def include_object(object_, name, type_, reflected, compare_to):
-    return True
-
 
 def process_revision_directives(context, revision, directives):
     if getattr(config.cmd_opts, "autogenerate", False):

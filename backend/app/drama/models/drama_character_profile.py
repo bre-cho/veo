@@ -18,9 +18,7 @@ class DramaCharacterProfile(Base):
     Notes for integration:
     - Keep this additive. Do not overload current avatar tables until drama
       workflows prove stable.
-    - `project_id` is a string on purpose in this skeleton to stay compatible
-      with repos using UUIDs, ULIDs, ints, or external workspace IDs. Tighten
-      the type later when wiring into the actual project model.
+    - `project_id` uses UUID to align with the rest of the drama engine models.
     """
 
     __tablename__ = "drama_character_profiles"
@@ -28,7 +26,7 @@ class DramaCharacterProfile(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    project_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     archetype: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
 
