@@ -39,7 +39,7 @@ class SceneDramaService:
     def _load_edges(self, project_id: UUID, character_ids: List[UUID]) -> List[DramaRelationshipEdge]:
         return (
             self.db.query(DramaRelationshipEdge)
-            .filter(DramaRelationshipEdge.project_id == str(project_id))
+            .filter(DramaRelationshipEdge.project_id == project_id)
             .filter(DramaRelationshipEdge.source_character_id.in_(character_ids))
             .filter(DramaRelationshipEdge.target_character_id.in_(character_ids))
             .all()
@@ -79,15 +79,32 @@ class SceneDramaService:
 
         dominant_character_id = infer_dominant_character(graph_index)
 
+        drama_state = {
+            "tension_score": tension.get("tension_score", 0.0),
+            "pressure_level": tension.get("tension_score", 0.0),
+            "dominant_character_id": dominant_character_id,
+            "outcome_type": scene_context.get("outcome_type", "scene_shift"),
+            "turning_point": scene_context.get("turning_point"),
+            "power_shift_delta": power_shift.get("total_delta", 0.0),
+            "trust_shift_delta": 0.0,
+            "exposure_shift_delta": 0.0,
+            "dependency_shift_delta": 0.0,
+        }
+
         return {
             "project_id": str(project_id),
             "scene_id": str(scene_id),
+            "episode_id": str(scene_context.get("episode_id")) if scene_context.get("episode_id") else None,
             "character_count": len(profiles),
             "intents": [intent.__dict__ for intent in intents],
             "tension": tension,
             "subtext_map": subtext_map,
             "power_shift": power_shift,
             "dominant_character_id": dominant_character_id,
+            "drama_state": drama_state,
+            "tension_breakdown": tension.get("breakdown", {}),
+            "relationship_snapshot": graph_index,
+            "relationship_shifts": power_shift.get("relationship_shifts", []),
             "status": "analyzed_stubbed",
         }
 

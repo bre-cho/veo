@@ -57,6 +57,18 @@ def analyze_scene_by_id(
         character_ids=payload.character_ids,
         scene_context=payload.scene_context,
     )
+
+    state = db.query(DramaSceneState).filter(DramaSceneState.scene_id == scene_id).first()
+    if state is None:
+        state = DramaSceneState(
+            scene_id=scene_id,
+            project_id=payload.project_id,
+            episode_id=(payload.scene_context or {}).get("episode_id"),
+        )
+        db.add(state)
+    state.analysis_payload = result
+    db.commit()
+
     return SceneDramaAnalyzeResponse(**result)
 
 

@@ -19,6 +19,8 @@ celery_app = Celery(
         "app.workers.template_rescore_worker",
         "app.workers.template_feedback_worker",
         "app.workers.autopilot_worker",
+        "app.drama.workers.drama_scene_worker",
+        "app.drama.workers.continuity_rebuild_worker",
     ],
 )
 
@@ -56,6 +58,8 @@ celery_app.conf.update(
         "app.workers.template_extraction_worker.run": {"queue": "template"},
         "app.workers.template_rescore_worker.run": {"queue": "template"},
         "app.workers.template_feedback_worker.run": {"queue": "template"},
+        "app.drama.workers.process_scene": {"queue": "drama"},
+        "app.drama.workers.rebuild_continuity": {"queue": "drama"},
     },
     # Default queue for any task not explicitly routed above.
     task_default_queue="celery",
