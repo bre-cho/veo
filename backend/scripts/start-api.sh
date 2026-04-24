@@ -9,9 +9,7 @@ if [[ "${BACKEND_SCHEMA_BOOTSTRAP:-}" == "metadata-create-all" ]]; then
 	python /app/scripts/bootstrap_metadata_schema.py
 else
 	echo "Running Alembic migrations..."
-	if ! alembic upgrade head; then
-		echo "WARNING: Alembic migration failed. Proceeding with service startup anyway." >&2
-	fi
+	alembic upgrade head
 fi
 
 echo "Starting FastAPI..."

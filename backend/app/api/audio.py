@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import tempfile
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -19,6 +18,7 @@ from app.schemas.audio import (
     AudioRenderOutputResponse,
     AudioPreviewRequest,
     AudioPreviewResponse,
+    AudioPreviewJobResponse,
     MusicAssetCreateRequest,
     MusicAssetResponse,
     NarrationJobCreateRequest,
@@ -30,12 +30,10 @@ from app.schemas.audio import (
 )
 from app.services.audio.audio_mix_service import create_audio_render_output, mix_audio_tracks
 from app.services.audio.audio_mux_service import mux_audio_to_video
-from app.services.audio.elevenlabs_adapter import ElevenLabsAdapter
 from app.services.audio.music_selection_service import create_music_asset, generate_music_asset, save_uploaded_music_asset
 from app.services.audio.narration_service import create_narration_job, run_narration_job
 from app.services.audio.voice_clone_service import create_voice_profile, save_voice_sample
-from app.services.object_storage import upload_file_to_object_storage
-from app.core.config import settings
+from app.models.audio_preview_job import AudioPreviewJob
 
 router = APIRouter(prefix="/api/v1/audio", tags=["audio-studio"])
 
@@ -135,37 +133,39 @@ async def post_voice_sample(
     )
 
 
-@router.post("/preview", response_model=AudioPreviewResponse)
+@router.post("/preview", response_model=AudioPreviewResponse, status_code=status.HTTP_202_ACCEPTED)
 async def post_audio_preview(payload: AudioPreviewRequest, db: Session = Depends(get_db)):
     profile = db.query(VoiceProfile).filter(VoiceProfile.id == payload.voice_profile_id).first()
     if profile is None or not profile.provider_voice_id:
         raise HTTPException(status_code=404, detail="Voice profile with provider_voice_id not found")
-    adapter = ElevenLabsAdapter()
-    audio_bytes = await adapter.synthesize_speech(voice_id=profile.provider_voice_id, text=payload.text)
 
-    preview_id = uuid.uuid4().hex
-    preview_filename = f"{preview_id}.mp3"
-    storage_key = f"audio/previews/{preview_filename}"
+    job = AudioPreviewJob(
+        voice_profile_id=payload.voice_profile_id,
+        text=payload.text,
+        style_preset=payload.style_preset,
+        status="queued",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
 
-    preview_dir = Path(settings.audio_output_dir) / "previews"
-    preview_dir.mkdir(parents=True, exist_ok=True)
-    local_path = preview_dir / preview_filename
-    local_path.write_bytes(audio_bytes)
+    from app.workers.audio_preview_worker import run_audio_preview_task
+    run_audio_preview_task.delay(job.id)
 
-    # Build the local-storage fallback URL using the path relative to the storage root.
-    # audio_output_dir is <storage_root>/audio_outputs, so the relative segment is consistent.
-    relative_path = local_path.relative_to(Path(settings.storage_root))
-    local_fallback_url = f"{settings.storage_public_base_url.rstrip('/')}/{relative_path}"
+    return AudioPreviewResponse(job_id=job.id, status="queued")
 
-    preview_url: str
-    try:
-        stored = upload_file_to_object_storage(local_path=str(local_path), key=storage_key, content_type="audio/mpeg")
-        preview_url = stored.public_url or local_fallback_url
-    except Exception:
-        logger.warning("Failed to upload audio preview to object storage; falling back to local URL", exc_info=True)
-        preview_url = local_fallback_url
 
-    return AudioPreviewResponse(status="succeeded", preview_url=preview_url)
+@router.get("/preview/{job_id}", response_model=AudioPreviewJobResponse)
+async def get_audio_preview(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(AudioPreviewJob).filter(AudioPreviewJob.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Audio preview job not found")
+    return AudioPreviewJobResponse(
+        job_id=job.id,
+        status=job.status,
+        preview_url=job.preview_url,
+        error_message=job.error_message,
+    )
 
 
 @router.post("/narration-jobs", response_model=NarrationJobResponse)
