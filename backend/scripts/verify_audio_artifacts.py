@@ -117,7 +117,7 @@ def main() -> int:
         for field in url_fields:
             raw = row.get(field)
             if raw:
-                checks.append((row["id"], field, _resolve_url(args.base_url, raw)))
+                checks.append((str(row["id"]), field, _resolve_url(args.base_url, raw)))
 
     if not checks:
         print("[WARN] No artifact URLs found in the selected rows — nothing to verify.")
