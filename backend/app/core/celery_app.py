@@ -27,6 +27,7 @@ celery_app = Celery(
         "app.workers.voice_clone_worker",
         "app.drama.workers.drama_scene_worker",
         "app.drama.workers.continuity_rebuild_worker",
+        "app.drama.workers.drama_arc_worker",
     ],
 )
 
@@ -67,6 +68,7 @@ celery_app.conf.update(
         "app.workers.template_feedback_worker.run": {"queue": "template"},
         "app.drama.workers.process_scene": {"queue": "drama"},
         "app.drama.workers.rebuild_continuity": {"queue": "drama"},
+        "app.drama.workers.recompute_arcs": {"queue": "drama"},
     },
     # Default queue for any task not explicitly routed above.
     task_default_queue="celery",

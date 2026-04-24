@@ -65,6 +65,7 @@ async def _run_preview(job_id: str) -> AudioPreviewJob | None:
 
             job.status = "succeeded"
             job.preview_url = preview_url
+            job.output_url = preview_url
         except Exception as exc:
             logger.exception("AudioPreviewJob %s failed: %s", job_id, exc)
             job.status = "failed"

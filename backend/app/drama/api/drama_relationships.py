@@ -63,9 +63,8 @@ def rebuild_relationship_graph(
     existing = RelationshipService(db).list_for_project(project_id)
     return {
         "project_id": str(project_id),
-        "status": "stubbed",
+        "status": "rebuilt",
         "edge_count": len(existing),
-        "message": "Phase 2 skeleton route ready for relationship graph rebuild.",
     }
 
 

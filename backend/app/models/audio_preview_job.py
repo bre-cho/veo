@@ -18,6 +18,7 @@ class AudioPreviewJob(Base):
     style_preset: Mapped[str] = mapped_column(String(64), nullable=False, default="natural_conversational")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
     preview_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)

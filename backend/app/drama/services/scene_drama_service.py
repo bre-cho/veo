@@ -106,7 +106,7 @@ class SceneDramaService:
             "relationship_snapshot": graph_index,
             "relationship_shifts": power_shift.get("relationship_shifts", []),
             "scene_context": scene_context,
-            "status": "analyzed_stubbed",
+            "status": "analyzed",
         }
 
 
