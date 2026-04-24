@@ -58,10 +58,15 @@ class SceneTensionRead(BaseModel):
 class SceneDramaAnalyzeResponse(BaseModel):
     project_id: str
     scene_id: str
+    episode_id: Optional[str] = None
     character_count: int
     intents: List[Dict[str, Any]]
     tension: Dict[str, Any]
     subtext_map: List[Dict[str, Any]]
     power_shift: Dict[str, Any]
     dominant_character_id: Optional[str] = None
+    drama_state: Optional[Dict[str, Any]] = None
+    tension_breakdown: Optional[Dict[str, Any]] = None
+    relationship_snapshot: Optional[Dict[str, Any]] = None
+    relationship_shifts: Optional[List[Any]] = None
     status: str
