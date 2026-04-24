@@ -64,6 +64,7 @@ def mux_audio_to_video(db: Session, audio_output_id: str) -> AudioRenderOutput:
                 f"--- stdout ---\n{completed.stdout}\n"
                 f"--- stderr ---\n{completed.stderr}\n"
             )
+            output.error_artifact_url = f"/artifacts/video/mux/{output.id}/ffmpeg_error.log"
         except OSError:
             pass
         db.commit()

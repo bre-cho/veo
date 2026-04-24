@@ -103,6 +103,7 @@ def mix_audio_tracks(db: Session, audio_output_id: str) -> AudioRenderOutput:
                 f"--- stdout ---\n{completed.stdout}\n"
                 f"--- stderr ---\n{completed.stderr}\n"
             )
+            output.error_artifact_url = f"/artifacts/audio/mix/{output.id}/ffmpeg_error.log"
         except OSError:
             pass
         db.commit()
