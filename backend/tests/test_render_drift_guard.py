@@ -76,7 +76,7 @@ class TestTimelineDriftGuard:
 
     def test_report_contains_all_keys(self):
         report = self._guard().detect_drift(3.0, 6.5)
-        assert {"has_drift", "drift_sec", "old_duration_sec", "new_duration_sec", "tolerance_sec"} == set(report)
+        assert set(report.keys()) == {"has_drift", "drift_sec", "old_duration_sec", "new_duration_sec", "tolerance_sec"}
 
     def test_compare_manifest_duration_no_drift(self):
         guard = self._guard()

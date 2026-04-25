@@ -93,7 +93,7 @@ class SmartReassemblyService:
                     "timeline_drift": drift_report,
                     "timeline_rebuilt": True,
                     "subtitle_rebuilt_after_drift": True,
-                    "subtitle_path": subtitle_report["subtitle_path"],
+                    "subtitle_path": subtitle_report.get("subtitle_path") if subtitle_report else None,
                 },
             )
 
