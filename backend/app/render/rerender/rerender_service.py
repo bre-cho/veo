@@ -24,7 +24,7 @@ class RerenderService:
         self,
         tts_service: Any,
         video_service: Any,
-        manifest_base_dir: str = "/data/renders/manifests",
+        manifest_base_dir: str | None = None,
     ) -> None:
         self._tts = tts_service
         self._video = video_service

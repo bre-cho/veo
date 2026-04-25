@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.core.runtime_paths import render_paths
 from app.render.assembly.subtitles.visual_aware_karaoke_writer import (
     write_visual_aware_karaoke_ass,
 )
@@ -15,13 +16,13 @@ class PerSceneSubtitleService:
     Unlike :class:`~app.render.reassembly.subtitle_rebuild_service.SubtitleRebuildService`,
     which regenerates the *episode-level* subtitle file, this service writes a
     separate ``{scene_id}.ass`` under
-    ``/data/renders/subtitles/{project_id}/{episode_id}/``.
+    ``{subtitles_dir}/{project_id}/{episode_id}/``.
 
     Word timings used are the scene-local ``word_timings`` (falling back to
     ``global_word_timings`` when local timings are absent).
     """
 
-    def __init__(self, manifest_base_dir: str = "/data/renders/manifests") -> None:
+    def __init__(self, manifest_base_dir: str | None = None) -> None:
         self.manifest = ManifestService(base_dir=manifest_base_dir)
 
     def rebuild_scene_subtitle(
@@ -55,7 +56,7 @@ class PerSceneSubtitleService:
             }
         }
 
-        out_dir = Path(f"/data/renders/subtitles/{project_id}/{episode_id}")
+        out_dir = Path(render_paths.subtitles_dir) / project_id / episode_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
         subtitle_path = str(out_dir / f"{scene_id}.ass")

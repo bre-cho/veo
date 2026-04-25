@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+from app.core.runtime_paths import render_paths
 from app.render.manifest.manifest_reader import ManifestReader
 from app.render.manifest.manifest_writer import ManifestWriter
 
@@ -9,9 +10,10 @@ from app.render.manifest.manifest_writer import ManifestWriter
 class ManifestService:
     """Facade over :class:`ManifestWriter` and :class:`ManifestReader`."""
 
-    def __init__(self, base_dir: str = "/data/renders/manifests") -> None:
-        self.writer = ManifestWriter(base_dir=base_dir)
-        self.reader = ManifestReader(base_dir=base_dir)
+    def __init__(self, base_dir: str | None = None) -> None:
+        resolved = base_dir if base_dir is not None else render_paths.manifests_dir
+        self.writer = ManifestWriter(base_dir=resolved)
+        self.reader = ManifestReader(base_dir=resolved)
 
     # ------------------------------------------------------------------
     # Write / patch

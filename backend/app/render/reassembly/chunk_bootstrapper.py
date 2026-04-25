@@ -30,8 +30,8 @@ class ChunkBootstrapper:
 
     def __init__(
         self,
-        manifest_base_dir: str = "/data/renders/manifests",
-        chunk_base_dir: str = "/data/renders/chunks",
+        manifest_base_dir: str | None = None,
+        chunk_base_dir: str | None = None,
     ) -> None:
         self._manifest = ManifestService(base_dir=manifest_base_dir)
         self._chunk_builder = ChunkBuilder()

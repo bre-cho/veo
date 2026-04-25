@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.core.runtime_paths import render_paths
 from app.render.reassembly._sort_utils import scene_sort_key
 
 
@@ -16,8 +17,8 @@ class ChunkIndex:
     ``duration_sec``.
     """
 
-    def __init__(self, base_dir: str = "/data/renders/chunks") -> None:
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | None = None) -> None:
+        self.base_dir = Path(base_dir if base_dir is not None else render_paths.chunks_dir)
 
     # ------------------------------------------------------------------
     # Paths

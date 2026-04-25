@@ -146,6 +146,12 @@ try:
 except Exception:  # pragma: no cover
     render_dependency_router = None  # type: ignore[assignment]
 
+# ── Render Rebuild (Unified Decision/Approve/Execute) ─────────────────────
+try:
+    from app.render.rebuild.api import router as render_rebuild_router
+except Exception:  # pragma: no cover
+    render_rebuild_router = None  # type: ignore[assignment]
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
@@ -268,6 +274,7 @@ _RENDER_ASSEMBLY_ROUTERS = [
         render_rerender_router,
         render_reassembly_router,
         render_dependency_router,
+        render_rebuild_router,
     ]
     if r is not None
 ]

@@ -215,7 +215,8 @@ class FFmpegAssemblyExecutor:
         else:
             write_karaoke_ass(subtitle_tracks, subtitle_path)
 
-        concat_file = f"/tmp/{project_id}_{episode_id}_concat.txt"
+        from app.core.runtime_paths import render_paths  # noqa: PLC0415
+        concat_file = render_paths.concat_scratch_path(project_id, episode_id)
         self.builder.build_concat_file(video_paths=video_paths, concat_path=concat_file)
 
         command = self.builder.build_command(

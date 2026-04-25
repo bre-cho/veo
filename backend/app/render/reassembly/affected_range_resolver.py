@@ -18,7 +18,7 @@ class AffectedRangeResolver:
     ``scene_index`` and then ``scene_id``.
     """
 
-    def __init__(self, manifest_base_dir: str = "/data/renders/manifests") -> None:
+    def __init__(self, manifest_base_dir: str | None = None) -> None:
         self.manifest = ManifestService(base_dir=manifest_base_dir)
 
     def resolve(

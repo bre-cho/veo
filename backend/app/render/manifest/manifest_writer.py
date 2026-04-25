@@ -4,12 +4,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from app.core.runtime_paths import render_paths
+
 
 class ManifestWriter:
     """Writes and patches per-scene JSON manifests to ``base_dir``."""
 
-    def __init__(self, base_dir: str = "/data/renders/manifests") -> None:
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | None = None) -> None:
+        self.base_dir = Path(base_dir if base_dir is not None else render_paths.manifests_dir)
 
     # ------------------------------------------------------------------
     # Public API

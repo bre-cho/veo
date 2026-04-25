@@ -4,14 +4,15 @@ import json
 from pathlib import Path
 from typing import List
 
+from app.core.runtime_paths import render_paths
 from app.render.reassembly._sort_utils import scene_sort_key
 
 
 class ManifestReader:
     """Reads per-scene JSON manifests from ``base_dir``."""
 
-    def __init__(self, base_dir: str = "/data/renders/manifests") -> None:
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str | None = None) -> None:
+        self.base_dir = Path(base_dir if base_dir is not None else render_paths.manifests_dir)
 
     def read_scene_manifest(
         self,

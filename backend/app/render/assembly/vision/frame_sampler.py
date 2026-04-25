@@ -3,12 +3,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from app.core.runtime_paths import render_paths
+
 
 class FrameSampler:
     """Extracts a representative frame from a scene video for visual analysis.
 
     Uses FFmpeg to capture the frame at ``seek_sec`` seconds into the clip.
-    The output JPEG is written to ``/tmp/subtitle_frames/{scene_id}.jpg``
+    The output JPEG is written to ``{frame_samples_dir}/{scene_id}.jpg``
     so that subsequent detectors can read it without re-running FFmpeg.
     """
 
@@ -32,7 +34,7 @@ class FrameSampler:
         Raises:
             subprocess.CalledProcessError: If FFmpeg exits with a non-zero code.
         """
-        out_dir = Path("/tmp/subtitle_frames")
+        out_dir = Path(render_paths.frame_samples_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
         frame_path = out_dir / f"{scene_id}.jpg"

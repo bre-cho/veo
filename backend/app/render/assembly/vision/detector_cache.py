@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.core.runtime_paths import render_paths
 from app.render.assembly.vision.detector_config import DETECTOR_CONFIG
 
 
@@ -16,12 +17,13 @@ class DetectorResultCache:
     hash of ``DETECTOR_CONFIG`` so that changing the detector configuration
     automatically invalidates all stored results.
 
-    The cache directory defaults to ``/tmp/detector_cache`` and is created
-    automatically.  Override *cache_dir* in tests to use a temporary directory.
+    The cache directory defaults to ``render_paths.detector_cache_dir`` and is
+    created automatically.  Override *cache_dir* in tests to use a temporary
+    directory.
     """
 
-    def __init__(self, cache_dir: str = "/tmp/detector_cache") -> None:
-        self.cache_dir = Path(cache_dir)
+    def __init__(self, cache_dir: str | None = None) -> None:
+        self.cache_dir = Path(cache_dir if cache_dir is not None else render_paths.detector_cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------

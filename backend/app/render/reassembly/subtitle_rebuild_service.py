@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.core.runtime_paths import render_paths
 from app.render.assembly.subtitles.visual_aware_karaoke_writer import (
     write_visual_aware_karaoke_ass,
 )
@@ -15,7 +16,7 @@ class SubtitleRebuildService:
     After scene durations change and offsets are rebuilt, this service
     reads the updated ``global_word_timings`` from every scene manifest and
     writes a fresh ``{episode_id}.ass`` file under
-    ``/data/renders/subtitles/{project_id}/``.
+    ``{subtitles_dir}/{project_id}/``.
     """
 
     def __init__(self) -> None:
@@ -61,7 +62,7 @@ class SubtitleRebuildService:
                 "placement": "bottom",
             }
 
-        out_dir = Path(f"/data/renders/subtitles/{project_id}")
+        out_dir = Path(render_paths.subtitles_dir) / project_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
         subtitle_path = str(out_dir / f"{episode_id}.ass")
