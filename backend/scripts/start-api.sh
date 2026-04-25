@@ -12,6 +12,9 @@ else
 	alembic upgrade head
 fi
 
+echo "Verifying runtime DB schema..."
+python /app/scripts/verify_runtime_schema.py
+
 echo "Starting FastAPI..."
 if [[ "${APP_ENV:-production}" == "dev" ]]; then
   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

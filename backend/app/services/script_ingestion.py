@@ -14,8 +14,22 @@ from app.services.storyboard_engine import StoryboardEngine
 
 ALLOWED_EXTENSIONS = {".txt", ".docx"}
 MAX_SIZE_BYTES = 5 * 1024 * 1024
-_execution_bridge = ExecutionBridgeService()
-_storyboard_engine = StoryboardEngine()
+_execution_bridge: ExecutionBridgeService | None = None
+_storyboard_engine: StoryboardEngine | None = None
+
+
+def get_execution_bridge() -> ExecutionBridgeService:
+    global _execution_bridge
+    if _execution_bridge is None:
+        _execution_bridge = ExecutionBridgeService()
+    return _execution_bridge
+
+
+def get_storyboard_engine() -> StoryboardEngine:
+    global _storyboard_engine
+    if _storyboard_engine is None:
+        _storyboard_engine = StoryboardEngine()
+    return _storyboard_engine
 
 
 def validate_script_file(filename: str, content: bytes) -> str:
@@ -160,7 +174,7 @@ def build_preview_payload(
         raise ValueError("Parsed script is empty")
 
     scenes = split_script_into_scenes(normalized, max_scenes=12)
-    bridged_payload = _execution_bridge.apply_to_preview_payload(
+    bridged_payload = get_execution_bridge().apply_to_preview_payload(
         {
             "avatar_id": avatar_id,
             "market_code": market_code,
@@ -170,7 +184,7 @@ def build_preview_payload(
         }
     )
     scenes = bridged_payload["scenes"]
-    storyboard = _storyboard_engine.generate_from_script(
+    storyboard = get_storyboard_engine().generate_from_script(
         script_text=normalized,
         conversion_mode=conversion_mode,
         content_goal=content_goal,
