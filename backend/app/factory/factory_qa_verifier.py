@@ -104,7 +104,7 @@ class FactoryQAVerifier:
                         f"manifest_scene_mismatch:expected={scene_count},got={manifest_scene_count}"
                     )
             except (json.JSONDecodeError, TypeError) as exc:
-                issues.append(f"manifest_not_readable:{exc}")
+                issues.append(f"manifest_not_readable:{type(exc).__name__}")
         else:
             # No manifest persisted yet — warn only (adapter may have skipped for no project_id)
             warnings.append("no_render_manifest")
