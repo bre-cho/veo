@@ -150,17 +150,9 @@ interface ApiEnvelope<T> {
   meta?: Record<string, unknown>;
 }
 
-const _API_BASE_ENV = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "");
+import { getRequiredApiBaseUrl } from "./get-api-url";
 
-if (!_API_BASE_ENV && process.env.NODE_ENV === "production") {
-  throw new Error(
-    "NEXT_PUBLIC_API_BASE_URL is not set. " +
-    "This environment variable is required in production. " +
-    "Set it to the backend API base URL (e.g. https://api.example.com)."
-  );
-}
-
-const API_BASE_ROOT = _API_BASE_ENV || "http://localhost:8000/api/v1";
+const API_BASE_ROOT = getRequiredApiBaseUrl();
 
 const API_BASE_URL = API_BASE_ROOT.endsWith("/api/v1")
   ? API_BASE_ROOT

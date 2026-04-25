@@ -22,27 +22,27 @@ export default function AnalyticsPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold">{t("analytics_title")}</h1>
-          <p className="text-neutral-400 mt-1">Marketplace performance insights.</p>
+          <p className="text-neutral-400 mt-1">{t("analytics_subtitle")}</p>
         </div>
 
         <div className="rounded-2xl bg-neutral-900 border border-neutral-800 p-6">
-          <h2 className="text-lg font-semibold mb-4">Trending Avatars (7 days)</h2>
+          <h2 className="text-lg font-semibold mb-4">{t("analytics_trending_title")}</h2>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           {loading ? (
-            <p className="text-neutral-500">Loading trending data…</p>
+            <p className="text-neutral-500">{t("analytics_loading")}</p>
           ) : trending.length === 0 ? (
-            <p className="text-neutral-400">No trending data yet. Avatars need usage events to rank.</p>
+            <p className="text-neutral-400">{t("analytics_no_data")}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-neutral-800">
-                    <th className="text-left py-2 pr-4 text-neutral-500 font-medium">Rank</th>
-                    <th className="text-left py-2 pr-4 text-neutral-500 font-medium">Avatar</th>
-                    <th className="text-right py-2 pr-4 text-neutral-500 font-medium">Uses (7d)</th>
-                    <th className="text-right py-2 text-neutral-500 font-medium">Trending Score</th>
+                    <th className="text-left py-2 pr-4 text-neutral-500 font-medium">{t("analytics_col_rank")}</th>
+                    <th className="text-left py-2 pr-4 text-neutral-500 font-medium">{t("analytics_col_avatar")}</th>
+                    <th className="text-right py-2 pr-4 text-neutral-500 font-medium">{t("analytics_col_uses_7d")}</th>
+                    <th className="text-right py-2 text-neutral-500 font-medium">{t("analytics_col_trending_score")}</th>
                   </tr>
                 </thead>
                 <tbody>

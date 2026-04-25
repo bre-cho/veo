@@ -254,11 +254,13 @@ class RuntimeRebuildPreflightValidator:
     4. No scene in ``rebuild_scene_ids`` is currently locked / processing.
     5. Output path for the episode is writable.
 
-    The validator is intentionally *lenient* when infrastructure is
-    unavailable (e.g. in unit-test environments without a real DB).  Each
-    check degrades to a warning rather than a hard failure when its
-    dependencies cannot be imported or reached, so that the validator can
-    also be used in integration tests with partial infrastructure.
+    Strictness policy
+    -----------------
+    When ``APP_ENV=production``:
+      * A missing database session (checks 1) is a hard failure.
+      * Infrastructure import or access errors (checks 2, 5) are hard failures.
+    In ``development`` / ``test`` environments these degrade to warnings so
+    that the validator can be used with partial infrastructure.
     """
 
     def __init__(self, db: Any = None) -> None:
@@ -340,8 +342,12 @@ class RuntimeRebuildPreflightValidator:
     def _check_project_exists(
         self, project_id: str, warnings: List[str]
     ) -> Dict[str, Any]:
+        is_production = _get_app_env() == "production"
         if not self._db:
-            warnings.append("DB not provided — project existence check skipped")
+            msg = "DB not provided — project existence check skipped"
+            if is_production:
+                return {"ok": False, "reason": msg}
+            warnings.append(msg)
             return {"ok": True}
         try:
             from sqlalchemy import text
@@ -355,12 +361,16 @@ class RuntimeRebuildPreflightValidator:
                     "reason": f"Project '{project_id}' does not exist in the database",
                 }
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"project existence check skipped ({exc})")
+            msg = f"project existence check skipped ({exc})"
+            if is_production:
+                return {"ok": False, "reason": msg}
+            warnings.append(msg)
         return {"ok": True}
 
     def _check_episode_manifest(
         self, episode_id: str, warnings: List[str]
     ) -> Dict[str, Any]:
+        is_production = _get_app_env() == "production"
         try:
             from pathlib import Path
             from app.core.runtime_paths import render_paths
@@ -380,7 +390,10 @@ class RuntimeRebuildPreflightValidator:
             manifest_data = _json.loads(manifest_path.read_text(encoding="utf-8"))
             return {"ok": True, "manifest": manifest_data}
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"manifest check skipped ({exc})")
+            msg = f"manifest check skipped ({exc})"
+            if is_production:
+                return {"ok": False, "reason": msg, "manifest": {}}
+            warnings.append(msg)
         return {"ok": True, "manifest": {}}
 
     def _check_scenes_exist(
@@ -439,6 +452,7 @@ class RuntimeRebuildPreflightValidator:
     def _check_output_path_writable(
         self, episode_id: str, warnings: List[str]
     ) -> Dict[str, Any]:
+        is_production = _get_app_env() == "production"
         try:
             from pathlib import Path
             from app.core.runtime_paths import render_paths
@@ -454,7 +468,10 @@ class RuntimeRebuildPreflightValidator:
                 "reason": f"Output path for episode '{episode_id}' is not writable: {exc}",
             }
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"output path writability check skipped ({exc})")
+            msg = f"output path writability check skipped ({exc})"
+            if is_production:
+                return {"ok": False, "reason": msg}
+            warnings.append(msg)
         return {"ok": True}
 
 

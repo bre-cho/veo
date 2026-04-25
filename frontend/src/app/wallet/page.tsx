@@ -32,14 +32,14 @@ export default function WalletPage() {
   async function handlePayout() {
     const amt = parseFloat(payoutAmount);
     if (isNaN(amt) || amt <= 0) {
-      setPayoutMsg("Enter a valid amount.");
+      setPayoutMsg(t("wallet_invalid_amount"));
       return;
     }
     setPayoutLoading(true);
     setPayoutMsg(null);
     try {
       await requestPayout(creatorId, amt);
-      setPayoutMsg("Payout requested ✓");
+      setPayoutMsg(t("wallet_payout_requested"));
       setPayoutAmount("");
     } catch (e) {
       setPayoutMsg(String(e));
@@ -55,7 +55,7 @@ export default function WalletPage() {
       <div className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="mb-2 text-3xl font-bold">{t("wallet_title")}</h1>
         <p className="mb-8 text-sm text-neutral-400">
-          View earnings and request payouts.
+          {t("wallet_subtitle")}
         </p>
 
         {/* Creator ID input */}
@@ -64,7 +64,7 @@ export default function WalletPage() {
             className="flex-1 rounded-xl border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm text-neutral-100 outline-none focus:border-indigo-500"
             value={creatorId}
             onChange={(e) => setCreatorId(e.target.value)}
-            placeholder="Enter creator ID"
+            placeholder={t("wallet_enter_creator_id")}
             onKeyDown={(e) => e.key === "Enter" && loadEarnings()}
           />
           <button
@@ -72,7 +72,7 @@ export default function WalletPage() {
             disabled={loading || !creatorId.trim()}
             className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
           >
-            {loading ? "Loading…" : "Load"}
+            {loading ? t("loading") : t("wallet_load")}
           </button>
         </div>
 
@@ -89,16 +89,16 @@ export default function WalletPage() {
               <thead>
                 <tr className="border-b border-neutral-800">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-neutral-500">
-                    Amount (USD)
+                    {t("wallet_col_amount_usd")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-neutral-500">
-                    Type
+                    {t("wallet_col_type")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-neutral-500">
-                    Payout Status
+                    {t("wallet_col_payout_status")}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-neutral-500">
-                    Period
+                    {t("wallet_col_period")}
                   </th>
                 </tr>
               </thead>
@@ -142,14 +142,14 @@ export default function WalletPage() {
 
         {earnings && earningsList.length === 0 && (
           <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-center">
-            <p className="text-sm text-neutral-500">No earnings records found.</p>
+            <p className="text-sm text-neutral-500">{t("wallet_no_earnings")}</p>
           </div>
         )}
 
         {/* Payout request */}
         {creatorId && (
           <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <h2 className="mb-4 text-sm font-semibold text-neutral-100">Request Payout</h2>
+            <h2 className="mb-4 text-sm font-semibold text-neutral-100">{t("wallet_request_payout")}</h2>
             <div className="flex gap-3">
               <input
                 type="number"
@@ -165,7 +165,7 @@ export default function WalletPage() {
                 disabled={payoutLoading || !payoutAmount}
                 className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
               >
-                {payoutLoading ? "Requesting…" : "Request"}
+                {payoutLoading ? t("wallet_requesting") : t("wallet_request")}
               </button>
             </div>
             {payoutMsg && (

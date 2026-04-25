@@ -43,6 +43,18 @@ _SUSPICIOUS_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r'>\s*(Dashboard|Settings|Render Jobs|Script Upload|Templates|Autopilot|Strategy|Marketplace|Analytics|Wallet|Governance)\s*<', re.IGNORECASE),
     # Common status/label strings
     re.compile(r'>\s*(Loading\.\.\.|No events yet|No incidents|Realtime Progress)\s*<', re.IGNORECASE),
+    # Projects page — Veo controls
+    re.compile(r'>\s*(Text to Video|Image to Video|Save Veo Config|Apply character lock to all scenes|Rerender Scene)\s*<', re.IGNORECASE),
+    re.compile(r'>\s*(Veo 3\.1 Controls|Character Reference Pack|Veo Batch Run|Render Events|Rebuild Decision)\s*<', re.IGNORECASE),
+    re.compile(r'>\s*(Render Video|Retry Render|Process Template Feedback|Get Rebuild Decision|Create Veo Batch|Create Pack)\s*<', re.IGNORECASE),
+    re.compile(r'>\s*(Project Workspace|Idea &amp; Style|Render Status)\s*<', re.IGNORECASE),
+    # Analytics page
+    re.compile(r'>\s*(Marketplace performance insights|Trending Avatars|Trending Score)\s*[.<]', re.IGNORECASE),
+    re.compile(r'>\s*(Loading trending data|No trending data yet)\s*[.<]', re.IGNORECASE),
+    # Wallet page
+    re.compile(r'>\s*(View earnings and request payouts|Request Payout|No earnings records found)\s*[.<]', re.IGNORECASE),
+    # Settings page
+    re.compile(r'>\s*(Save &amp; Reload|Test API Key)\s*<', re.IGNORECASE),
 ]
 
 # Lines that are explicitly allowlisted (substring match)
