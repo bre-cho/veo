@@ -12,6 +12,7 @@ from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.concat_finalizer import ConcatFinalizer
 from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
 from app.render.reassembly.policy.rebuild_policy_engine import RebuildPolicyEngine
+from app.render.reassembly.optimizer.rebuild_strategy_optimizer import RebuildStrategyOptimizer
 from app.render.reassembly.schemas import SmartReassemblyRequest
 from app.render.reassembly.subtitle_rebuild_service import SubtitleRebuildService
 from app.render.reassembly.timeline_drift_guard import TimelineDriftGuard
@@ -56,6 +57,7 @@ class SmartReassemblyService:
             dependency_base_dir=dependency_base_dir,
         )
         self._rebuild_policy = RebuildPolicyEngine()
+        self._optimizer = RebuildStrategyOptimizer()
 
     # ------------------------------------------------------------------
     # Public
@@ -167,9 +169,30 @@ class SmartReassemblyService:
         else:
             rebuild_ids = required_ids
 
+        # Cost-aware strategy selection.
+        all_episode_manifests = self._manifest.list_episode(req.project_id, req.episode_id)
+        affected_range_scene_ids = [item["scene_id"] for item in range_manifests]
+
+        optimization = self._optimizer.choose_strategy(
+            all_manifests=all_episode_manifests,
+            changed_scene_id=req.changed_scene_id,
+            required_scene_ids=sorted(required_ids),
+            optional_scene_ids=sorted(optional_ids),
+            affected_range_scene_ids=affected_range_scene_ids,
+            change_type=req.change_type,
+            has_timeline_drift=drift_report["has_drift"],
+            force_full_rebuild=req.force_full_rebuild,
+            include_optional=req.include_optional_rebuilds,
+        )
+
+        # Use the optimizer's chosen scene set, but always include any
+        # scenes already in rebuild_ids (policy-required or range-mandated).
+        optimizer_ids = set(optimization["chosen_strategy"]["scene_ids"])
+        rebuild_ids = rebuild_ids | optimizer_ids
+
         affected_manifests = [
             item
-            for item in self._manifest.list_episode(req.project_id, req.episode_id)
+            for item in all_episode_manifests
             if item["scene_id"] in rebuild_ids
         ]
         affected_manifests.sort(key=scene_sort_key)
@@ -217,6 +240,7 @@ class SmartReassemblyService:
                     "affected_by_timeline_drift": item["scene_id"] != req.changed_scene_id,
                     "rebuild_reasons": dependency_reasons.get(item["scene_id"], []),
                     "rebuild_policy_decision": policy_decisions.get(item["scene_id"]),
+                    "rebuild_optimizer_strategy": optimization["chosen_strategy"],
                 },
             )
 
@@ -261,6 +285,7 @@ class SmartReassemblyService:
             "required_scene_ids": sorted(required_ids),
             "optional_scene_ids": sorted(optional_ids),
             "skipped_scene_ids": self._rebuild_policy.skipped_scene_ids(policy_decisions),
+            "rebuild_optimization": optimization,
             "rebuilt_count": len(rebuilt_chunks),
             "final": final,
         }
