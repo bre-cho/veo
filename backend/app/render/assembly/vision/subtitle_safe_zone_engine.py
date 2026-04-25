@@ -75,21 +75,23 @@ class SubtitleSafeZoneEngine:
                 return True
         return False
 
+    # High-priority object labels whose boxes influence subtitle placement.
+    # Defined as a class constant to avoid rebuilding the frozenset on every call.
+    _PRIORITY_OBJECT_LABELS = frozenset(["person", "phone", "laptop", "car"])
+
     def _all_boxes(self, detection: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Collect boxes in priority order: faces first, then labeled objects, then saliency.
 
-        Only object boxes whose label is in the high-priority set
+        Only object boxes whose label is in ``_PRIORITY_OBJECT_LABELS``
         (``person``, ``phone``, ``laptop``, ``car``) are included so that
         irrelevant background detections do not push subtitles out of position.
         """
-        _PRIORITY_LABELS = frozenset(["person", "phone", "laptop", "car"])
-
         boxes: List[Dict[str, Any]] = []
         boxes.extend(detection.get("face_bboxes", []))
         boxes.extend(
             box
             for box in detection.get("object_bboxes", [])
-            if box.get("label") in _PRIORITY_LABELS
+            if box.get("label") in self._PRIORITY_OBJECT_LABELS
         )
         boxes.extend(detection.get("saliency_bboxes", []))
         return boxes

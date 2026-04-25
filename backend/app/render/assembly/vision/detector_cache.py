@@ -16,7 +16,7 @@ class DetectorResultCache:
     hash of ``DETECTOR_CONFIG`` so that changing the detector configuration
     automatically invalidates all stored results.
 
-    The cache directory defaults to ``/data/cache/detector`` and is created
+    The cache directory defaults to ``/tmp/detector_cache`` and is created
     automatically.  Override *cache_dir* in tests to use a temporary directory.
     """
 

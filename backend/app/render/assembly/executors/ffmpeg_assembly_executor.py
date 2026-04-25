@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
@@ -14,6 +15,8 @@ from app.render.assembly.vision.frame_sampler import FrameSampler
 from app.render.assembly.vision.subtitle_safe_zone_engine import SubtitleSafeZoneEngine
 from app.render.assembly.vision.video_hash import compute_video_hash
 from app.render.assembly.vision.visual_detector import VisualDetector
+
+_logger = logging.getLogger(__name__)
 
 
 class FFmpegAssemblyExecutor:
@@ -97,8 +100,7 @@ class FFmpegAssemblyExecutor:
                 # Frame sampling / hashing can fail legitimately (video not yet on
                 # disk during dry-runs, or no FFmpeg in the environment).  Fall back
                 # to the safest default placement and log for diagnostics.
-                import logging
-                logging.getLogger(__name__).warning(
+                _logger.warning(
                     "Frame sampling failed for scene %s (%s: %s); "
                     "defaulting to bottom placement.",
                     scene_id,
