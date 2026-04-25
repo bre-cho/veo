@@ -466,7 +466,7 @@ function AiEngineTab() {
             disabled={saving || !keyInput.trim()}
             className="rounded-xl bg-white text-black px-5 py-2 text-sm font-semibold hover:bg-neutral-200 transition disabled:opacity-50"
           >
-            {saving ? "Đang lưu..." : t("settings_save_reload")}
+            {saving ? t("settings_saving") : t("settings_save_reload")}
           </button>
           <button
             type="button"
@@ -474,7 +474,7 @@ function AiEngineTab() {
             disabled={testing || !keyInput.trim()}
             className="rounded-xl border border-neutral-700 px-5 py-2 text-sm font-medium hover:border-neutral-500 transition disabled:opacity-50"
           >
-            {testing ? "Đang kiểm tra..." : t("settings_test_api_key")}
+            {testing ? t("settings_testing") : t("settings_test_api_key")}
           </button>
         </div>
       </form>

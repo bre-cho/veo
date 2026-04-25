@@ -240,6 +240,8 @@ const en: Record<TranslationKey, string> = {
   settings_tab_ai_engine: "AI Engine",
   settings_save_reload: "Save & Reload",
   settings_test_api_key: "Test API Key",
+  settings_saving: "Saving...",
+  settings_testing: "Testing...",
 
   // Projects workspace page
   project_workspace_default_title: "Project Workspace",

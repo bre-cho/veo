@@ -238,6 +238,8 @@ const vi = {
   settings_tab_ai_engine: "Cấu hình AI",
   settings_save_reload: "Lưu & Tải lại",
   settings_test_api_key: "Kiểm tra API Key",
+  settings_saving: "Đang lưu...",
+  settings_testing: "Đang kiểm tra...",
 
   // Projects workspace page
   project_workspace_default_title: "Không gian làm việc dự án",
