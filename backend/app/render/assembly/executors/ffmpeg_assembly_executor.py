@@ -193,7 +193,7 @@ class FFmpegAssemblyExecutor:
             output_path=output_path,
         )
 
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
 
         if result.returncode != 0:
             raise RuntimeError(

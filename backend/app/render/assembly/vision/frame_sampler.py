@@ -45,6 +45,6 @@ class FrameSampler:
             str(frame_path),
         ]
 
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
         return str(frame_path)
