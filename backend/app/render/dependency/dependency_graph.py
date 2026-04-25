@@ -25,6 +25,63 @@ class DependencyGraph:
     # Public
     # ------------------------------------------------------------------
 
+    def affected_scenes_with_reasons(
+        self,
+        changed_scene_id: str,
+        change_type: str,
+        include_self: bool = True,
+    ) -> dict:
+        """Return all affected scene IDs mapped to their rebuild reasons.
+
+        Args:
+            changed_scene_id: The scene whose content has changed.
+            change_type: Category of the change.
+            include_self: Whether to include *changed_scene_id* itself.
+
+        Returns:
+            Dict mapping scene_id -> list of reason dicts, each with keys
+            ``source_scene_id``, ``dependency_type``, ``reason``, ``strength``.
+        """
+        affected: dict = {}
+        queue = [changed_scene_id]
+
+        if include_self:
+            affected[changed_scene_id] = [
+                {
+                    "source_scene_id": changed_scene_id,
+                    "dependency_type": change_type,
+                    "reason": "directly changed scene",
+                    "strength": 1.0,
+                }
+            ]
+
+        while queue:
+            current = queue.pop(0)
+
+            for dep in self.dependencies:
+                if dep["source_scene_id"] != current:
+                    continue
+
+                if not self._matches_change(dep, change_type):
+                    continue
+
+                target = dep["target_scene_id"]
+
+                reason = {
+                    "source_scene_id": dep["source_scene_id"],
+                    "dependency_type": dep["dependency_type"],
+                    "reason": dep.get("reason"),
+                    "strength": dep.get("strength", 1.0),
+                }
+
+                if target not in affected:
+                    affected[target] = []
+                    queue.append(target)
+
+                affected[target].append(reason)
+
+        return affected
+
     def affected_scenes(
         self,
         changed_scene_id: str,

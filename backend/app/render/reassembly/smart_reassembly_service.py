@@ -11,6 +11,11 @@ from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.concat_finalizer import ConcatFinalizer
 from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
+from app.render.reassembly.policy.rebuild_policy_engine import RebuildPolicyEngine
+from app.render.reassembly.optimizer.rebuild_strategy_optimizer import RebuildStrategyOptimizer
+from app.render.reassembly.optimizer.execution_budget_guard import ExecutionBudgetGuard
+from app.render.reassembly.optimizer.budget_policy_presets import resolve_budget_policy
+from app.render.reassembly.budget_response_builder import BudgetAwareResponseBuilder
 from app.render.reassembly.schemas import SmartReassemblyRequest
 from app.render.reassembly.subtitle_rebuild_service import SubtitleRebuildService
 from app.render.reassembly.timeline_drift_guard import TimelineDriftGuard
@@ -54,6 +59,10 @@ class SmartReassemblyService:
             manifest_base_dir=manifest_base_dir,
             dependency_base_dir=dependency_base_dir,
         )
+        self._rebuild_policy = RebuildPolicyEngine()
+        self._optimizer = RebuildStrategyOptimizer()
+        self._budget_guard = ExecutionBudgetGuard()
+        self._budget_response = BudgetAwareResponseBuilder()
 
     # ------------------------------------------------------------------
     # Public
@@ -131,22 +140,114 @@ class SmartReassemblyService:
             has_timeline_drift=requires_range,
         )
 
-        # Graph-aware expansion: add scenes that have a dependency on the
-        # changed scene for the declared change_type.
-        dependency_scene_ids = self._dependency.affected_scenes(
+        # Graph-aware expansion: collect reasons for each affected scene.
+        dependency_reasons: Dict[str, Any] = self._dependency.affected_scenes_with_reasons(
             project_id=req.project_id,
             episode_id=req.episode_id,
             changed_scene_id=req.changed_scene_id,
             change_type=req.change_type,
         )
 
-        affected_ids: set = {item["scene_id"] for item in range_manifests}
-        affected_ids.update(dependency_scene_ids)
+        # Scenes in the affected range due to global subtitle/timeline drift
+        # are always required to rebuild; annotate them with a timeline reason.
+        if requires_range:
+            for item in range_manifests:
+                scene_id = item["scene_id"]
+                dependency_reasons.setdefault(scene_id, []).append({
+                    "source_scene_id": req.changed_scene_id,
+                    "dependency_type": "timeline",
+                    "reason": "timeline drift requires rebuilding following subtitle-burned chunks",
+                    "strength": 1.0,
+                })
+
+        # Apply rebuild policy to filter by required / optional / skip.
+        policy_decisions = self._rebuild_policy.classify_many(
+            reason_report=dependency_reasons,
+            force_quality=req.force_quality_rebuild,
+        )
+
+        required_ids: set = set(self._rebuild_policy.required_scene_ids(policy_decisions))
+        optional_ids: set = set(self._rebuild_policy.optional_scene_ids(policy_decisions))
+
+        # Resolve budget policy preset, then apply per-request overrides.
+        budget_policy = resolve_budget_policy(req.budget_policy)
+
+        include_optional = (
+            req.include_optional_rebuilds
+            if req.include_optional_rebuilds is not None
+            else bool(budget_policy["include_optional_rebuilds"])
+        )
+
+        # Initial policy-based rebuild set (before optimizer narrows/expands it).
+        rebuild_ids: set = required_ids | optional_ids if include_optional else required_ids
+
+        # Cost-aware strategy selection.
+        all_episode_manifests = self._manifest.list_episode(req.project_id, req.episode_id)
+        affected_range_scene_ids = [item["scene_id"] for item in range_manifests]
+
+        optimization = self._optimizer.choose_strategy(
+            all_manifests=all_episode_manifests,
+            changed_scene_id=req.changed_scene_id,
+            required_scene_ids=sorted(required_ids),
+            optional_scene_ids=sorted(optional_ids),
+            affected_range_scene_ids=affected_range_scene_ids,
+            change_type=req.change_type,
+            has_timeline_drift=drift_report["has_drift"],
+            force_full_rebuild=req.force_full_rebuild,
+            include_optional=include_optional,
+        )
+
+        # Enforce execution budget — downgrade or block as required.
+        budget_decision = self._budget_guard.enforce(
+            optimization=optimization,
+            max_cost=(
+                req.max_rebuild_cost
+                if req.max_rebuild_cost is not None
+                else budget_policy["max_rebuild_cost"]
+            ),
+            max_time_sec=(
+                req.max_rebuild_time_sec
+                if req.max_rebuild_time_sec is not None
+                else budget_policy["max_rebuild_time_sec"]
+            ),
+            allow_downgrade=(
+                req.allow_budget_downgrade
+                if req.allow_budget_downgrade is not None
+                else bool(budget_policy["allow_budget_downgrade"])
+            ),
+        )
+
+        budget_api_report = self._budget_response.build(
+            optimization=optimization,
+            budget_decision=budget_decision,
+            budget_policy=budget_policy,
+        )
+
+        if not budget_decision["allowed"]:
+            return {
+                "status": "blocked_by_budget",
+                "project_id": req.project_id,
+                "episode_id": req.episode_id,
+                "changed_scene_id": req.changed_scene_id,
+                "rebuild_optimization": optimization,
+                "execution_budget_guard": budget_decision,
+                "budget_policy": budget_policy,
+                "budget_api_report": budget_api_report,
+                "rebuilt_scene_ids": [],
+                "rebuilt_count": 0,
+            }
+
+        chosen_strategy = budget_decision["chosen_strategy"]
+
+        # Use the optimizer's chosen scene set, but always include any
+        # scenes already in rebuild_ids (policy-required or range-mandated).
+        optimizer_ids = set(chosen_strategy["scene_ids"])
+        rebuild_ids = rebuild_ids | optimizer_ids
 
         affected_manifests = [
             item
-            for item in self._manifest.list_episode(req.project_id, req.episode_id)
-            if item["scene_id"] in affected_ids
+            for item in all_episode_manifests
+            if item["scene_id"] in rebuild_ids
         ]
         affected_manifests.sort(key=scene_sort_key)
 
@@ -191,6 +292,21 @@ class SmartReassemblyService:
                     "needs_reassembly": False,
                     "needs_smart_reassembly": False,
                     "affected_by_timeline_drift": item["scene_id"] != req.changed_scene_id,
+                    "rebuild_reasons": dependency_reasons.get(item["scene_id"], []),
+                    "rebuild_policy_decision": policy_decisions.get(item["scene_id"]),
+                    "rebuild_optimizer_strategy": chosen_strategy,
+                },
+            )
+
+        # Record policy decision for skipped scenes (no rebuild needed).
+        for scene_id in self._rebuild_policy.skipped_scene_ids(policy_decisions):
+            self._manifest.patch_scene(
+                req.project_id,
+                req.episode_id,
+                scene_id,
+                {
+                    "rebuild_policy_decision": policy_decisions[scene_id],
+                    "needs_reassembly": False,
                 },
             )
 
@@ -213,10 +329,20 @@ class SmartReassemblyService:
         return {
             "status": "smart_reassembled",
             "changed_scene_id": req.changed_scene_id,
+            "change_type": req.change_type,
             "timeline_drift": drift_report,
             "timeline_report": timeline_report,
             "subtitle_report": subtitle_report,
             "rebuilt_scene_ids": [c["scene_id"] for c in rebuilt_chunks],
+            "rebuild_reason_report": dependency_reasons,
+            "rebuild_policy_report": policy_decisions,
+            "required_scene_ids": sorted(required_ids),
+            "optional_scene_ids": sorted(optional_ids),
+            "skipped_scene_ids": self._rebuild_policy.skipped_scene_ids(policy_decisions),
+            "rebuild_optimization": optimization,
+            "execution_budget_guard": budget_decision,
+            "budget_policy": budget_policy,
+            "budget_api_report": budget_api_report,
             "rebuilt_count": len(rebuilt_chunks),
             "final": final,
         }

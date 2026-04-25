@@ -140,6 +140,12 @@ try:
 except Exception:  # pragma: no cover
     render_reassembly_router = None  # type: ignore[assignment]
 
+# ── Render Dependency Graph ───────────────────────────────────────────────
+try:
+    from app.render.dependency.api import router as render_dependency_router
+except Exception:  # pragma: no cover
+    render_dependency_router = None  # type: ignore[assignment]
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
