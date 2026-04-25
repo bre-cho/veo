@@ -58,8 +58,14 @@ video_output_dir: str = os.getenv("VIDEO_OUTPUT_DIR", "/app/storage/artifacts/vi
 # Only triggers when APP_ENV is explicitly set to "production" in the environment.
 # ---------------------------------------------------------------------------
 
-if os.getenv("APP_ENV", "").strip().lower() == "production" and public_base_url and "localhost" in public_base_url:
-    raise ValueError(
-        "PUBLIC_BASE_URL contains 'localhost' while APP_ENV=production. "
-        "Set PUBLIC_BASE_URL to the real public hostname before deploying."
-    )
+if os.getenv("APP_ENV", "").strip().lower() == "production":
+    if not public_base_url:
+        raise ValueError(
+            "PUBLIC_BASE_URL is required when APP_ENV=production. "
+            "Set PUBLIC_BASE_URL to the real public hostname before deploying."
+        )
+    if "localhost" in public_base_url:
+        raise ValueError(
+            "PUBLIC_BASE_URL contains 'localhost' while APP_ENV=production. "
+            "Set PUBLIC_BASE_URL to the real public hostname before deploying."
+        )

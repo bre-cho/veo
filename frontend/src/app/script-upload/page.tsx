@@ -1,42 +1,42 @@
 "use client";
 
 import ScriptUploadPreviewFlow from "@/src/components/ScriptUploadPreviewFlow";
+import { useT } from "@/src/i18n/useT";
 
 export default function ScriptUploadPage() {
+  const t = useT();
   return (
     <main className="min-h-screen bg-neutral-950 text-white">
       <div className="mx-auto max-w-6xl px-6 py-8">
         <header className="mb-8">
           <p className="text-sm uppercase tracking-[0.25em] text-white/40">
-            Script Upload
+            {t("nav_script_upload")}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Upload Script → Preview → Edit → Validate → Create Project
+            {t("script_upload_page_title")}
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-white/55">
-            Upload a <code className="rounded bg-white/10 px-1 py-0.5">.txt</code> or{" "}
-            <code className="rounded bg-white/10 px-1 py-0.5">.docx</code> script,
-            preview parsed scenes and subtitles, edit them in place, validate the
-            structure, then confirm to create a project ready for render planning.
+            {t("nav_script_upload")} <code className="rounded bg-white/10 px-1 py-0.5">.txt</code>{" "}
+            <code className="rounded bg-white/10 px-1 py-0.5">.docx</code>
           </p>
         </header>
 
         <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-5">
           <div className="grid gap-4 md:grid-cols-3">
             <InfoCard
-              label="Flow"
-              value="Preview-first"
-              hint="No project is created until the user confirms a valid preview."
+              label={t("script_upload_flow_label")}
+              value={t("script_upload_flow_value")}
+              hint={t("script_upload_flow_hint")}
             />
             <InfoCard
-              label="Validation"
-              value="Inline + panel"
-              hint="Errors are highlighted at row level and field level before confirm."
+              label={t("script_upload_validation_label")}
+              value={t("script_upload_validation_value")}
+              hint={t("script_upload_validation_hint")}
             />
             <InfoCard
-              label="Next step"
-              value="Render planning"
-              hint="Use the created project to prepare provider-specific render plans."
+              label={t("script_upload_next_label")}
+              value={t("script_upload_next_value")}
+              hint={t("script_upload_next_hint")}
             />
           </div>
         </section>

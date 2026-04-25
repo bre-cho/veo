@@ -9,6 +9,7 @@ import {
   ValidationIssue,
   validatePreviewPayload,
 } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 type LoadingAction = null | "subtitles" | "durations" | "all" | "validate";
 
@@ -23,6 +24,7 @@ export default function PreviewEditingLayer({
   onChange,
   onValidationChange,
 }: PreviewEditingLayerProps) {
+  const t = useT();
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [isValid, setIsValid] = useState(true);
@@ -121,9 +123,9 @@ export default function PreviewEditingLayer({
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-white">Regenerate + Validate Tools</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview_regenerate_tools")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              Rebuild subtitles, recalculate durations, and validate preview before confirm.
+              {t("preview_regenerate_tools_desc")}
             </p>
           </div>
 
@@ -133,7 +135,7 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "subtitles" ? "Rebuilding..." : "Rebuild subtitles"}
+              {loadingAction === "subtitles" ? t("preview_rebuilding") : t("preview_rebuild_subtitles")}
             </button>
 
             <button
@@ -141,7 +143,7 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "durations" ? "Recalculating..." : "Recalculate durations"}
+              {loadingAction === "durations" ? t("preview_recalculating") : t("preview_recalculate_durations")}
             </button>
 
             <button
@@ -149,7 +151,7 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "all" ? "Updating..." : "Recalculate all"}
+              {loadingAction === "all" ? t("preview_updating") : t("preview_recalculate_all")}
             </button>
 
             <button
@@ -157,7 +159,7 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
             >
-              {loadingAction === "validate" ? "Validating..." : "Validate preview"}
+              {loadingAction === "validate" ? t("preview_validating") : t("preview_validate_preview")}
             </button>
           </div>
         </div>
@@ -170,9 +172,9 @@ export default function PreviewEditingLayer({
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-white">Scene Editor</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview_scene_editor")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              Edit, add, remove, and reorder scenes before confirming project creation.
+              {t("preview_scene_editor_desc")}
             </p>
           </div>
 
@@ -180,7 +182,7 @@ export default function PreviewEditingLayer({
             onClick={() => onChange(addScene(preview))}
             className="rounded-2xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
           >
-            Add scene
+            {t("preview_add_scene")}
           </button>
         </div>
 
@@ -202,19 +204,19 @@ export default function PreviewEditingLayer({
                     onClick={() => onChange(moveScene(preview, sceneRowIndex, -1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    Move up
+                    {t("preview_move_up")}
                   </button>
                   <button
                     onClick={() => onChange(moveScene(preview, sceneRowIndex, 1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    Move down
+                    {t("preview_move_down")}
                   </button>
                   <button
                     onClick={() => onChange(deleteScene(preview, sceneRowIndex))}
                     className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-200"
                   >
-                    Delete scene
+                    {t("preview_delete_scene")}
                   </button>
                 </div>
 
@@ -343,9 +345,9 @@ export default function PreviewEditingLayer({
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-white">Subtitle Editor</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview_subtitle_editor")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              Edit, add, remove, and reorder subtitle segments before confirming.
+              {t("preview_subtitle_editor_desc")}
             </p>
           </div>
 
@@ -353,7 +355,7 @@ export default function PreviewEditingLayer({
             onClick={() => onChange(addSubtitle(preview))}
             className="rounded-2xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
           >
-            Add subtitle
+            {t("preview_add_subtitle")}
           </button>
         </div>
 
@@ -375,19 +377,19 @@ export default function PreviewEditingLayer({
                     onClick={() => onChange(moveSubtitle(preview, subtitleRowIndex, -1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    Move up
+                    {t("preview_move_up")}
                   </button>
                   <button
                     onClick={() => onChange(moveSubtitle(preview, subtitleRowIndex, 1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    Move down
+                    {t("preview_move_down")}
                   </button>
                   <button
                     onClick={() => onChange(deleteSubtitle(preview, subtitleRowIndex))}
                     className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-200"
                   >
-                    Delete subtitle
+                    {t("preview_delete_subtitle")}
                   </button>
                 </div>
 
@@ -533,9 +535,9 @@ export default function PreviewEditingLayer({
 
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-3">
-          <h3 className="text-lg font-semibold text-white">Rebuilt Script</h3>
+          <h3 className="text-lg font-semibold text-white">{t("preview_rebuilt_script")}</h3>
           <p className="mt-1 text-sm text-white/55">
-            This is rebuilt automatically from edited scenes and will be saved into the project.
+            {t("preview_rebuilt_script_desc")}
           </p>
         </div>
 
@@ -569,12 +571,13 @@ function ValidationPanel({
   issues: ValidationIssue[];
   valid: boolean;
 }) {
+  const t = useT();
   if (valid && issues.length === 0) {
     return (
       <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-5">
-        <h3 className="text-lg font-semibold text-emerald-200">Preview is valid</h3>
+        <h3 className="text-lg font-semibold text-emerald-200">{t("preview_valid")}</h3>
         <p className="mt-1 text-sm text-emerald-100/80">
-          No blocking issues found. You can confirm and create the project.
+          {t("preview_valid_desc")}
         </p>
       </div>
     );
@@ -582,9 +585,9 @@ function ValidationPanel({
 
   return (
     <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 p-5">
-      <h3 className="text-lg font-semibold text-rose-200">Validation issues found</h3>
+      <h3 className="text-lg font-semibold text-rose-200">{t("preview_invalid")}</h3>
       <p className="mt-1 text-sm text-rose-100/80">
-        Fix the issues below before creating the project.
+        {t("preview_invalid_desc")}
       </p>
 
       <div className="mt-4 space-y-2">

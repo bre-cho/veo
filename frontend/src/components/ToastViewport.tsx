@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useT } from "@/src/i18n/useT";
 
 export type ToastTone = "success" | "error" | "info";
 
@@ -26,6 +27,7 @@ export default function ToastViewport({
   onDismiss: (id: string) => void;
   autoDismissMs?: number;
 }) {
+  const t = useT();
   useEffect(() => {
     if (items.length === 0) return;
     const timers = items.map((item) =>
@@ -57,7 +59,7 @@ export default function ToastViewport({
                 onClick={() => onDismiss(item.id)}
                 className="rounded-lg px-2 py-1 text-xs opacity-70 transition hover:opacity-100"
               >
-                Close
+                {t("close")}
               </button>
             </div>
           </div>
