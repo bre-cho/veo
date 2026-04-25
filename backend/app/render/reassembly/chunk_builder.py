@@ -4,13 +4,15 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.core.runtime_paths import render_paths
+
 
 class ChunkBuilder:
     """Encodes a single scene into a self-contained MP4 chunk.
 
     The chunk contains the scene video, mixed audio, and (optionally) burnt-in
     ASS subtitles.  It is stored at
-    ``/data/renders/chunks/{project_id}/{episode_id}/{scene_id}.mp4``.
+    ``{chunks_dir}/{project_id}/{episode_id}/{scene_id}.mp4``.
     """
 
     def build_scene_chunk(
@@ -38,7 +40,7 @@ class ChunkBuilder:
         audio_path: str = scene_manifest["audio_path"]
         subtitle_path: Optional[str] = scene_manifest.get("subtitle_path")
 
-        out_dir = Path(f"/data/renders/chunks/{project_id}/{episode_id}")
+        out_dir = Path(render_paths.chunks_dir) / project_id / episode_id
         out_dir.mkdir(parents=True, exist_ok=True)
         output_path = out_dir / f"{scene_id}.mp4"
 

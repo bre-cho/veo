@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.core.runtime_paths import render_paths
 from app.render.dependency.dependency_graph import DependencyGraph
 from app.render.dependency.dependency_resolver import DependencyResolver
 from app.render.manifest.manifest_service import ManifestService
@@ -14,7 +15,7 @@ class DependencyService:
 
     Graph files are stored under
     ``{base_dir}/{project_id}/{episode_id}.json`` (default base dir is
-    ``/data/renders/dependency``).
+    ``render_paths.dependency_dir``).
 
     Typical usage::
 
@@ -28,12 +29,12 @@ class DependencyService:
 
     def __init__(
         self,
-        manifest_base_dir: str = "/data/renders/manifests",
-        dependency_base_dir: str = "/data/renders/dependency",
+        manifest_base_dir: str | None = None,
+        dependency_base_dir: str | None = None,
     ) -> None:
         self.manifest = ManifestService(base_dir=manifest_base_dir)
         self.resolver = DependencyResolver()
-        self._base_dir = Path(dependency_base_dir)
+        self._base_dir = Path(dependency_base_dir if dependency_base_dir is not None else render_paths.dependency_dir)
 
     # ------------------------------------------------------------------
     # Paths

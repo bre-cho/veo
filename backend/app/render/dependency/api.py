@@ -14,7 +14,7 @@ def build_dependency_graph(project_id: str, episode_id: str):
     """Build (or rebuild) the dependency graph for an episode.
 
     Reads the current scene manifests, computes all dependency edges, and
-    persists the graph under ``/data/renders/dependency/{project_id}/{episode_id}.json``.
+    persists the graph under ``{dependency_dir}/{project_id}/{episode_id}.json``.
     """
     return _service.build_graph(project_id, episode_id)
 

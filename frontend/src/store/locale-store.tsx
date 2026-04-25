@@ -13,8 +13,8 @@ type LocaleAction =
   | { type: "SET_LANGUAGE"; payload: { languageCode: string; rtl?: boolean } };
 
 const initialState: LocaleState = {
-  marketCode: "US",
-  languageCode: "en",
+  marketCode: "VN",
+  languageCode: "vi",
   rtl: false,
 };
 
