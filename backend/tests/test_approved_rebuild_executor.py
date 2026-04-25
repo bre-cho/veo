@@ -241,7 +241,11 @@ def test_preflight_blocked_decision_fails():
 
 def test_preflight_expired_decision_fails():
     from datetime import datetime, timezone, timedelta
-    old_ts = (datetime.now(tz=timezone.utc) - timedelta(seconds=DECISION_MAX_AGE_SECONDS + 10)).isoformat()
+    _TTL_BUFFER_SECONDS = 10  # Extra seconds past the TTL to ensure expiry
+    old_ts = (
+        datetime.now(tz=timezone.utc)
+        - timedelta(seconds=DECISION_MAX_AGE_SECONDS + _TTL_BUFFER_SECONDS)
+    ).isoformat()
     d = _make_decision(decided_at=old_ts)
     result = RebuildPreflightValidator.validate(d)
     assert result["valid"] is False

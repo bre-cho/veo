@@ -101,10 +101,16 @@ class DbRebuildPersistence:
             self._db.commit()
             return True
         except IntegrityError:
+            # Expected: another request already claimed this key (race condition).
             self._db.rollback()
             return False
         except Exception as exc:  # noqa: BLE001
-            _logger.warning("reserve_key failed for key %s: %s", key, exc)
+            # Unexpected DB error — log as warning and surface as failure.
+            _logger.warning(
+                "reserve_key: unexpected DB error for key %s: %s",
+                key,
+                exc,
+            )
             self._db.rollback()
             return False
 

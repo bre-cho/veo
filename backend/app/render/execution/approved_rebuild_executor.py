@@ -196,7 +196,8 @@ class RebuildPreflightValidator:
 
         # ── 3. Decision not already blocked ────────────────────────────
         # Accept both "block" (raw engine value) and "blocked" (executor status).
-        if decision.get("decision") in (STATUS_BLOCKED, "block"):
+        raw_decision = decision.get("decision", "")
+        if raw_decision in (STATUS_BLOCKED, "block"):
             return {
                 "valid": False,
                 "reason": "Decision is blocked by budget guard — cannot execute",
@@ -310,12 +311,17 @@ class ApprovedRebuildExecutor:
         if job_id is None:
             job_id = ikey[:16]
 
-        # ── Guard: blocked or downgraded decisions are not executable ──
-        # The UnifiedRebuildDecisionEngine uses "block"/"downgrade" (raw engine
-        # values); the executor's own statuses are "blocked"/"downgraded".
-        # Accept both forms so decisions flow correctly regardless of source.
+        # Normalize engine action names ("block"/"downgrade") to the executor's
+        # canonical status values ("blocked"/"downgraded").  The engine produces
+        # short forms; the executor uses longer forms internally.
         action = decision.get("decision", "block")
-        if action in (STATUS_BLOCKED, "block"):
+        if action == "block":
+            action = STATUS_BLOCKED
+        elif action == "downgrade":
+            action = STATUS_DOWNGRADED
+
+        # ── Guard: blocked or downgraded decisions are not executable ──
+        if action == STATUS_BLOCKED:
             result = self._execution_result(
                 job_id=job_id,
                 status=STATUS_BLOCKED,
@@ -326,7 +332,7 @@ class ApprovedRebuildExecutor:
             self._update_status(job_id, STATUS_BLOCKED, result)
             return result
 
-        if action in (STATUS_DOWNGRADED, "downgrade") and not decision.get("rebuild_scene_ids"):
+        if action == STATUS_DOWNGRADED and not decision.get("rebuild_scene_ids"):
             result = self._execution_result(
                 job_id=job_id,
                 status=STATUS_DOWNGRADED,
