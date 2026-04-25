@@ -101,13 +101,25 @@ json_post "/drama/scenes/${SCENE_ID}/compile" "{
   \"scene_analysis\": ${ANALYZE_RESP}
 }"
 
-echo "[6/8] Persist via worker-compatible endpoint if available"
+echo "[6/8] Persist via process endpoint"
 set +e
-json_post "/drama/admin/recompute-scene" "{\"scene_id\": \"${SCENE_ID}\", \"project_id\": \"${PROJECT_ID}\"}"
+json_post "/drama/admin/scenes/${SCENE_ID}/process" "{
+  \"project_id\": \"${PROJECT_ID}\",
+  \"character_ids\": [\"${AUTHORITY_ID}\", \"${REBEL_ID}\"],
+  \"scene_context\": {
+    \"episode_id\": \"${EPISODE_ID}\",
+    \"scene_goal\": \"Authority tries to force confession while Rebel exposes a hidden truth\",
+    \"visible_conflict\": \"discipline\",
+    \"hidden_conflict\": \"control of narrative\",
+    \"pressure_level\": 0.82,
+    \"key_secret_in_play\": \"Authority already knew the betrayal\"
+  },
+  \"async_mode\": false
+}"
 RECOMPUTE_SCENE_STATUS=$?
 set -e
 if [[ "$RECOMPUTE_SCENE_STATUS" -ne 0 ]]; then
-  echo "recompute-scene endpoint unavailable or contract differs; continuing read checks"
+  echo "process endpoint unavailable or contract differs; continuing read checks"
 fi
 
 echo "[7/8] Recall memory"

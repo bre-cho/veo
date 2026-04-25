@@ -62,8 +62,8 @@ def process_scene(scene_id: str, scene_context: dict) -> dict:
         scene_state.project_id = project_id
         scene_state.episode_id = UUID(str(scene_context["episode_id"])) if scene_context.get("episode_id") else None
         scene_state.scene_goal = scene_context.get("scene_goal")
-        scene_state.visible_conflict = drama_state.get("visible_conflict")
-        scene_state.hidden_conflict = drama_state.get("hidden_conflict")
+        scene_state.visible_conflict = scene_context.get("visible_conflict")
+        scene_state.hidden_conflict = scene_context.get("hidden_conflict")
         scene_state.scene_temperature = float(drama_state.get("tension_score", 0.0))
         scene_state.pressure_level = float(drama_state.get("pressure_level", 0.0))
         scene_state.dominant_character_id = _to_uuid(drama_state.get("dominant_character_id"))
@@ -83,10 +83,20 @@ def process_scene(scene_id: str, scene_context: dict) -> dict:
         if memory_payloads:
             memory_service.bulk_create_traces(memory_payloads)
 
-        for character in scene_context.get("characters", []):
-            character_id = UUID(str(character["character_id"]))
-            current_arc = arc_service.get_latest_arc(character_id=character_id, episode_id=analysis.get("episode_id"))
-            arc_payload = arc_service.build_arc_payload(character_id=character_id, analysis=analysis, current_arc=current_arc)
+        arc_character_ids = scene_context.get("character_ids") or [
+            c["character_id"] for c in scene_context.get("characters", [])
+        ]
+        for raw_id in arc_character_ids:
+            character_id = UUID(str(raw_id))
+            current_arc = arc_service.get_latest_arc(
+                character_id=character_id,
+                episode_id=_to_uuid(analysis.get("episode_id")),
+            )
+            arc_payload = arc_service.build_arc_payload(
+                character_id=character_id,
+                analysis=analysis,
+                current_arc=current_arc,
+            )
             arc_service.create_or_update_arc(arc_payload)
 
         db.commit()

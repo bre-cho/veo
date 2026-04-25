@@ -160,8 +160,16 @@ def compile_scene(
 
     power_shift = effective_analysis.get("power_shift") or {}
     if power_shift:
-        dominant_id = power_shift.get("from_character_id") or effective_analysis.get("dominant_character_id")
-        target_id = power_shift.get("to_character_id") or effective_analysis.get("threatened_character_id")
+        dominant_id = (
+            power_shift.get("from_character_id")
+            or power_shift.get("dominant_character_id")
+            or effective_analysis.get("dominant_character_id")
+        )
+        target_id = (
+            power_shift.get("to_character_id")
+            or power_shift.get("threatened_character_id")
+            or effective_analysis.get("threatened_character_id")
+        )
         if dominant_id and target_id:
             db.query(DramaPowerShift).filter(DramaPowerShift.scene_id == scene_id).delete()
             db.add(
