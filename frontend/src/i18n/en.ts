@@ -46,6 +46,7 @@ const en: Record<TranslationKey, string> = {
   home_card_settings: "Settings",
   home_card_settings_desc: "Manage Google AI accounts with account rotation to run multiple accounts simultaneously",
   home_card_api_docs: "API Docs",
+  home_card_api_docs_desc: "FastAPI OpenAPI docs for backend routes",
 
   // Dashboard / incidents
   dashboard_title: "Dashboard",

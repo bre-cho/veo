@@ -44,6 +44,7 @@ const vi = {
   home_card_settings: "Cài đặt",
   home_card_settings_desc: "Quản lý tài khoản Google AI với xoay vòng tài khoản để chạy nhiều tài khoản đồng thời",
   home_card_api_docs: "Tài liệu API",
+  home_card_api_docs_desc: "Tài liệu OpenAPI FastAPI cho các route backend",
 
   // Dashboard / incidents
   dashboard_title: "Bảng điều khiển",

@@ -147,9 +147,9 @@ def rebuild_approve(
             idempotency_backend=persistence,
         )
         return executor.execute(decision=req.decision, job_id=req.job_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         _logger.exception("rebuild_approve: unexpected error")
-        raise HTTPException(status_code=500, detail="Rebuild execution failed") from exc
+        raise HTTPException(status_code=500, detail="Rebuild execution failed")
 
 
 @router.post("/execute")
