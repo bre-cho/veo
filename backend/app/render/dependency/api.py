@@ -41,6 +41,7 @@ def get_affected_scenes_with_reasons(
         "affected": affected,
     }
 
+@router.get("/affected/{project_id}/{episode_id}/{scene_id}/{change_type}")
 def get_affected_scenes(
     project_id: str,
     episode_id: str,

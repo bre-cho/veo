@@ -1,3 +1,16 @@
+"""Rebuild policy engine — mandatory / optional / skip classification.
+
+This module provides :class:`RebuildPolicyEngine` with ``mandatory/optional/skip``
+terminology intended for use by the cost-aware
+:mod:`~app.render.reassembly.optimizer.rebuild_strategy_optimizer`.
+
+The companion engine at
+:mod:`app.render.reassembly.policy.rebuild_policy_engine` uses
+``required/optional/skip`` terminology with configurable thresholds and is
+used directly by :class:`~app.render.reassembly.smart_reassembly_service.SmartReassemblyService`.
+Both engines serve the same conceptual role but expose slightly different
+thresholds and APIs suited to their respective callers.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List
