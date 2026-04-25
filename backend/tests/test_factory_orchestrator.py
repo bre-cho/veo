@@ -111,9 +111,15 @@ class TestStageScriptPlan:
         mock_seo = MagicMock()
         mock_seo.title = "AI in 2026: The Future"
         mock_seo.description = "Hook text"
-        mock_seo.model_dump.return_value = {"title": "AI in 2026: The Future", "description": "Hook text",
-                                              "video_hashtags": [], "channel_hashtags": [], "tags": [],
-                                              "pinned_comment": "", "thumbnail_brief": ""}
+        mock_seo.model_dump.return_value = {
+            "title": "AI in 2026: The Future",
+            "description": "Hook text",
+            "video_hashtags": [],
+            "channel_hashtags": [],
+            "tags": [],
+            "pinned_comment": "",
+            "thumbnail_brief": "",
+        }
         mock_scorecard = MagicMock()
         mock_scorecard.decision = "WINNER"
         mock_scorecard.total = 92
@@ -161,8 +167,10 @@ class TestStageSceneBuild:
         with patch("app.services.storyboard_engine.StoryboardEngine", side_effect=ImportError):
             orch._stage_scene_build(ctx)
 
-        required = {"scene_index", "voiceover", "visual_prompt", "avatar_instruction",
-                    "camera_instruction", "duration", "subtitle_text", "dependency_reason"}
+        required = {
+            "scene_index", "voiceover", "visual_prompt", "avatar_instruction",
+            "camera_instruction", "duration", "subtitle_text", "dependency_reason",
+        }
         for scene in ctx.scenes:
             assert required.issubset(scene.keys()), f"Missing keys in scene: {scene.keys()}"
 

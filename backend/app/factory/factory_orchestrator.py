@@ -26,6 +26,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+# Stable namespace for deriving deterministic render job IDs from factory run IDs.
+_FACTORY_RENDER_NS = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430ca")
+
 from sqlalchemy.orm import Session
 
 from app.factory.factory_context import FactoryContext
@@ -444,7 +447,7 @@ class FactoryOrchestrator:
     def _stage_execute_render(self, ctx: FactoryContext) -> dict:
         """Create a render job and dispatch the Celery render task."""
         # Always generate an idempotent job ID for this run
-        render_job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"factory:{ctx.run_id}"))
+        render_job_id = str(uuid.uuid5(_FACTORY_RENDER_NS, f"factory:{ctx.run_id}"))
         ctx.render_job_id = render_job_id
 
         dispatched = False
