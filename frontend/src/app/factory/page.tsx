@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useT } from "@/src/i18n/useT";
+import { type TranslationKey } from "@/src/i18n/vi";
 import FactoryRunPanel from "@/src/components/factory/FactoryRunPanel";
 import FactoryStageTimeline from "@/src/components/factory/FactoryStageTimeline";
 import FactoryQualityGatePanel from "@/src/components/factory/FactoryQualityGatePanel";
@@ -11,6 +12,17 @@ import {
   type FactoryRunOut,
   type FactoryRunDetailOut,
 } from "@/src/lib/api";
+
+// Map raw QA issue codes → i18n keys
+const QA_ISSUE_KEY_PREFIX = "factory_issue_";
+
+function QAIssueLabel({ code, t }: { code: string; t: (k: TranslationKey) => string }) {
+  // Strip dynamic suffix (e.g. "manifest_scene_mismatch:expected=3,got=2")
+  const base = code.split(":")[0];
+  const key = `${QA_ISSUE_KEY_PREFIX}${base}` as TranslationKey;
+  const label = t(key) !== key ? t(key) : code;
+  return <span>{label}</span>;
+}
 
 export default function FactoryPage() {
   const t = useT();
@@ -42,6 +54,63 @@ export default function FactoryPage() {
       setLoadingDetail(false);
     }
   }
+
+  // Extract QA issues from the QA_VALIDATE stage output summary
+  const qaIssues: string[] = (() => {
+    if (!selectedDetail) return [];
+    const qaStage = (selectedDetail.stages ?? []).find(
+      (s: any) => s.stage_name === "QA_VALIDATE"
+    );
+    if (!qaStage?.output_summary) return [];
+    try {
+      const parsed = JSON.parse(qaStage.output_summary);
+      return Array.isArray(parsed.issues) ? parsed.issues : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  // Extract SEO details from run or stage output
+  const seoData: Record<string, any> = (() => {
+    if (!selectedDetail) return {};
+    const seoStage = (selectedDetail.stages ?? []).find(
+      (s: any) => s.stage_name === "SEO_PACKAGE"
+    );
+    if (!seoStage?.output_summary) return {};
+    try {
+      return JSON.parse(seoStage.output_summary) ?? {};
+    } catch {
+      return {};
+    }
+  })();
+
+  // Extract publish details from stage output
+  const publishData: Record<string, any> = (() => {
+    if (!selectedDetail) return {};
+    const pubStage = (selectedDetail.stages ?? []).find(
+      (s: any) => s.stage_name === "PUBLISH"
+    );
+    if (!pubStage?.output_summary) return {};
+    try {
+      return JSON.parse(pubStage.output_summary) ?? {};
+    } catch {
+      return {};
+    }
+  })();
+
+  // Extract artifact details from EXECUTE_RENDER output
+  const artifactData: Record<string, any> = (() => {
+    if (!selectedDetail) return {};
+    const exStage = (selectedDetail.stages ?? []).find(
+      (s: any) => s.stage_name === "EXECUTE_RENDER"
+    );
+    if (!exStage?.output_summary) return {};
+    try {
+      return JSON.parse(exStage.output_summary) ?? {};
+    } catch {
+      return {};
+    }
+  })();
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-10 text-white">
@@ -117,6 +186,116 @@ export default function FactoryPage() {
                   )}
                 </div>
 
+                {/* QA Issues */}
+                {qaIssues.length > 0 && (
+                  <div className="rounded-3xl border border-orange-500/20 bg-orange-500/10 p-4 space-y-2">
+                    <h3 className="text-sm font-semibold text-orange-300 uppercase tracking-wider">
+                      {t("factory_incidents_title")}
+                    </h3>
+                    <ul className="space-y-1">
+                      {qaIssues.map((code) => (
+                        <li key={code} className="flex items-start gap-2 text-xs text-orange-200">
+                          <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
+                          <QAIssueLabel code={code} t={t as any} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Artifact panel */}
+                {(selectedDetail.output_video_url || artifactData.manifest_scene_count != null) && (
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-white/50">
+                      {t("factory_artifact_title")}
+                    </h3>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      {selectedDetail.output_video_url && (
+                        <>
+                          <dt className="text-white/40">{t("factory_artifact_video_url")}</dt>
+                          <dd className="truncate text-white/70">
+                            <a href={selectedDetail.output_video_url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                              {selectedDetail.output_video_url}
+                            </a>
+                          </dd>
+                        </>
+                      )}
+                      {artifactData.manifest_scene_count != null && (
+                        <>
+                          <dt className="text-white/40">{t("factory_artifact_scene_count")}</dt>
+                          <dd className="text-white/70">{artifactData.manifest_scene_count}</dd>
+                        </>
+                      )}
+                      {artifactData.estimated_duration_seconds != null && (
+                        <>
+                          <dt className="text-white/40">{t("factory_artifact_duration")}</dt>
+                          <dd className="text-white/70">{artifactData.estimated_duration_seconds}s</dd>
+                        </>
+                      )}
+                    </dl>
+                  </div>
+                )}
+
+                {/* SEO package panel */}
+                {(seoData.title || seoData.description) && (
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-white/50">
+                      {t("factory_seo_label")}
+                    </h3>
+                    {!seoData.title && !seoData.generated && (
+                      <p className="text-xs text-white/40">{t("factory_seo_not_generated")}</p>
+                    )}
+                    <dl className="space-y-1 text-xs">
+                      {seoData.title && (
+                        <div>
+                          <dt className="text-white/40">{t("factory_seo_title_label")}</dt>
+                          <dd className="text-white/70">{seoData.title}</dd>
+                        </div>
+                      )}
+                      {seoData.description && (
+                        <div>
+                          <dt className="text-white/40">{t("factory_seo_description_label")}</dt>
+                          <dd className="text-white/60 line-clamp-3">{seoData.description}</dd>
+                        </div>
+                      )}
+                      {Array.isArray(seoData.hashtags_video) && seoData.hashtags_video.length > 0 && (
+                        <div>
+                          <dt className="text-white/40">{t("factory_seo_tags_label")}</dt>
+                          <dd className="text-white/60">{seoData.hashtags_video.join(" ")}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                )}
+
+                {/* Publish panel */}
+                {publishData.status && (
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-white/50">
+                      {t("factory_publish_title")}
+                    </h3>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      <dt className="text-white/40">{t("factory_status")}</dt>
+                      <dd className="text-white/70">
+                        {publishData.status === "dry_run"
+                          ? t("factory_publish_status_dry_run")
+                          : publishData.status === "scheduled"
+                          ? t("factory_publish_status_scheduled")
+                          : publishData.status === "live"
+                          ? t("factory_publish_status_live")
+                          : publishData.status}
+                      </dd>
+                      <dt className="text-white/40">{t("factory_publish_dry_run_label")}</dt>
+                      <dd className="text-white/70">
+                        {publishData.dry_run ? "✓ Bật" : "✗ Tắt"}
+                      </dd>
+                    </dl>
+                    {publishData.dry_run && (
+                      <p className="text-xs text-yellow-300/80">{t("factory_publish_approval_required")}</p>
+                    )}
+                  </div>
+                )}
+
                 <FactoryStageTimeline stages={selectedDetail.stages ?? []} />
                 <FactoryQualityGatePanel gates={selectedDetail.quality_gates ?? []} />
 
@@ -148,3 +327,4 @@ export default function FactoryPage() {
     </main>
   );
 }
+

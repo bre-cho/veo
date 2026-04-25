@@ -344,6 +344,45 @@ const en: Record<TranslationKey, string> = {
   factory_input_type_series: "series",
   factory_topic_placeholder: "AI trends 2026...",
   factory_unknown_error: "Unknown error",
+
+  // Stage error codes (QA issues)
+  factory_issue_no_scenes_built: "No scenes built",
+  factory_issue_no_render_job_id: "Missing render job ID",
+  factory_issue_missing_script_title: "Missing script title",
+  factory_issue_brain_decision_block: "AI brain blocked this content",
+  factory_issue_no_avatar_assigned: "No avatar assigned",
+  factory_issue_empty_render_plan: "Render plan is empty",
+  factory_issue_manifest_empty_scenes: "Manifest has no scenes",
+  factory_issue_manifest_not_readable: "Manifest not readable",
+  factory_issue_invalid_duration: "Invalid video duration",
+  factory_issue_seo_package_empty: "SEO package is empty",
+  factory_issue_publish_missing_run_id: "Publish payload missing run_id",
+  factory_issue_publish_missing_dry_run_flag: "Publish payload missing dry_run flag",
+
+  // Artifact / render detail panel
+  factory_artifact_title: "Production Artifacts",
+  factory_artifact_video_url: "Video URL",
+  factory_artifact_audio_url: "Audio URL",
+  factory_artifact_duration: "Duration",
+  factory_artifact_scene_count: "Scene count",
+  factory_artifact_manifest: "Render manifest",
+  factory_artifact_manifest_readable: "Readable",
+  factory_artifact_manifest_missing: "No manifest",
+
+  // SEO detail panel
+  factory_seo_title_label: "SEO Title",
+  factory_seo_description_label: "Description",
+  factory_seo_tags_label: "Hashtags",
+  factory_seo_not_generated: "SEO package not generated",
+
+  // Publish detail panel
+  factory_publish_title: "Publish Info",
+  factory_publish_status_dry_run: "Dry run (preview)",
+  factory_publish_status_scheduled: "Scheduled for publishing",
+  factory_publish_status_live: "Published",
+  factory_publish_approval_required: "Approval required before live publish",
+  factory_publish_dry_run_label: "Dry run mode",
+  factory_publish_live_label: "Live publish",
 };
 
 export default en;

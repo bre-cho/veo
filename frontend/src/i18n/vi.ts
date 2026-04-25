@@ -342,6 +342,45 @@ const vi = {
   factory_input_type_series: "series",
   factory_topic_placeholder: "Xu hướng AI 2026...",
   factory_unknown_error: "Lỗi không xác định",
+
+  // Stage error codes (QA issues)
+  factory_issue_no_scenes_built: "Chưa tạo được cảnh nào",
+  factory_issue_no_render_job_id: "Thiếu ID công việc render",
+  factory_issue_missing_script_title: "Thiếu tiêu đề kịch bản",
+  factory_issue_brain_decision_block: "AI đánh giá nội dung bị chặn",
+  factory_issue_no_avatar_assigned: "Chưa chọn avatar",
+  factory_issue_empty_render_plan: "Kế hoạch render trống",
+  factory_issue_manifest_empty_scenes: "Manifest không có cảnh",
+  factory_issue_manifest_not_readable: "Không đọc được manifest",
+  factory_issue_invalid_duration: "Thời lượng video không hợp lệ",
+  factory_issue_seo_package_empty: "Gói SEO trống",
+  factory_issue_publish_missing_run_id: "Payload publish thiếu run_id",
+  factory_issue_publish_missing_dry_run_flag: "Payload publish thiếu cờ dry_run",
+
+  // Artifact / render detail panel
+  factory_artifact_title: "Kết quả sản xuất",
+  factory_artifact_video_url: "URL video",
+  factory_artifact_audio_url: "URL âm thanh",
+  factory_artifact_duration: "Thời lượng",
+  factory_artifact_scene_count: "Số cảnh",
+  factory_artifact_manifest: "Manifest render",
+  factory_artifact_manifest_readable: "Đọc được",
+  factory_artifact_manifest_missing: "Chưa có manifest",
+
+  // SEO detail panel
+  factory_seo_title_label: "Tiêu đề SEO",
+  factory_seo_description_label: "Mô tả",
+  factory_seo_tags_label: "Thẻ hashtag",
+  factory_seo_not_generated: "Chưa tạo gói SEO",
+
+  // Publish detail panel
+  factory_publish_title: "Thông tin publish",
+  factory_publish_status_dry_run: "Chạy thử (dry run)",
+  factory_publish_status_scheduled: "Đã lên lịch phát hành",
+  factory_publish_status_live: "Đã phát hành",
+  factory_publish_approval_required: "Cần duyệt trước khi phát hành thật",
+  factory_publish_dry_run_label: "Chế độ thử",
+  factory_publish_live_label: "Phát hành thật",
 } as const;
 
 export type TranslationKey = keyof typeof vi;
