@@ -69,6 +69,7 @@ services:
     environment:
       BACKEND_SCHEMA_BOOTSTRAP: ${BACKEND_SCHEMA_BOOTSTRAP:-}
       PYTHONPATH: /app
+      CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
     volumes:
       - ./backend:/app
       - render_storage:/app/storage
@@ -88,7 +89,7 @@ services:
       timeout: 5s
       retries: 30
 
-  worker:
+  worker-render:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
@@ -100,6 +101,89 @@ services:
         required: false
     environment:
       PYTHONPATH: /app
+      CELERY_QUEUES: render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance
+      CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
+    volumes:
+      - ./backend:/app
+      - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command: ["/bin/bash", "/app/scripts/start-worker.sh"]
+
+  worker-audio:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
+    environment:
+      PYTHONPATH: /app
+      CELERY_QUEUES: audio
+      CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
+    volumes:
+      - ./backend:/app
+      - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command: ["/bin/bash", "/app/scripts/start-worker.sh"]
+
+  worker-template:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
+    environment:
+      PYTHONPATH: /app
+      CELERY_QUEUES: celery,template,autopilot
+      CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
+    volumes:
+      - ./backend:/app
+      - render_storage:/app/storage
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command: ["/bin/bash", "/app/scripts/start-worker.sh"]
+
+  worker-drama:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
+    environment:
+      PYTHONPATH: /app
+      CELERY_QUEUES: drama
+      CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
     volumes:
       - ./backend:/app
       - render_storage:/app/storage
@@ -155,7 +239,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      worker:
+      worker-render:
         condition: service_started
     ports: ["5555:5555"]
     command: ["celery", "-A", "app.core.celery_app.celery_app", "flower", "--port=5555"]
@@ -171,7 +255,8 @@ services:
       - path: ./frontend/.env.local
         required: false
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://api:8000/api/v1
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      INTERNAL_API_BASE_URL: http://api:8000/api/v1
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
