@@ -3,9 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 function resolveApiBaseUrl(): string {
   const raw =
     process.env.API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    "http://localhost:8000/api/v1";
-  return raw.replace(/\/+$/, "");
+    process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  if (!raw && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "API_BASE_URL (or NEXT_PUBLIC_API_BASE_URL) is not set. " +
+      "This environment variable is required in production."
+    );
+  }
+
+  return (raw || "http://localhost:8000/api/v1").replace(/\/+$/, "");
 }
 
 export async function GET(

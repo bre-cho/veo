@@ -52,6 +52,7 @@ import {
   type RenderEventItem,
   type RenderJobListItem,
 } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,7 @@ function RenderJobsDashboardPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const t = useT();
 
   const initialProvider = searchParams.get("provider") || "all";
   const initialHealth = searchParams.get("health") || "all";
@@ -721,14 +723,14 @@ function RenderJobsDashboardPageContent() {
               {saveViewShareScope === "role" ? <input value={saveViewAllowedRoles} onChange={(e) => setSaveViewAllowedRoles(e.target.value)} placeholder="team_lead,admin" className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /> : null}
               <button data-testid="saved-view-save-button" type="button" onClick={() => void handleSaveCurrentView()} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10">Save current view</button>
               {editingViewId ? <div className="space-y-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100">Edit saved view</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-100">{t("views_edit_saved_view")}</p>
                 <input value={editViewName} onChange={(e) => setEditViewName(e.target.value)} placeholder="View name" className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" />
                 <textarea value={editViewDescription} onChange={(e) => setEditViewDescription(e.target.value)} placeholder="Optional description" className="min-h-[80px] w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" />
                 <label className="inline-flex items-center gap-2 text-xs text-white/60"><input type="checkbox" checked={editViewShared} onChange={(e) => setEditViewShared(e.target.checked)} />Shared view</label>
                 <label className="space-y-1 text-xs text-white/55"><span>Share scope</span><select value={editViewShareScope} onChange={(e) => { setEditViewShareScope(e.target.value); setEditViewShared(e.target.value !== "private"); }} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white"><option value="private">private</option><option value="shared_all">shared_all</option><option value="team">team</option><option value="role">role</option></select></label>
                 {editViewShareScope === "team" ? <input value={editViewTeamId} onChange={(e) => setEditViewTeamId(e.target.value)} placeholder="Shared team id" className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /> : null}
                 {editViewShareScope === "role" ? <input value={editViewAllowedRoles} onChange={(e) => setEditViewAllowedRoles(e.target.value)} placeholder="team_lead,admin" className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white" /> : null}
-                <div className="flex gap-2"><button type="button" onClick={() => void handleUpdateView()} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10">Update view</button><button type="button" onClick={() => setEditingViewId(null)} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/70">Cancel</button></div>
+                <div className="flex gap-2"><button type="button" onClick={() => void handleUpdateView()} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10">{t("views_update")}</button><button type="button" onClick={() => setEditingViewId(null)} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/70">{t("cancel")}</button></div>
                 <p className="text-[11px] text-white/45">Update applies current dashboard filters and segment.</p>
               </div> : null}
             </div>
@@ -741,8 +743,8 @@ function RenderJobsDashboardPageContent() {
                       <p className="mt-1 text-xs text-white/45">owner: {view.owner_actor}{view.is_shared ? ` · ${(view as any).share_scope || "shared"}` : ""}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button data-testid="saved-view-apply-button" type="button" onClick={() => applySavedView(view)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10">Apply</button>{view.owner_actor === actor ? <button data-testid="saved-view-edit-button" type="button" onClick={() => startEditView(view)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10">Edit</button> : null}
-                      {view.owner_actor === actor ? <button type="button" onClick={async () => { await deleteIncidentSavedView(view.id, actor); await loadSavedViews(); if (selectedViewId === view.id) syncUrl({ view: null }); pushToast("Saved view deleted", view.name, "success"); }} className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/15">Delete</button> : null}
+                      <button data-testid="saved-view-apply-button" type="button" onClick={() => applySavedView(view)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10">{t("views_apply")}</button>{view.owner_actor === actor ? <button data-testid="saved-view-edit-button" type="button" onClick={() => startEditView(view)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white hover:bg-white/10">{t("views_edit")}</button> : null}
+                      {view.owner_actor === actor ? <button type="button" onClick={async () => { await deleteIncidentSavedView(view.id, actor); await loadSavedViews(); if (selectedViewId === view.id) syncUrl({ view: null }); pushToast("Saved view deleted", view.name, "success"); }} className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-100 hover:bg-rose-500/15">{t("views_delete")}</button> : null}
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/55">

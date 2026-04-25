@@ -43,7 +43,7 @@ class LocalStorageAdapter:
         self,
         *,
         storage_root: str = "storage",
-        public_base_url: str = "http://localhost:8000",
+        public_base_url: str = "",
     ) -> None:
         self.storage_root = Path(storage_root)
         self.public_base_url = public_base_url.rstrip("/")

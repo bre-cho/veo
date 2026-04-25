@@ -419,12 +419,16 @@ class TestRebuildApproveApiMock:
         mock_persistence.check.return_value = None
         mock_persistence.complete_key = MagicMock()
 
+        mock_runtime_preflight = MagicMock()
+        mock_runtime_preflight.validate.return_value = {"valid": True, "reason": "", "warnings": []}
+
         def mock_get_db():
             yield mock_db
 
         with (
             patch("app.render.rebuild.api.get_db", mock_get_db),
             patch("app.render.rebuild.api.DbRebuildPersistence", return_value=mock_persistence),
+            patch("app.render.rebuild.api.RuntimeRebuildPreflightValidator", return_value=mock_runtime_preflight),
             patch("app.render.rebuild.api._make_smart_rebuild_fn") as mock_fn_factory,
         ):
             mock_fn_factory.return_value = lambda p: {"status": "ok", "scenes": p.get("rebuild_scene_ids", [])}

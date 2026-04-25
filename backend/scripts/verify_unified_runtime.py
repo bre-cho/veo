@@ -130,8 +130,11 @@ def check_db_tables() -> None:
 
 # Quick mode: only the two lightest core modules — no DB / Redis / Celery /
 # SQLAlchemy / heavy reassembly chains.  Must finish in < 10 s.
+# app.core.light_runtime_config is used instead of app.core.config because
+# the latter imports pydantic at module level which can cause timeouts in
+# bare CI environments without a full virtualenv pre-warmed.
 _QUICK_IMPORTS = [
-    "app.core.config",
+    "app.core.light_runtime_config",
     "app.core.runtime_paths",
 ]
 

@@ -494,6 +494,11 @@ class ApprovedRebuildExecutor:
             to propagate status changes to an external store (e.g. the DB).
         audit_store: Optional callable ``(entry) → None`` to persist audit
             entries.  Defaults to the in-memory log.
+        runtime_preflight: Optional :class:`RuntimeRebuildPreflightValidator`
+            instance.  When provided, its :meth:`~RuntimeRebuildPreflightValidator.validate`
+            is called after the lightweight :class:`RebuildPreflightValidator`
+            to perform infrastructure-backed checks (DB project existence,
+            manifest presence, scene locks, output-path writability).
     """
 
     def __init__(
@@ -502,6 +507,7 @@ class ApprovedRebuildExecutor:
         status_updater: Optional[Callable[[str, str, Dict[str, Any]], None]] = None,
         audit_store: Optional[Callable[[Dict[str, Any]], None]] = None,
         idempotency_backend: Optional[IdempotencyBackend] = None,
+        runtime_preflight: Optional["RuntimeRebuildPreflightValidator"] = None,
     ) -> None:
         # ── Production guard ───────────────────────────────────────────
         # In production, a real rebuild_fn and a DB-backed idempotency
@@ -525,6 +531,7 @@ class ApprovedRebuildExecutor:
         self._status_updater = status_updater
         self._audit_store = audit_store or _default_append_audit
         self._idempotency: IdempotencyBackend = idempotency_backend or _DEFAULT_IDEMPOTENCY
+        self._runtime_preflight: Optional["RuntimeRebuildPreflightValidator"] = runtime_preflight
 
     # ------------------------------------------------------------------
     # Public
@@ -640,6 +647,26 @@ class ApprovedRebuildExecutor:
             self._update_status(job_id, STATUS_BLOCKED, result)
             self._idempotency.complete_key(ikey, result)
             return result
+
+        # ── Runtime preflight (infrastructure-backed) ───────────────────
+        if self._runtime_preflight is not None:
+            rt_preflight = self._runtime_preflight.validate(decision)
+            if not rt_preflight["valid"]:
+                result = self._execution_result(
+                    job_id=job_id,
+                    status=STATUS_BLOCKED,
+                    decision=decision,
+                    message=f"Runtime preflight check failed: {rt_preflight['reason']}",
+                )
+                self._record_audit(
+                    job_id=job_id,
+                    event="runtime_preflight_failed",
+                    decision=decision,
+                    extras={"reason": rt_preflight["reason"]},
+                )
+                self._update_status(job_id, STATUS_BLOCKED, result)
+                self._idempotency.complete_key(ikey, result)
+                return result
 
         # ── Revalidate scene list ───────────────────────────────────────
         rebuild_scene_ids: List[str] = decision.get("rebuild_scene_ids") or []
