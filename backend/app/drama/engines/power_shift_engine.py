@@ -37,6 +37,29 @@ class PowerShiftEngine:
             narrative_control_delta,
         ])
 
+        dominant_character_id = scene_context.get("dominant_character_id")
+        threatened_character_id = scene_context.get("threatened_character_id")
+
+        # Infer threatened character from participants if not explicitly set.
+        if dominant_character_id and not threatened_character_id:
+            for participant in scene_context.get("participants", []):
+                cid = str(participant.get("character_id") or participant.get("id") or "")
+                if cid and cid != str(dominant_character_id):
+                    threatened_character_id = cid
+                    break
+
+        relationship_shifts: list = []
+        if dominant_character_id and threatened_character_id:
+            relationship_shifts = [
+                {
+                    "source": dominant_character_id,
+                    "target": threatened_character_id,
+                    "trust_delta": -0.05,
+                    "resentment_delta": min(0.2, total_delta),
+                    "dominance_delta": social_delta,
+                }
+            ]
+
         return {
             "trigger_event": trigger,
             "social_delta": social_delta,
@@ -46,5 +69,5 @@ class PowerShiftEngine:
             "spatial_delta": spatial_delta,
             "narrative_control_delta": narrative_control_delta,
             "total_delta": round(total_delta, 3),
-            "relationship_shifts": [],
+            "relationship_shifts": relationship_shifts,
         }

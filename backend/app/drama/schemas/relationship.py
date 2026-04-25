@@ -26,7 +26,7 @@ class RelationshipCreate(BaseModel):
     recent_betrayal_score: float = Field(0.0, ge=0.0, le=1.0)
     unresolved_tension_score: float = Field(0.0, ge=0.0, le=1.0)
     status: str = Field("active", min_length=1, max_length=32)
-    last_interaction_scene_id: Optional[str] = Field(None, max_length=128)
+    last_interaction_scene_id: Optional[UUID] = None
 
 
 class RelationshipUpdate(BaseModel):
@@ -44,7 +44,7 @@ class RelationshipUpdate(BaseModel):
     recent_betrayal_score: Optional[float] = Field(None, ge=0.0, le=1.0)
     unresolved_tension_score: Optional[float] = Field(None, ge=0.0, le=1.0)
     status: Optional[str] = Field(None, min_length=1, max_length=32)
-    last_interaction_scene_id: Optional[str] = Field(None, max_length=128)
+    last_interaction_scene_id: Optional[UUID] = None
 
 
 class RelationshipRead(BaseModel):
@@ -68,5 +68,5 @@ class RelationshipRead(BaseModel):
     recent_betrayal_score: float
     unresolved_tension_score: float
     status: str
-    last_interaction_scene_id: Optional[str] = None
+    last_interaction_scene_id: Optional[UUID] = None
     updated_at: datetime
