@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.render.manifest.manifest_service import ManifestService
 from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.concat_finalizer import ConcatFinalizer
 from app.render.reassembly.schemas import SmartReassemblyRequest
+from app.render.reassembly.subtitle_rebuild_service import SubtitleRebuildService
+from app.render.reassembly.timeline_drift_guard import TimelineDriftGuard
+from app.render.reassembly.timeline_rebuilder import TimelineRebuilder
 
 
 class SmartReassemblyService:
@@ -34,6 +37,9 @@ class SmartReassemblyService:
         self._chunk_index = ChunkIndex(base_dir=chunk_base_dir)
         self._chunk_builder = ChunkBuilder()
         self._finalizer = ConcatFinalizer()
+        self._drift_guard = TimelineDriftGuard()
+        self._timeline_rebuilder = TimelineRebuilder()
+        self._subtitle_rebuilder = SubtitleRebuildService()
 
     # ------------------------------------------------------------------
     # Public
@@ -55,6 +61,48 @@ class SmartReassemblyService:
             req.episode_id,
             req.changed_scene_id,
         )
+
+        drift_report = self._drift_guard.detect_drift(
+            old_duration_sec=float(
+                scene_manifest.get("previous_duration_sec")
+                or scene_manifest.get("duration_sec")
+                or 0
+            ),
+            new_duration_sec=float(scene_manifest.get("duration_sec") or 0),
+        )
+
+        timeline_report: Optional[Dict[str, Any]] = None
+        subtitle_report: Optional[Dict[str, Any]] = None
+
+        if drift_report["has_drift"]:
+            timeline_report = self._timeline_rebuilder.rebuild_episode_offsets(
+                project_id=req.project_id,
+                episode_id=req.episode_id,
+            )
+
+            subtitle_report = self._subtitle_rebuilder.rebuild_episode_subtitles(
+                project_id=req.project_id,
+                episode_id=req.episode_id,
+            )
+
+            self._manifest.patch_scene(
+                req.project_id,
+                req.episode_id,
+                req.changed_scene_id,
+                {
+                    "timeline_drift": drift_report,
+                    "timeline_rebuilt": True,
+                    "subtitle_rebuilt_after_drift": True,
+                    "subtitle_path": subtitle_report["subtitle_path"],
+                },
+            )
+
+            # Re-read manifest so chunk builder sees refreshed subtitle_path.
+            scene_manifest = self._manifest.get_scene(
+                req.project_id,
+                req.episode_id,
+                req.changed_scene_id,
+            )
 
         chunk = self._chunk_builder.build_scene_chunk(
             project_id=req.project_id,
@@ -94,6 +142,9 @@ class SmartReassemblyService:
             "rebuilt_scene_id": req.changed_scene_id,
             "chunk": chunk,
             "final": final,
+            "timeline_drift": drift_report,
+            "timeline_report": timeline_report,
+            "subtitle_report": subtitle_report,
         }
 
     def _full_rebuild(self, req: SmartReassemblyRequest) -> Dict[str, Any]:

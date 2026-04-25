@@ -89,6 +89,7 @@ class RerenderService:
                     voiceover_text=voiceover_text,
                     duration_sec=duration_sec,
                 )
+                new_duration_sec = audio_result.get("duration_sec") or duration_sec
                 self._manifest.patch_scene(
                     req.project_id,
                     req.episode_id,
@@ -96,6 +97,8 @@ class RerenderService:
                     {
                         "audio_path": audio_result.get("audio_url"),
                         "word_timings": audio_result.get("word_timings", []),
+                        "duration_sec": new_duration_sec,
+                        "previous_duration_sec": manifest.get("duration_sec"),
                     },
                 )
 

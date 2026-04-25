@@ -69,5 +69,9 @@ class ChunkIndex:
         chunks.sort(key=lambda c: c["scene_id"])
 
         index["chunks"] = chunks
+        index["total_duration_sec"] = round(
+            sum(float(c.get("duration_sec") or 0) for c in chunks),
+            3,
+        )
         self.save(project_id, episode_id, index)
         return index
