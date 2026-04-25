@@ -242,8 +242,8 @@ class TestSmartReassemblyService:
             result = svc.reassemble(self._req())
 
         assert result["status"] == "smart_reassembled"
-        assert result["rebuilt_scene_id"] == "s1"
-        assert result["chunk"] == mock_chunk
+        assert result["changed_scene_id"] == "s1"
+        assert result["rebuilt_scene_ids"] == ["s1"]
         assert result["final"] == mock_final
 
     def test_smart_rebuild_updates_manifest(self, tmp_dirs):

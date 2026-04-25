@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.render.manifest.manifest_service import ManifestService
+from app.render.reassembly.affected_range_resolver import AffectedRangeResolver
+from app.render.reassembly.burn_in_mode_resolver import BurnInModeResolver
 from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.concat_finalizer import ConcatFinalizer
+from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
 from app.render.reassembly.schemas import SmartReassemblyRequest
 from app.render.reassembly.subtitle_rebuild_service import SubtitleRebuildService
 from app.render.reassembly.timeline_drift_guard import TimelineDriftGuard
@@ -18,11 +21,12 @@ class SmartReassemblyService:
     Typical flow (``force_full_rebuild=False``):
 
     1. Read the scene manifest to get asset paths.
-    2. Encode the scene into a single MP4 chunk.
-    3. Update the chunk index (replace the old chunk entry).
+    2. Detect whether the scene duration has drifted beyond tolerance.
+    3. If drift detected: rebuild timeline offsets, rebuild subtitles (mode-aware),
+       and rebuild chunks for the changed scene **plus all following scenes**
+       (global burn-in) or **only the changed scene** (per-scene burn-in).
     4. Fast-concat all chunks into the final MP4.
-    5. Patch the scene manifest with ``status=smart_reassembled`` and
-       ``needs_reassembly=False``.
+    5. Patch affected scene manifests with ``status=smart_reassembled``.
 
     When ``force_full_rebuild=True``, every scene in the episode is
     re-encoded and a fresh chunk index is written.
@@ -40,6 +44,9 @@ class SmartReassemblyService:
         self._drift_guard = TimelineDriftGuard()
         self._timeline_rebuilder = TimelineRebuilder()
         self._subtitle_rebuilder = SubtitleRebuildService()
+        self._affected_range = AffectedRangeResolver(manifest_base_dir=manifest_base_dir)
+        self._burn_in_mode = BurnInModeResolver()
+        self._per_scene_subtitles = PerSceneSubtitleService(manifest_base_dir=manifest_base_dir)
 
     # ------------------------------------------------------------------
     # Public
@@ -80,10 +87,17 @@ class SmartReassemblyService:
                 episode_id=req.episode_id,
             )
 
-            subtitle_report = self._subtitle_rebuilder.rebuild_episode_subtitles(
-                project_id=req.project_id,
-                episode_id=req.episode_id,
-            )
+            if self._burn_in_mode.mode() == "global_burn_in":
+                subtitle_report = self._subtitle_rebuilder.rebuild_episode_subtitles(
+                    project_id=req.project_id,
+                    episode_id=req.episode_id,
+                )
+            else:
+                subtitle_report = self._per_scene_subtitles.rebuild_scene_subtitle(
+                    project_id=req.project_id,
+                    episode_id=req.episode_id,
+                    scene_id=req.changed_scene_id,
+                )
 
             self._manifest.patch_scene(
                 req.project_id,
@@ -97,26 +111,61 @@ class SmartReassemblyService:
                 },
             )
 
-            # Re-read manifest so chunk builder sees refreshed subtitle_path.
-            scene_manifest = self._manifest.get_scene(
+        # Determine whether to rebuild only the changed scene or the full
+        # affected range (changed scene + all scenes that follow).
+        requires_range = self._burn_in_mode.requires_affected_range_rebuild(
+            has_timeline_drift=drift_report["has_drift"],
+        )
+
+        affected_manifests: List[Dict[str, Any]] = self._affected_range.resolve(
+            project_id=req.project_id,
+            episode_id=req.episode_id,
+            changed_scene_id=req.changed_scene_id,
+            has_timeline_drift=requires_range,
+        )
+
+        rebuilt_chunks: List[Dict[str, Any]] = []
+
+        for item in affected_manifests:
+            # Re-read manifest for the changed scene so ChunkBuilder picks up
+            # any freshly written subtitle_path from the drift block above.
+            fresh_item = self._manifest.get_scene(
                 req.project_id,
                 req.episode_id,
-                req.changed_scene_id,
+                item["scene_id"],
             )
 
-        chunk = self._chunk_builder.build_scene_chunk(
-            project_id=req.project_id,
-            episode_id=req.episode_id,
-            scene_manifest=scene_manifest,
-        )
+            chunk = self._chunk_builder.build_scene_chunk(
+                project_id=req.project_id,
+                episode_id=req.episode_id,
+                scene_manifest=fresh_item,
+            )
 
-        index = self._chunk_index.update_chunk(
-            project_id=req.project_id,
-            episode_id=req.episode_id,
-            scene_id=req.changed_scene_id,
-            chunk_path=chunk["chunk_path"],
-            duration_sec=chunk["duration_sec"] or 0.0,
-        )
+            rebuilt_chunks.append(chunk)
+
+            self._chunk_index.update_chunk(
+                project_id=req.project_id,
+                episode_id=req.episode_id,
+                scene_id=item["scene_id"],
+                chunk_path=chunk["chunk_path"],
+                duration_sec=chunk["duration_sec"] or 0.0,
+            )
+
+            self._manifest.patch_scene(
+                req.project_id,
+                req.episode_id,
+                item["scene_id"],
+                {
+                    "status": "smart_reassembled",
+                    "chunk_path": chunk["chunk_path"],
+                    "needs_reassembly": False,
+                    "needs_smart_reassembly": False,
+                    "affected_by_timeline_drift": item["scene_id"] != req.changed_scene_id,
+                },
+            )
+
+        # Reload the full index so concat order is always correct.
+        index = self._chunk_index.load(req.project_id, req.episode_id)
 
         final = self._finalizer.concat_chunks(
             project_id=req.project_id,
@@ -128,23 +177,18 @@ class SmartReassemblyService:
             req.project_id,
             req.episode_id,
             req.changed_scene_id,
-            {
-                "status": "smart_reassembled",
-                "chunk_path": chunk["chunk_path"],
-                "final_output_path": final["output_path"],
-                "needs_reassembly": False,
-                "needs_smart_reassembly": False,
-            },
+            {"final_output_path": final["output_path"]},
         )
 
         return {
             "status": "smart_reassembled",
-            "rebuilt_scene_id": req.changed_scene_id,
-            "chunk": chunk,
-            "final": final,
+            "changed_scene_id": req.changed_scene_id,
             "timeline_drift": drift_report,
             "timeline_report": timeline_report,
             "subtitle_report": subtitle_report,
+            "rebuilt_scene_ids": [c["scene_id"] for c in rebuilt_chunks],
+            "rebuilt_count": len(rebuilt_chunks),
+            "final": final,
         }
 
     def _full_rebuild(self, req: SmartReassemblyRequest) -> Dict[str, Any]:
@@ -179,3 +223,4 @@ class SmartReassemblyService:
             "chunks": chunks,
             "final": final,
         }
+

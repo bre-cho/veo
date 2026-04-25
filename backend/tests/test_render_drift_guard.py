@@ -318,18 +318,23 @@ class TestSmartReassemblyDrift:
         mock_chunk = {"scene_id": "scene_002", "chunk_path": "/c/s2.mp4", "duration_sec": 8.0}
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_timeline = {"total_duration_sec": 13.0, "timeline": []}
-        mock_subtitle = {"status": "subtitle_rebuilt", "subtitle_path": "/subs/ep1.ass", "scene_count": 2, "word_track_count": 0}
+        mock_per_scene_sub = {
+            "status": "scene_subtitle_rebuilt",
+            "scene_id": "scene_002",
+            "subtitle_path": "/subs/ep1/scene_002.ass",
+        }
 
         with patch.object(svc._chunk_builder, "build_scene_chunk", return_value=mock_chunk), \
              patch.object(svc._finalizer, "concat_chunks", return_value=mock_final), \
              patch.object(svc._timeline_rebuilder, "rebuild_episode_offsets", return_value=mock_timeline), \
-             patch.object(svc._subtitle_rebuilder, "rebuild_episode_subtitles", return_value=mock_subtitle):
+             patch.object(svc._per_scene_subtitles, "rebuild_scene_subtitle", return_value=mock_per_scene_sub), \
+             patch("app.render.reassembly.burn_in_mode_resolver.SUBTITLE_BURN_IN_MODE", "per_scene_burn_in"):
             result = svc.reassemble(self._req())
 
         assert result["timeline_drift"]["has_drift"] is True
         assert result["timeline_drift"]["drift_sec"] == pytest.approx(3.0)
         assert result["timeline_report"] == mock_timeline
-        assert result["subtitle_report"] == mock_subtitle
+        assert result["subtitle_report"] == mock_per_scene_sub
 
     def test_no_drift_skips_rebuild(self, tmp_path):
         manifests_dir = str(tmp_path / "manifests")
@@ -354,11 +359,13 @@ class TestSmartReassemblyDrift:
         with patch.object(svc._chunk_builder, "build_scene_chunk", return_value=mock_chunk), \
              patch.object(svc._finalizer, "concat_chunks", return_value=mock_final), \
              patch.object(svc._timeline_rebuilder, "rebuild_episode_offsets") as mock_tl, \
-             patch.object(svc._subtitle_rebuilder, "rebuild_episode_subtitles") as mock_sub:
+             patch.object(svc._subtitle_rebuilder, "rebuild_episode_subtitles") as mock_sub, \
+             patch.object(svc._per_scene_subtitles, "rebuild_scene_subtitle") as mock_ps:
             result = svc.reassemble(self._req())
 
         mock_tl.assert_not_called()
         mock_sub.assert_not_called()
+        mock_ps.assert_not_called()
         assert result["timeline_drift"]["has_drift"] is False
         assert result["timeline_report"] is None
         assert result["subtitle_report"] is None
