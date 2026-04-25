@@ -102,10 +102,14 @@ json_post "/drama/scenes/${SCENE_ID}/compile" "{
 }"
 
 echo "[5b/11] Assert blocking plan persisted"
-json_get "/drama/scenes/${SCENE_ID}/blocking" >/dev/null
+BLOCKING_MODE=$(json_get "/drama/scenes/${SCENE_ID}/blocking" | python -c 'import json,sys; print(json.load(sys.stdin).get("spatial_mode",""))')
+test -n "$BLOCKING_MODE" || { echo "FAIL: missing blocking spatial_mode" >&2; exit 1; }
+echo "  blocking spatial_mode: ${BLOCKING_MODE}"
 
 echo "[5c/11] Assert camera plan persisted"
-json_get "/drama/scenes/${SCENE_ID}/camera-plan" >/dev/null
+CAMERA_MOVE=$(json_get "/drama/scenes/${SCENE_ID}/camera-plan" | python -c 'import json,sys; print(json.load(sys.stdin).get("primary_move",""))')
+test -n "$CAMERA_MOVE" || { echo "FAIL: missing camera primary_move" >&2; exit 1; }
+echo "  camera primary_move: ${CAMERA_MOVE}"
 
 echo "[6/11] Persist via process endpoint"
 set +e
@@ -128,6 +132,16 @@ if [[ "$RECOMPUTE_SCENE_STATUS" -ne 0 ]]; then
   echo "FAIL: process endpoint failed" >&2
   exit 1
 fi
+
+echo "[6b/11] Assert blocking plan present after /process"
+BLOCKING_MODE_POST=$(json_get "/drama/scenes/${SCENE_ID}/blocking" | python -c 'import json,sys; print(json.load(sys.stdin).get("spatial_mode",""))')
+test -n "$BLOCKING_MODE_POST" || { echo "FAIL: blocking spatial_mode missing after /process" >&2; exit 1; }
+echo "  blocking spatial_mode post-process: ${BLOCKING_MODE_POST}"
+
+echo "[6c/11] Assert camera plan present after /process"
+CAMERA_MOVE_POST=$(json_get "/drama/scenes/${SCENE_ID}/camera-plan" | python -c 'import json,sys; print(json.load(sys.stdin).get("primary_move",""))')
+test -n "$CAMERA_MOVE_POST" || { echo "FAIL: camera primary_move missing after /process" >&2; exit 1; }
+echo "  camera primary_move post-process: ${CAMERA_MOVE_POST}"
 
 echo "[7/11] Assert power shifts persisted"
 POWER_COUNT=$(json_get "/drama/scenes/${SCENE_ID}/power-shifts" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
