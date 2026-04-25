@@ -67,12 +67,18 @@ class SceneDramaService:
         ]
 
         # Infer dominant character before engine calls so power_shift_engine can use it.
-        dominant_character_id = infer_dominant_character(graph_index)
+        # Priority: explicit caller value → graph-inferred → first loaded profile (fallback for
+        # scenes with no relationship edges yet).
+        effective_dominant_id = (
+            scene_context.get("dominant_character_id")
+            or infer_dominant_character(graph_index)
+            or (str(profiles[0].id) if profiles else None)
+        )
 
         scene_context = {
             **scene_context,
-            "participants": scene_context["participants"] if "participants" in scene_context else participants,
-            "dominant_character_id": scene_context["dominant_character_id"] if "dominant_character_id" in scene_context else dominant_character_id,
+            "participants": scene_context.get("participants", participants),
+            "dominant_character_id": effective_dominant_id,
         }
 
         intents = [self.intent_engine.derive(profile, scene_context) for profile in profiles]
@@ -95,14 +101,18 @@ class SceneDramaService:
 
         power_shift = self.power_shift_engine.compute(scene_context, graph_indexed_edges(graph_index))
 
+        # Build threatened_character_id: explicit caller value → engine result → second profile.
+        threatened_character_id = (
+            scene_context.get("threatened_character_id")
+            or power_shift.get("threatened_character_id")
+            or next((str(p.id) for p in profiles if str(p.id) != effective_dominant_id), None)
+        )
+
         # Enrich power_shift with keys consumed by BlockingEngine and CameraDramaEngine.
         power_shift = {
             **power_shift,
-            "dominant_character_id": dominant_character_id,
-            "threatened_character_id": (
-                power_shift.get("threatened_character_id")
-                or scene_context.get("threatened_character_id")
-            ),
+            "dominant_character_id": effective_dominant_id,
+            "threatened_character_id": threatened_character_id,
             "outcome_type": scene_context.get("outcome_type", "scene_shift"),
         }
 
@@ -117,8 +127,8 @@ class SceneDramaService:
         drama_state = {
             "tension_score": tension.get("tension_score", 0.0),
             "pressure_level": tension.get("tension_score", 0.0),
-            "dominant_character_id": dominant_character_id,
-            "threatened_character_id": power_shift.get("threatened_character_id"),
+            "dominant_character_id": effective_dominant_id,
+            "threatened_character_id": threatened_character_id,
             "outcome_type": scene_context.get("outcome_type", "scene_shift"),
             "turning_point": scene_context.get("turning_point"),
             "power_shift_delta": power_shift.get("total_delta", 0.0),
@@ -136,7 +146,7 @@ class SceneDramaService:
             "tension": tension,
             "subtext_map": subtext_map,
             "power_shift": power_shift,
-            "dominant_character_id": dominant_character_id,
+            "dominant_character_id": effective_dominant_id,
             "drama_state": drama_state,
             "tension_breakdown": tension_breakdown,
             "relationship_snapshot": graph_index,

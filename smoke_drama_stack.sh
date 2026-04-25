@@ -101,6 +101,12 @@ json_post "/drama/scenes/${SCENE_ID}/compile" "{
   \"scene_analysis\": ${ANALYZE_RESP}
 }"
 
+echo "[5b/11] Assert blocking plan persisted"
+json_get "/drama/scenes/${SCENE_ID}/blocking" >/dev/null
+
+echo "[5c/11] Assert camera plan persisted"
+json_get "/drama/scenes/${SCENE_ID}/camera-plan" >/dev/null
+
 echo "[6/11] Persist via process endpoint"
 set +e
 json_post "/drama/admin/scenes/${SCENE_ID}/process" "{
