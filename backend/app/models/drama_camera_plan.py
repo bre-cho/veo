@@ -1,4 +1,8 @@
-"""drama_camera_plan — full camera drama plan for a scene."""
+"""drama_camera_plan — full camera drama plan for a scene.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

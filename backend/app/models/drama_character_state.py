@@ -1,4 +1,8 @@
-"""drama_character_state — per-scene mutable state for a drama character."""
+"""drama_character_state — per-scene mutable state for a drama character.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

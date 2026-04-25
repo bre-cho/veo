@@ -1,4 +1,8 @@
-"""drama_blocking_plan — physical/spatial blocking plan derived from drama state."""
+"""drama_blocking_plan — physical/spatial blocking plan derived from drama state.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid
