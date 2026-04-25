@@ -174,7 +174,7 @@ class SmartReassemblyService:
 
         include_optional = (
             req.include_optional_rebuilds
-            if req.include_optional_rebuilds
+            if req.include_optional_rebuilds is not None
             else bool(budget_policy["include_optional_rebuilds"])
         )
 
