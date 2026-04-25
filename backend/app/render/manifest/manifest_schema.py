@@ -12,6 +12,9 @@ class SceneAssetManifest(BaseModel):
     episode_id: str
     scene_id: str
 
+    scene_index: Optional[int] = None
+    order_index: Optional[int] = None
+
     status: str = "created"
 
     video_path: Optional[str] = None

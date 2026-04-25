@@ -83,6 +83,22 @@ class TestChunkIndex:
         ids = [c["scene_id"] for c in index["chunks"]]
         assert ids == ["scene_01", "scene_02", "scene_03"]
 
+    def test_update_chunk_order_index_numeric_sort(self, tmp_path):
+        """order_index must produce numeric not lexicographic ordering."""
+        ci = ChunkIndex(base_dir=str(tmp_path / "chunks"))
+        ci.update_chunk("p1", "ep1", "scene_1", "/c/s1.mp4", 5.0, order_index=0)
+        ci.update_chunk("p1", "ep1", "scene_10", "/c/s10.mp4", 5.0, order_index=9)
+        ci.update_chunk("p1", "ep1", "scene_2", "/c/s2.mp4", 5.0, order_index=1)
+        index = ci.load("p1", "ep1")
+        ids = [c["scene_id"] for c in index["chunks"]]
+        assert ids == ["scene_1", "scene_2", "scene_10"]
+
+    def test_update_chunk_persists_order_index(self, tmp_path):
+        ci = ChunkIndex(base_dir=str(tmp_path / "chunks"))
+        ci.update_chunk("p1", "ep1", "s1", "/c/s1.mp4", 4.0, order_index=2)
+        index = ci.load("p1", "ep1")
+        assert index["chunks"][0]["order_index"] == 2
+
 
 # ===========================================================================
 # ChunkBuilder
@@ -139,6 +155,32 @@ class TestChunkBuilder:
             cb.build_scene_chunk("p1", "ep1", self._manifest())
         cmd = mock_run.call_args[0][0]
         assert "-vf" not in cmd
+
+    def test_returns_order_index_from_manifest(self):
+        cb = ChunkBuilder()
+        mock_result = MagicMock(returncode=0)
+        manifest = {**self._manifest(), "order_index": 4}
+        with patch("subprocess.run", return_value=mock_result), \
+             patch("pathlib.Path.mkdir"):
+            result = cb.build_scene_chunk("p1", "ep1", manifest)
+        assert result["order_index"] == 4
+
+    def test_order_index_falls_back_to_scene_index(self):
+        cb = ChunkBuilder()
+        mock_result = MagicMock(returncode=0)
+        manifest = {**self._manifest(), "scene_index": 7}
+        with patch("subprocess.run", return_value=mock_result), \
+             patch("pathlib.Path.mkdir"):
+            result = cb.build_scene_chunk("p1", "ep1", manifest)
+        assert result["order_index"] == 7
+
+    def test_order_index_is_none_when_absent(self):
+        cb = ChunkBuilder()
+        mock_result = MagicMock(returncode=0)
+        with patch("subprocess.run", return_value=mock_result), \
+             patch("pathlib.Path.mkdir"):
+            result = cb.build_scene_chunk("p1", "ep1", self._manifest())
+        assert result["order_index"] is None
 
 
 # ===========================================================================
@@ -198,6 +240,44 @@ class TestConcatFinalizer:
              patch("pathlib.Path.mkdir"):
             cf.concat_chunks("p1", "ep1", self._chunks())
 
+    def test_concat_order_index_numeric_ordering(self, tmp_path):
+        """ConcatFinalizer must write chunks in order_index numeric order."""
+        cf = ConcatFinalizer()
+        mock_result = MagicMock(returncode=0)
+        # Provide chunks in wrong order; order_index should fix it
+        chunks = [
+            {"scene_id": "scene_10", "order_index": 9, "chunk_path": "/c/s10.mp4", "duration_sec": 5.0},
+            {"scene_id": "scene_1", "order_index": 0, "chunk_path": "/c/s1.mp4", "duration_sec": 5.0},
+            {"scene_id": "scene_2", "order_index": 1, "chunk_path": "/c/s2.mp4", "duration_sec": 5.0},
+        ]
+
+        written_lines = []
+
+        real_open = open
+
+        def _mock_open(path, mode="r", **kwargs):
+            if "smart_concat" in str(path) and "w" in mode:
+                import io
+                buf = io.StringIO()
+                class _Capturing:
+                    def __enter__(self_inner):
+                        return self_inner
+                    def __exit__(self_inner, *a):
+                        written_lines.extend(buf.getvalue().splitlines())
+                    def write(self_inner, data):
+                        buf.write(data)
+                return _Capturing()
+            return real_open(path, mode, **kwargs)
+
+        with patch("subprocess.run", return_value=mock_result), \
+             patch("pathlib.Path.mkdir"), \
+             patch("builtins.open", side_effect=_mock_open):
+            cf.concat_chunks("p1", "ep1", chunks)
+
+        # Extract scene from "file '/c/s1.mp4'" lines
+        paths_in_order = [line.split("'")[1] for line in written_lines if line.startswith("file")]
+        assert paths_in_order == ["/c/s1.mp4", "/c/s2.mp4", "/c/s10.mp4"]
+
 
 # ===========================================================================
 # SmartReassemblyService
@@ -231,6 +311,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", self._scene_manifest())
 
@@ -242,14 +323,15 @@ class TestSmartReassemblyService:
             result = svc.reassemble(self._req())
 
         assert result["status"] == "smart_reassembled"
-        assert result["rebuilt_scene_id"] == "s1"
-        assert result["chunk"] == mock_chunk
+        assert result["changed_scene_id"] == "s1"
+        assert result["rebuilt_scene_ids"] == ["s1"]
         assert result["final"] == mock_final
 
     def test_smart_rebuild_updates_manifest(self, tmp_dirs):
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", self._scene_manifest())
 
@@ -270,6 +352,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         for sid in ("s1", "s2"):
             _write_manifest(tmp_dirs["manifests"], "p1", "ep1", sid, {
@@ -290,6 +373,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         with pytest.raises(FileNotFoundError):
             svc.reassemble(self._req())
@@ -303,6 +387,12 @@ from app.render.reassembly.chunk_bootstrapper import ChunkBootstrapper  # noqa: 
 
 
 class TestChunkBootstrapper:
+    _MOCK_SUBTITLE_REPORT = {
+        "status": "per_scene_subtitles_built",
+        "count": 0,
+        "items": [],
+    }
+
     def test_bootstrap_happy_path(self, tmp_dirs):
         bs = ChunkBootstrapper(
             manifest_base_dir=tmp_dirs["manifests"],
@@ -323,12 +413,15 @@ class TestChunkBootstrapper:
             "duration_sec": 5.0,
         }
 
-        with patch.object(bs._chunk_builder, "build_scene_chunk", side_effect=mock_chunk_fn):
+        with patch.object(bs._chunk_builder, "build_scene_chunk", side_effect=mock_chunk_fn), \
+             patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
             result = bs.bootstrap_episode("p1", "ep1")
 
         assert result["status"] == "bootstrapped"
         assert result["chunk_count"] == 2
         assert Path(result["chunk_index_path"]).exists()
+        assert "subtitle_report" in result
 
     def test_bootstrap_writes_chunk_index(self, tmp_dirs):
         bs = ChunkBootstrapper(
@@ -341,7 +434,9 @@ class TestChunkBootstrapper:
         })
 
         mock_chunk = {"scene_id": "s1", "chunk_path": "/chunks/s1.mp4", "duration_sec": 5.0}
-        with patch.object(bs._chunk_builder, "build_scene_chunk", return_value=mock_chunk):
+        with patch.object(bs._chunk_builder, "build_scene_chunk", return_value=mock_chunk), \
+             patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
             bs.bootstrap_episode("p1", "ep1")
 
         index_path = Path(tmp_dirs["chunks"]) / "p1" / "ep1" / "chunk_index.json"
@@ -361,7 +456,9 @@ class TestChunkBootstrapper:
         })
 
         mock_chunk = {"scene_id": "s1", "chunk_path": "/chunks/s1.mp4", "duration_sec": 5.0}
-        with patch.object(bs._chunk_builder, "build_scene_chunk", return_value=mock_chunk):
+        with patch.object(bs._chunk_builder, "build_scene_chunk", return_value=mock_chunk), \
+             patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
             bs.bootstrap_episode("p1", "ep1")
 
         manifest_path = Path(tmp_dirs["manifests"]) / "p1" / "ep1" / "s1.json"
@@ -385,8 +482,10 @@ class TestChunkBootstrapper:
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", {
             "scene_id": "s1", "audio_path": "/a/s1.wav", "duration_sec": 5.0,
         })
-        with pytest.raises(ValueError, match="Missing video_path"):
-            bs.bootstrap_episode("p1", "ep1")
+        with patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
+            with pytest.raises(ValueError, match="Missing video_path"):
+                bs.bootstrap_episode("p1", "ep1")
 
     def test_bootstrap_raises_on_missing_audio_path(self, tmp_dirs):
         bs = ChunkBootstrapper(
@@ -396,8 +495,77 @@ class TestChunkBootstrapper:
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", {
             "scene_id": "s1", "video_path": "/v/s1.mp4", "duration_sec": 5.0,
         })
-        with pytest.raises(ValueError, match="Missing audio_path"):
-            bs.bootstrap_episode("p1", "ep1")
+        with patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
+            with pytest.raises(ValueError, match="Missing audio_path"):
+                bs.bootstrap_episode("p1", "ep1")
+
+    def test_bootstrap_subtitle_report_in_result(self, tmp_dirs):
+        bs = ChunkBootstrapper(
+            manifest_base_dir=tmp_dirs["manifests"],
+            chunk_base_dir=tmp_dirs["chunks"],
+        )
+        for sid in ("s1", "s2"):
+            _write_manifest(tmp_dirs["manifests"], "p1", "ep1", sid, {
+                "scene_id": sid,
+                "video_path": f"/v/{sid}.mp4",
+                "audio_path": f"/a/{sid}.wav",
+                "duration_sec": 5.0,
+            })
+
+        mock_chunk_fn = lambda project_id, episode_id, scene_manifest: {
+            "scene_id": scene_manifest["scene_id"],
+            "chunk_path": f"/chunks/{scene_manifest['scene_id']}.mp4",
+            "duration_sec": 5.0,
+        }
+        mock_sub_report = {
+            "status": "per_scene_subtitles_built",
+            "count": 2,
+            "items": [
+                {"scene_id": "s1", "subtitle_path": "/subs/ep1/s1.ass"},
+                {"scene_id": "s2", "subtitle_path": "/subs/ep1/s2.ass"},
+            ],
+        }
+
+        with patch.object(bs._chunk_builder, "build_scene_chunk", side_effect=mock_chunk_fn), \
+             patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=mock_sub_report):
+            result = bs.bootstrap_episode("p1", "ep1")
+
+        assert result["subtitle_report"]["status"] == "per_scene_subtitles_built"
+        assert result["subtitle_report"]["count"] == 2
+
+    def test_bootstrap_order_index_sort(self, tmp_dirs):
+        """Chunks must be ordered by order_index, not scene_id string."""
+        bs = ChunkBootstrapper(
+            manifest_base_dir=tmp_dirs["manifests"],
+            chunk_base_dir=tmp_dirs["chunks"],
+        )
+        # Write scenes with numeric order_index to test numeric vs lexicographic
+        for i, sid in enumerate(("scene_1", "scene_10", "scene_2"), start=0):
+            _write_manifest(tmp_dirs["manifests"], "p1", "ep1", sid, {
+                "scene_id": sid,
+                "order_index": [0, 9, 1][i],  # scene_1=0, scene_10=9, scene_2=1
+                "video_path": f"/v/{sid}.mp4",
+                "audio_path": f"/a/{sid}.wav",
+                "duration_sec": 5.0,
+            })
+
+        def _mock_build(project_id, episode_id, scene_manifest):
+            return {
+                "scene_id": scene_manifest["scene_id"],
+                "order_index": scene_manifest.get("order_index"),
+                "chunk_path": f"/chunks/{scene_manifest['scene_id']}.mp4",
+                "duration_sec": 5.0,
+            }
+
+        with patch.object(bs._chunk_builder, "build_scene_chunk", side_effect=_mock_build), \
+             patch.object(bs._per_scene_subtitles, "rebuild_episode_per_scene_subtitles",
+                          return_value=self._MOCK_SUBTITLE_REPORT):
+            result = bs.bootstrap_episode("p1", "ep1")
+
+        ids = [c["scene_id"] for c in result["chunks"]]
+        assert ids == ["scene_1", "scene_2", "scene_10"]
 
 
 # ===========================================================================

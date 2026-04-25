@@ -12,9 +12,17 @@ class SmartReassemblyRequest(BaseModel):
         changed_scene_id: The scene whose chunk must be rebuilt.
         force_full_rebuild: When ``True``, rebuild *all* scene chunks regardless
             of whether a chunk index already exists.
+        change_type: Category of the change — used by the dependency graph to
+            resolve which other scenes (if any) must also be rebuilt.
+            Defaults to ``"subtitle"`` so that, unless a voice/avatar/style
+            change is explicitly declared, only the changed scene's chunk is
+            rebuilt.  Pass ``"voice"`` for a TTS rerender, ``"avatar"`` or
+            ``"style"`` for visual rerenders, or ``"all"`` to force a full
+            dependency closure rebuild.
     """
 
     project_id: str
     episode_id: str
     changed_scene_id: str
     force_full_rebuild: bool = False
+    change_type: str = "subtitle"

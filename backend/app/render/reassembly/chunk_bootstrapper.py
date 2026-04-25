@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.render.manifest.manifest_service import ManifestService
+from app.render.reassembly._sort_utils import scene_sort_key
 from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
+from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
 
 
 class ChunkBootstrapper:
@@ -12,11 +14,15 @@ class ChunkBootstrapper:
 
     After the first successful FFmpeg full-assembly pass, this bootstrapper:
 
-    1. Reads all scene manifests for the episode.
-    2. Encodes each scene into a standalone MP4 chunk.
-    3. Persists ``chunk_path`` and ``smart_reassembly_ready=True`` in each
+    1. Generates a per-scene ``.ass`` subtitle file for every scene (using the
+       default ``per_scene_burn_in`` mode so each chunk can be rebuilt
+       independently on rerender).
+    2. Reads all scene manifests for the episode.
+    3. Encodes each scene into a standalone MP4 chunk.
+    4. Persists ``chunk_path`` and ``smart_reassembly_ready=True`` in each
        scene's manifest.
-    4. Writes a ``chunk_index.json`` for the episode.
+    5. Writes a ``chunk_index.json`` for the episode, ordered by
+       ``order_index`` (falling back to ``scene_id``).
 
     Once bootstrapped, :class:`SmartReassemblyService` can rebuild just the
     changed chunk without a ``force_full_rebuild``.
@@ -30,6 +36,7 @@ class ChunkBootstrapper:
         self._manifest = ManifestService(base_dir=manifest_base_dir)
         self._chunk_builder = ChunkBuilder()
         self._chunk_index = ChunkIndex(base_dir=chunk_base_dir)
+        self._per_scene_subtitles = PerSceneSubtitleService(manifest_base_dir=manifest_base_dir)
 
     def bootstrap_episode(self, project_id: str, episode_id: str) -> Dict[str, Any]:
         """Build chunks for every scene in *episode_id* and write the index.
@@ -40,7 +47,7 @@ class ChunkBootstrapper:
 
         Returns:
             A result dict with ``status``, ``chunk_count``,
-            ``chunk_index_path``, and ``chunks``.
+            ``chunk_index_path``, ``chunks``, and ``subtitle_report``.
 
         Raises:
             ValueError: If no scene manifests are found, or if a scene is
@@ -52,6 +59,17 @@ class ChunkBootstrapper:
             raise ValueError(
                 f"No scene manifests found for project '{project_id}' episode '{episode_id}'"
             )
+
+        # Generate per-scene subtitle files before encoding so every chunk
+        # gets the correct subtitle_path burned in.
+        subtitle_report = self._per_scene_subtitles.rebuild_episode_per_scene_subtitles(
+            project_id=project_id,
+            episode_id=episode_id,
+        )
+
+        # Re-read manifests so chunks pick up the freshly written subtitle_path.
+        manifests = self._manifest.list_episode(project_id, episode_id)
+        manifests.sort(key=scene_sort_key)
 
         chunks = []
         for scene_manifest in manifests:
@@ -78,7 +96,7 @@ class ChunkBootstrapper:
                 },
             )
 
-        chunks.sort(key=lambda c: c["scene_id"])
+        chunks.sort(key=scene_sort_key)
 
         index: Dict[str, Any] = {
             "project_id": project_id,
@@ -95,4 +113,6 @@ class ChunkBootstrapper:
             "chunk_count": len(chunks),
             "chunk_index_path": index_path,
             "chunks": chunks,
+            "subtitle_report": subtitle_report,
         }
+

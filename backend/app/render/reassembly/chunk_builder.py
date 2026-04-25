@@ -70,6 +70,7 @@ class ChunkBuilder:
 
         return {
             "scene_id": scene_id,
+            "order_index": scene_manifest.get("order_index", scene_manifest.get("scene_index")),
             "chunk_path": str(output_path),
             "duration_sec": scene_manifest.get("duration_sec"),
         }
