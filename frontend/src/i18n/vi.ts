@@ -332,6 +332,16 @@ const vi = {
   factory_status_failed: "Thất bại",
   factory_status_cancelled: "Đã hủy",
   factory_status_awaiting_approval: "Chờ duyệt",
+  factory_loading_detail: "Đang tải chi tiết luồng…",
+  factory_seo_label: "SEO",
+  factory_render_job_label: "Render job",
+  factory_blocked_label: "Bị chặn",
+  factory_input_type_topic: "chủ đề",
+  factory_input_type_script: "kịch bản",
+  factory_input_type_avatar: "avatar",
+  factory_input_type_series: "series",
+  factory_topic_placeholder: "Xu hướng AI 2026...",
+  factory_unknown_error: "Lỗi không xác định",
 } as const;
 
 export type TranslationKey = keyof typeof vi;

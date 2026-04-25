@@ -82,7 +82,7 @@ export default function FactoryPage() {
           <div className="space-y-6">
             {loadingDetail && (
               <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <p className="text-sm text-white/40">Loading run detail…</p>
+                <p className="text-sm text-white/40">{t("factory_loading_detail")}</p>
               </div>
             )}
             {detailError && (
@@ -107,13 +107,13 @@ export default function FactoryPage() {
                     />
                   </div>
                   {selectedDetail.seo_title && (
-                    <p className="text-xs text-white/60">SEO: {selectedDetail.seo_title}</p>
+                    <p className="text-xs text-white/60">{t("factory_seo_label")}: {selectedDetail.seo_title}</p>
                   )}
                   {selectedDetail.render_job_id && (
-                    <p className="text-xs text-white/40">Render job: {selectedDetail.render_job_id}</p>
+                    <p className="text-xs text-white/40">{t("factory_render_job_label")}: {selectedDetail.render_job_id}</p>
                   )}
                   {selectedDetail.blocking_reason && (
-                    <p className="text-xs text-red-400">Blocked: {selectedDetail.blocking_reason}</p>
+                    <p className="text-xs text-red-400">{t("factory_blocked_label")}: {selectedDetail.blocking_reason}</p>
                   )}
                 </div>
 

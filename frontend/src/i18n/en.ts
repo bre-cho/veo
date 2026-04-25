@@ -334,6 +334,16 @@ const en: Record<TranslationKey, string> = {
   factory_status_failed: "Failed",
   factory_status_cancelled: "Cancelled",
   factory_status_awaiting_approval: "Awaiting Approval",
+  factory_loading_detail: "Loading run detail…",
+  factory_seo_label: "SEO",
+  factory_render_job_label: "Render job",
+  factory_blocked_label: "Blocked",
+  factory_input_type_topic: "topic",
+  factory_input_type_script: "script",
+  factory_input_type_avatar: "avatar",
+  factory_input_type_series: "series",
+  factory_topic_placeholder: "AI trends 2026...",
+  factory_unknown_error: "Unknown error",
 };
 
 export default en;
