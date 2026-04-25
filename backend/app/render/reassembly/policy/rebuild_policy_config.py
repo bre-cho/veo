@@ -8,10 +8,4 @@ REBUILD_POLICY: dict = {
         "voice",
         "subtitle",
     ],
-    "quality_sensitive": [
-        "avatar",
-        "style",
-        "continuity",
-    ],
-    "skip_below_strength": 0.45,
 }

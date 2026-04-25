@@ -167,10 +167,6 @@ class SmartReassemblyService:
         else:
             rebuild_ids = required_ids
 
-        # Always include range-mandated scenes (global burn-in drift).
-        if requires_range:
-            rebuild_ids.update(item["scene_id"] for item in range_manifests)
-
         affected_manifests = [
             item
             for item in self._manifest.list_episode(req.project_id, req.episode_id)
