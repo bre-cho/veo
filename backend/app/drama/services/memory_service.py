@@ -92,7 +92,12 @@ class DramaMemoryService:
                     "source_scene_id": scene_id,
                     "event_type": outcome.get("outcome_type", "scene_shift"),
                     "meaning_label": outcome.get("turning_point") or "scene_shift",
-                    "recall_trigger": outcome.get("dominant_character_id"),
+                    "recall_trigger": (
+                        analysis.get("scene_context", {}).get("visible_conflict")
+                        or analysis.get("scene_context", {}).get("hidden_conflict")
+                        or outcome.get("outcome_type")
+                        or "scene_shift"
+                    ),
                     "emotional_weight": emotional_weight,
                     "trust_impact": float(shift.get("trust_delta", 0.0)),
                     "shame_impact": float(shift.get("shame_delta", 0.0)),
