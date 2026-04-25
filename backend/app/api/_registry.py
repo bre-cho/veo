@@ -60,8 +60,16 @@ from app.api.template_debug import router as template_debug_router
 from app.api.avatar_debug import router as avatar_debug_router
 
 # ── Avatar Tournament + Governance ────────────────────────────────────────
-from app.api.avatar_tournament import router as avatar_tournament_router
-from app.api.avatar_governance import router as avatar_governance_router
+try:
+    from app.api.avatar_tournament import router as avatar_tournament_router
+    from app.api.avatar_governance import router as avatar_governance_router
+except Exception as _tournament_import_err:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Avatar tournament/governance routers failed to import: %s", _tournament_import_err
+    )
+    avatar_tournament_router = None  # type: ignore[assignment]
+    avatar_governance_router = None  # type: ignore[assignment]
 
 # ── Audio ─────────────────────────────────────────────────────────────────
 from app.api.audio import router as audio_router
@@ -89,10 +97,25 @@ from app.api.publish_signal import router as publish_signal_router
 from app.api.publish_webhooks import router as publish_webhooks_router
 
 # ── Avatar Acting Model ───────────────────────────────────────────────────
-from app.api.avatar_acting import router as avatar_acting_router
+try:
+    from app.api.avatar_acting import router as avatar_acting_router
+except Exception as _acting_import_err:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Avatar acting router failed to import: %s", _acting_import_err
+    )
+    avatar_acting_router = None  # type: ignore[assignment]
 
 # ── Multi-Character Drama Engine ─────────────────────────────────────────
-from app.drama.api import ALL_DRAMA_ROUTERS
+try:
+    from app.drama.api import ALL_DRAMA_ROUTERS
+except Exception as _drama_import_err:  # pragma: no cover
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Drama engine routers failed to import (drama features disabled): %s",
+        _drama_import_err,
+    )
+    ALL_DRAMA_ROUTERS = []
 
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
@@ -228,4 +251,6 @@ def register_all_routers(app: FastAPI) -> None:
         _DRAMA_ROUTERS,
     ):
         for router in group:
+            if router is None:
+                continue
             app.include_router(router)

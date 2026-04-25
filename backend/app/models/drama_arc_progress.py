@@ -1,4 +1,8 @@
-"""drama_arc_progress — tracks a character's arc stage across an episode/series."""
+"""drama_arc_progress — tracks a character's arc stage across an episode/series.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

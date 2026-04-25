@@ -1,4 +1,8 @@
-"""drama_memory_trace — narrative memory/wound record for a drama character."""
+"""drama_memory_trace — narrative memory/wound record for a drama character.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

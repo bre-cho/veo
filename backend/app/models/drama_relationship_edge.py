@@ -1,4 +1,8 @@
-"""drama_relationship_edge — first-class relationship object between two characters."""
+"""drama_relationship_edge — first-class relationship object between two characters.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

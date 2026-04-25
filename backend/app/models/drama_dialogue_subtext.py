@@ -1,4 +1,8 @@
-"""drama_dialogue_subtext — per-line subtext record for the dialogue engine."""
+"""drama_dialogue_subtext — per-line subtext record for the dialogue engine.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

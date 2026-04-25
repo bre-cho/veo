@@ -62,7 +62,10 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./backend/.env.dev
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
     environment:
       BACKEND_SCHEMA_BOOTSTRAP: ${BACKEND_SCHEMA_BOOTSTRAP:-}
       PYTHONPATH: /app
@@ -91,7 +94,10 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./backend/.env.dev
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
     environment:
       PYTHONPATH: /app
     volumes:
@@ -113,7 +119,10 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./backend/.env.dev
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
     environment:
       PYTHONPATH: /app
     volumes:
@@ -135,7 +144,10 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./backend/.env.dev
+      - path: ./backend/.env.example
+        required: false
+      - path: ./backend/.env.dev
+        required: false
     environment:
       PYTHONPATH: /app
     volumes:
@@ -154,7 +166,10 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - ./frontend/.env.local
+      - path: ./frontend/.env.example
+        required: false
+      - path: ./frontend/.env.local
+        required: false
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://api:8000/api/v1
     volumes:
