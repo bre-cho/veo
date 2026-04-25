@@ -29,6 +29,7 @@ Output schema::
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.render.dependency.dependency_service import DependencyService
@@ -252,6 +253,7 @@ class UnifiedRebuildDecisionEngine:
             "budget_guard_result": budget_result,
             "optimisation_result": optimisation,
             "warnings": warnings,
+            "decided_at": _now_iso(),
         }
 
     # ------------------------------------------------------------------
@@ -309,4 +311,9 @@ class UnifiedRebuildDecisionEngine:
             "budget_guard_result": {},
             "optimisation_result": {},
             "warnings": [warning] if warning else [],
+            "decided_at": _now_iso(),
         }
+
+
+def _now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()

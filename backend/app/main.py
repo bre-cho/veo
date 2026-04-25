@@ -37,9 +37,15 @@ _storage_dir = PROJECT_STORAGE_DIR.parent
 _storage_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=str(_storage_dir)), name="storage")
 
+# Mount /artifacts separately only when it falls outside the storage root.
 _artifacts_dir = Path(settings.audio_output_dir).parent
 _artifacts_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/artifacts", StaticFiles(directory=str(_artifacts_dir)), name="artifacts")
+try:
+    _artifacts_dir.relative_to(_storage_dir)
+    # Artifacts are inside /storage — already served by the /storage mount.
+except ValueError:
+    # Artifacts live outside /storage (custom AUDIO_OUTPUT_DIR) — serve them.
+    app.mount("/artifacts", StaticFiles(directory=str(_artifacts_dir)), name="artifacts")
 
 register_all_routers(app)
 

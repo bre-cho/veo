@@ -127,9 +127,22 @@ def check_db_tables() -> None:
 
 # ── Check 3: Critical imports ─────────────────────────────────────────────
 
-_CRITICAL_IMPORTS = [
-    "app.core.runtime_paths",
+# Quick mode: only lightweight modules with zero infrastructure dependencies
+# (no DB / Redis / Celery / heavy reassembly chains).  Must finish in < 10 s.
+_QUICK_IMPORTS = [
     "app.core.config",
+    "app.core.runtime_paths",
+    "app.render.execution.approved_rebuild_executor",
+    "app.render.execution.rebuild_persistence",
+]
+
+# Full mode: complete set including heavier reassembly / rebuild modules.
+# SmartReassemblyService, render.rebuild.api, and api._registry are kept out of
+# quick mode — they pull in large dependency trees that require infrastructure
+# packages and can hang in bare CI environments.
+_FULL_IMPORTS = [
+    "app.core.config",
+    "app.core.runtime_paths",
     "app.render.manifest.manifest_service",
     "app.render.manifest.manifest_writer",
     "app.render.manifest.manifest_reader",
@@ -139,17 +152,19 @@ _CRITICAL_IMPORTS = [
     "app.render.rerender.rerender_service",
     "app.render.decision.unified_rebuild_decision_engine",
     "app.render.execution.approved_rebuild_executor",
+    "app.render.execution.rebuild_persistence",
     "app.render.rebuild.api",
     "app.api._registry",
 ]
 
 
-def check_imports() -> None:
+def check_imports(mode: str = "quick") -> None:
     print("\n[3] Critical module imports")
+    imports = _QUICK_IMPORTS if mode == "quick" else _FULL_IMPORTS
     # Modules that may fail on infrastructure packages (kombu, sqlalchemy, etc.)
     # when running outside the full Docker stack — warn, not fail.
     _INFRA_DEPENDENT = {"app.api._registry"}
-    for module_path in _CRITICAL_IMPORTS:
+    for module_path in imports:
         try:
             importlib.import_module(module_path)
             ok(module_path)
@@ -331,15 +346,16 @@ def main() -> int:
     print("=" * 65)
 
     if mode == "quick":
-        # Quick: only lightweight checks — no DB / Redis / Celery required
-        check_imports()
+        # Quick: only lightweight checks — no DB / Redis / Celery required.
+        # Imports are restricted to app.core + app.render.execution to stay fast.
+        check_imports(mode="quick")
         check_render_paths()
         check_no_hardcoded_data_renders()
     else:
         # Full: all checks
         check_alembic_head()
         check_db_tables()
-        check_imports()
+        check_imports(mode="full")
         check_render_paths()
         check_celery_broker()
         check_router_registry()
