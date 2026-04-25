@@ -23,10 +23,9 @@ class AssemblyValidator:
         ]
 
         if missing:
-            raise FileNotFoundError({
-                "error": "Missing render assets",
-                "missing": missing,
-            })
+            raise FileNotFoundError(
+                f"Missing render assets: {missing}"
+            )
 
     def validate_plan(self, assembly_plan: dict) -> None:
         """Raise ValueError if required top-level plan keys are absent or empty.

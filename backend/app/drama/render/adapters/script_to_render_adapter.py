@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from app.drama.script.engines.script_engine import DEFAULT_VOICE_TONE
+
 
 class ScriptToRenderAdapter:
     """Adapts script engine output into a list of render-ready scene payloads."""
@@ -21,7 +23,7 @@ class ScriptToRenderAdapter:
                 "duration_sec": segment.get("duration_sec", 6),
 
                 "voice_directive": {
-                    "tone": voice.get("tone", "documentary, calm"),
+                    "tone": voice.get("tone", DEFAULT_VOICE_TONE),
                     "speed": voice.get("speed", "normal"),
                     "pause": voice.get("pause", "normal"),
                     "stress_words": voice.get("stress_words", []),

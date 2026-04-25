@@ -103,10 +103,9 @@ class FFmpegAssemblyExecutor:
         result = subprocess.run(command, capture_output=True, text=True)
 
         if result.returncode != 0:
-            raise RuntimeError({
-                "error": "FFmpeg assembly failed",
-                "stderr": result.stderr,
-            })
+            raise RuntimeError(
+                f"FFmpeg assembly failed. stderr: {result.stderr}"
+            )
 
         return {
             "project_id": project_id,

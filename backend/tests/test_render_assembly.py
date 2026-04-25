@@ -61,7 +61,7 @@ class TestAssemblyValidator:
 
     def test_validate_assets_raises_on_missing_files(self):
         v = self._validator()
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError, match="Missing render assets"):
             v.validate_assets(["/nonexistent/scene.mp4"], [])
 
     def test_validate_assets_passes_for_real_files(self):
@@ -121,7 +121,8 @@ class TestFFmpegCommandBuilder:
             path = f.name
         try:
             builder.build_concat_file(["/a/b.mp4", "/c/d.mp4"], path)
-            content = open(path).read()
+            with open(path) as fh:
+                content = fh.read()
             assert "file '/a/b.mp4'" in content
             assert "file '/c/d.mp4'" in content
         finally:

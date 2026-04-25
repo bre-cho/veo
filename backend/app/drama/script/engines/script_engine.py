@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+DEFAULT_VOICE_TONE = "documentary, calm"
+
 
 class NextLevelScriptEngine:
     """Generates a multi-scene script from a topic payload.
@@ -15,18 +17,18 @@ class NextLevelScriptEngine:
     def generate(self, payload: Any) -> Dict[str, Any]:
         if hasattr(payload, "topic"):
             topic = payload.topic or ""
-            tone = payload.tone or "documentary, calm"
+            tone = payload.tone or DEFAULT_VOICE_TONE
             num_scenes = payload.num_scenes or 5
             duration_sec = payload.duration_sec or 60
         else:
             topic = payload.get("topic", "")
-            tone = payload.get("tone", "documentary, calm") or "documentary, calm"
+            tone = payload.get("tone", DEFAULT_VOICE_TONE) or DEFAULT_VOICE_TONE
             num_scenes = payload.get("num_scenes", 5)
             duration_sec = payload.get("duration_sec", 60)
 
         segments = self._build_segments(
             topic=topic,
-            tone=tone or "documentary, calm",
+            tone=tone or DEFAULT_VOICE_TONE,
             num_scenes=int(num_scenes),
             total_duration=int(duration_sec),
         )
