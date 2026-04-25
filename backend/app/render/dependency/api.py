@@ -19,7 +19,28 @@ def build_dependency_graph(project_id: str, episode_id: str):
     return _service.build_graph(project_id, episode_id)
 
 
-@router.get("/affected/{project_id}/{episode_id}/{scene_id}/{change_type}")
+@router.get("/affected-with-reasons/{project_id}/{episode_id}/{scene_id}/{change_type}")
+def get_affected_scenes_with_reasons(
+    project_id: str,
+    episode_id: str,
+    scene_id: str,
+    change_type: str,
+):
+    """Return all scene IDs and their rebuild reasons when *scene_id* changes."""
+    affected = _service.affected_scenes_with_reasons(
+        project_id=project_id,
+        episode_id=episode_id,
+        changed_scene_id=scene_id,
+        change_type=change_type,
+    )
+    return {
+        "project_id": project_id,
+        "episode_id": episode_id,
+        "changed_scene_id": scene_id,
+        "change_type": change_type,
+        "affected": affected,
+    }
+
 def get_affected_scenes(
     project_id: str,
     episode_id: str,

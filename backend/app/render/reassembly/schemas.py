@@ -26,3 +26,5 @@ class SmartReassemblyRequest(BaseModel):
     changed_scene_id: str
     force_full_rebuild: bool = False
     change_type: str = "subtitle"
+    force_quality_rebuild: bool = False
+    include_optional_rebuilds: bool = False

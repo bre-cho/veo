@@ -11,6 +11,7 @@ from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.concat_finalizer import ConcatFinalizer
 from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
+from app.render.reassembly.policy.rebuild_policy_engine import RebuildPolicyEngine
 from app.render.reassembly.schemas import SmartReassemblyRequest
 from app.render.reassembly.subtitle_rebuild_service import SubtitleRebuildService
 from app.render.reassembly.timeline_drift_guard import TimelineDriftGuard
@@ -54,6 +55,7 @@ class SmartReassemblyService:
             manifest_base_dir=manifest_base_dir,
             dependency_base_dir=dependency_base_dir,
         )
+        self._rebuild_policy = RebuildPolicyEngine()
 
     # ------------------------------------------------------------------
     # Public
@@ -131,22 +133,48 @@ class SmartReassemblyService:
             has_timeline_drift=requires_range,
         )
 
-        # Graph-aware expansion: add scenes that have a dependency on the
-        # changed scene for the declared change_type.
-        dependency_scene_ids = self._dependency.affected_scenes(
+        # Graph-aware expansion: collect reasons for each affected scene.
+        dependency_reasons: Dict[str, Any] = self._dependency.affected_scenes_with_reasons(
             project_id=req.project_id,
             episode_id=req.episode_id,
             changed_scene_id=req.changed_scene_id,
             change_type=req.change_type,
         )
 
-        affected_ids: set = {item["scene_id"] for item in range_manifests}
-        affected_ids.update(dependency_scene_ids)
+        # Scenes in the affected range due to global subtitle/timeline drift
+        # are always required to rebuild; annotate them with a timeline reason.
+        if requires_range:
+            for item in range_manifests:
+                scene_id = item["scene_id"]
+                dependency_reasons.setdefault(scene_id, []).append({
+                    "source_scene_id": req.changed_scene_id,
+                    "dependency_type": "timeline",
+                    "reason": "timeline drift requires rebuilding following subtitle-burned chunks",
+                    "strength": 1.0,
+                })
+
+        # Apply rebuild policy to filter by required / optional / skip.
+        policy_decisions = self._rebuild_policy.classify_many(
+            reason_report=dependency_reasons,
+            force_quality=req.force_quality_rebuild,
+        )
+
+        required_ids: set = set(self._rebuild_policy.required_scene_ids(policy_decisions))
+        optional_ids: set = set(self._rebuild_policy.optional_scene_ids(policy_decisions))
+
+        if req.include_optional_rebuilds:
+            rebuild_ids = required_ids | optional_ids
+        else:
+            rebuild_ids = required_ids
+
+        # Always include range-mandated scenes (global burn-in drift).
+        if requires_range:
+            rebuild_ids.update(item["scene_id"] for item in range_manifests)
 
         affected_manifests = [
             item
             for item in self._manifest.list_episode(req.project_id, req.episode_id)
-            if item["scene_id"] in affected_ids
+            if item["scene_id"] in rebuild_ids
         ]
         affected_manifests.sort(key=scene_sort_key)
 
@@ -191,6 +219,20 @@ class SmartReassemblyService:
                     "needs_reassembly": False,
                     "needs_smart_reassembly": False,
                     "affected_by_timeline_drift": item["scene_id"] != req.changed_scene_id,
+                    "rebuild_reasons": dependency_reasons.get(item["scene_id"], []),
+                    "rebuild_policy_decision": policy_decisions.get(item["scene_id"]),
+                },
+            )
+
+        # Record policy decision for skipped scenes (no rebuild needed).
+        for scene_id in self._rebuild_policy.skipped_scene_ids(policy_decisions):
+            self._manifest.patch_scene(
+                req.project_id,
+                req.episode_id,
+                scene_id,
+                {
+                    "rebuild_policy_decision": policy_decisions[scene_id],
+                    "needs_reassembly": False,
                 },
             )
 
@@ -213,10 +255,16 @@ class SmartReassemblyService:
         return {
             "status": "smart_reassembled",
             "changed_scene_id": req.changed_scene_id,
+            "change_type": req.change_type,
             "timeline_drift": drift_report,
             "timeline_report": timeline_report,
             "subtitle_report": subtitle_report,
             "rebuilt_scene_ids": [c["scene_id"] for c in rebuilt_chunks],
+            "rebuild_reason_report": dependency_reasons,
+            "rebuild_policy_report": policy_decisions,
+            "required_scene_ids": sorted(required_ids),
+            "optional_scene_ids": sorted(optional_ids),
+            "skipped_scene_ids": self._rebuild_policy.skipped_scene_ids(policy_decisions),
             "rebuilt_count": len(rebuilt_chunks),
             "final": final,
         }

@@ -104,6 +104,31 @@ class DependencyService:
     # Queries
     # ------------------------------------------------------------------
 
+    def affected_scenes_with_reasons(
+        self,
+        project_id: str,
+        episode_id: str,
+        changed_scene_id: str,
+        change_type: str,
+    ) -> dict:
+        """Return all affected scene IDs mapped to their rebuild reasons.
+
+        Args:
+            project_id: Owning project.
+            episode_id: Episode that contains the changed scene.
+            changed_scene_id: The scene whose content changed.
+            change_type: Category of the change.
+
+        Returns:
+            Dict mapping scene_id -> list of reason dicts.
+        """
+        graph_data = self.load_graph(project_id, episode_id)
+        graph = DependencyGraph(graph_data["dependencies"])
+        return graph.affected_scenes_with_reasons(
+            changed_scene_id=changed_scene_id,
+            change_type=change_type,
+        )
+
     def affected_scenes(
         self,
         project_id: str,
