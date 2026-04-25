@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.render.manifest.manifest_service import ManifestService
 
@@ -49,7 +49,7 @@ class AffectedRangeResolver:
         if not has_timeline_drift:
             return [item for item in manifests if item["scene_id"] == changed_scene_id]
 
-        changed_index: int | None = None
+        changed_index: Optional[int] = None
 
         for idx, item in enumerate(manifests):
             if item["scene_id"] == changed_scene_id:

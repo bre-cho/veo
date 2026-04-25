@@ -399,7 +399,12 @@ class TestSmartReassemblyAffectedRange:
         svc = self._make_svc(manifests_dir, chunks_dir)
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
-        mock_episode_sub = {"status": "subtitle_rebuilt", "subtitle_path": "/subs/ep1.ass", "scene_count": 5, "word_track_count": 5}
+        mock_episode_sub = {
+            "status": "subtitle_rebuilt",
+            "subtitle_path": "/subs/ep1.ass",
+            "scene_count": 5,
+            "word_track_count": 5,
+        }
         mock_tl = {"total_duration_sec": 35.0, "timeline": []}
 
         def _mock_build(project_id, episode_id, scene_manifest):
@@ -428,7 +433,12 @@ class TestSmartReassemblyAffectedRange:
         svc = self._make_svc(manifests_dir, chunks_dir)
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
-        mock_episode_sub = {"status": "subtitle_rebuilt", "subtitle_path": "/subs/ep1.ass", "scene_count": 5, "word_track_count": 5}
+        mock_episode_sub = {
+            "status": "subtitle_rebuilt",
+            "subtitle_path": "/subs/ep1.ass",
+            "scene_count": 5,
+            "word_track_count": 5,
+        }
         mock_tl = {"total_duration_sec": 35.0, "timeline": []}
 
         def _mock_build(project_id, episode_id, scene_manifest):
