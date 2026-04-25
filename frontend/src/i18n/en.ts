@@ -104,6 +104,18 @@ const en: Record<TranslationKey, string> = {
   time: "Time",
   status: "Status",
   actions: "Actions",
+
+  // Page titles
+  analytics_title: "Analytics",
+  settings_title: "Settings",
+  wallet_title: "Wallet",
+
+  // Saved views (render-jobs page)
+  views_edit_saved_view: "Edit saved view",
+  views_update: "Update view",
+  views_apply: "Apply",
+  views_edit: "Edit",
+  views_delete: "Delete",
   // VoicePanel
   voice_dna_title: "Voice DNA",
   voice_language_code: "Language Code",

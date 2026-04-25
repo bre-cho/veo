@@ -20,6 +20,7 @@ from app.db.session import get_db
 from app.render.decision.unified_rebuild_decision_engine import UnifiedRebuildDecisionEngine
 from app.render.execution.approved_rebuild_executor import (
     ApprovedRebuildExecutor,
+    RuntimeRebuildPreflightValidator,
     get_default_audit_log,
 )
 from app.render.execution.rebuild_persistence import DbRebuildPersistence
@@ -145,6 +146,7 @@ def rebuild_approve(
             rebuild_fn=_make_smart_rebuild_fn(),
             audit_store=persistence.append_audit,
             idempotency_backend=persistence,
+            runtime_preflight=RuntimeRebuildPreflightValidator(db),
         )
         return executor.execute(decision=req.decision, job_id=req.job_id)
     except Exception:  # noqa: BLE001

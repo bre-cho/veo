@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { getCreatorEarnings, requestPayout } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 export default function WalletPage() {
+  const t = useT();
   const [creatorId, setCreatorId] = useState("");
   const [earnings, setEarnings] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ export default function WalletPage() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto max-w-3xl px-6 py-12">
-        <h1 className="mb-2 text-3xl font-bold">Wallet</h1>
+        <h1 className="mb-2 text-3xl font-bold">{t("wallet_title")}</h1>
         <p className="mb-8 text-sm text-neutral-400">
           View earnings and request payouts.
         </p>

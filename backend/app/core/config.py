@@ -132,3 +132,11 @@ class Settings(BaseModel):
 settings = Settings()
 if settings.app_env.strip().lower() == "production" and settings.provider_allow_mock_fallback:
     raise ValueError("PROVIDER_ALLOW_MOCK_FALLBACK must be false when APP_ENV=production")
+# Only enforce the localhost guard when APP_ENV is explicitly set to "production"
+# (not the default value) so that test environments without any env vars set
+# are not affected.
+if os.getenv("APP_ENV", "").strip().lower() == "production" and "localhost" in settings.public_base_url:
+    raise ValueError(
+        "PUBLIC_BASE_URL contains 'localhost' while APP_ENV=production. "
+        "Set PUBLIC_BASE_URL to the real public hostname before deploying."
+    )

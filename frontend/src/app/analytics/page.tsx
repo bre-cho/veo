@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { getMarketplaceTrending } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 export default function AnalyticsPage() {
+  const t = useT();
   const [trending, setTrending] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,7 @@ export default function AnalyticsPage() {
     <main className="min-h-screen bg-neutral-950 text-neutral-100 p-8">
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold">Analytics</h1>
+          <h1 className="text-3xl font-semibold">{t("analytics_title")}</h1>
           <p className="text-neutral-400 mt-1">Marketplace performance insights.</p>
         </div>
 

@@ -1,8 +1,10 @@
 "use client";
 import { useState } from 'react';
 import { useProjectEvents } from '../lib/useProjectEvents';
+import { useT } from '../i18n/useT';
 
 export default function RealtimeProgressUI({ projectId }: { projectId: string }) {
+  const t = useT();
   const [events, setEvents] = useState<any[]>([]);
   const [sceneProgress, setSceneProgress] = useState<Record<string, number>>({});
 
@@ -15,7 +17,7 @@ export default function RealtimeProgressUI({ projectId }: { projectId: string })
 
   return (
     <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
-      <h2 className="text-lg font-semibold">Realtime Progress</h2>
+      <h2 className="text-lg font-semibold">{t("realtime_progress_title")}</h2>
       <div className="space-y-3">
         {Object.entries(sceneProgress).map(([sceneId, progress]) => (
           <div key={sceneId} className="rounded-xl border border-white/10 bg-black/20 p-3">

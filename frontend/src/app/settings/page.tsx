@@ -12,6 +12,7 @@ import {
   saveAiEngineConfig,
   testOpenRouterKey,
 } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 // ─── Blank form ──────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ type FormState = typeof EMPTY_FORM;
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const t = useT();
   const [tab, setTab] = useState<"accounts" | "ai_engine">("accounts");
   const [accounts, setAccounts] = useState<GoogleAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +119,7 @@ export default function SettingsPage() {
 
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-semibold">Settings</h1>
+          <h1 className="text-3xl font-semibold">{t("settings_title")}</h1>
           <p className="text-neutral-400 mt-1">Quản lý tài khoản Google AI và cài đặt hệ thống.</p>
         </div>
 

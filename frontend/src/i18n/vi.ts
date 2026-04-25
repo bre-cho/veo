@@ -102,6 +102,18 @@ const vi = {
   time: "Thời gian",
   status: "Trạng thái",
   actions: "Hành động",
+
+  // Page titles
+  analytics_title: "Phân tích",
+  settings_title: "Cài đặt",
+  wallet_title: "Ví tiền",
+
+  // Saved views (render-jobs page)
+  views_edit_saved_view: "Chỉnh sửa view đã lưu",
+  views_update: "Cập nhật view",
+  views_apply: "Áp dụng",
+  views_edit: "Chỉnh sửa",
+  views_delete: "Xoá",
   // VoicePanel
   voice_dna_title: "Giọng DNA",
   voice_language_code: "Mã ngôn ngữ",

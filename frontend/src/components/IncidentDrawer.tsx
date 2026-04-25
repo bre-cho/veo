@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { IncidentActionLogItem, RecentIncidentItem, RenderEventItem } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 function statusTone(status?: string | null) {
   const normalized = (status || "").toLowerCase();
@@ -88,6 +89,8 @@ export default function IncidentDrawer({
   onReopen: () => void;
   loadingAction?: "ack" | "assign" | "mute" | "resolve" | "reopen" | null;
 }) {
+  const t = useT();
+
   if (!incident) {
     return <section data-testid="incident-drawer" className="rounded-3xl border border-white/10 bg-white/5 p-5"><p className="text-lg font-semibold text-white">Incident detail</p><p className="mt-2 text-sm text-white/55">Select an incident from the feed to inspect and action it without leaving the dashboard.</p></section>;
   }
@@ -101,7 +104,7 @@ export default function IncidentDrawer({
           <p className="text-lg font-semibold text-white">Incident operational panel</p>
           <p className="mt-1 text-xs text-white/45">{incident.incident_key}</p>
         </div>
-        <button data-testid="incident-drawer-close" type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70 hover:bg-white/10">Close</button>
+        <button data-testid="incident-drawer-close" type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70 hover:bg-white/10">{t("close")}</button>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
