@@ -13,8 +13,12 @@ import {
   createCharacterReferencePack,
   updateProjectVeoConfig,
   createVeoBatchRun,
+  decideRebuild,
+  approveRebuild,
 } from "@/src/lib/api";
 import { useSmartPoll } from "@/src/hooks/useSmartPoll";
+import RebuildDecisionPanel from "@/src/components/RebuildDecisionPanel";
+import BudgetPolicySelector, { type BudgetPolicy } from "@/src/components/BudgetPolicySelector";
 
 export default function ProjectWorkspacePage() {
   const params = useParams<{ id: string }>();
@@ -37,6 +41,15 @@ export default function ProjectWorkspacePage() {
   const [newPackSummary, setNewPackSummary] = useState("");
   const [newPackHeroImage, setNewPackHeroImage] = useState("");
   const [batchResult, setBatchResult] = useState<any>(null);
+
+  // ── Rebuild decision state ─────────────────────────────────────────────
+  const [rebuildEpisodeId, setRebuildEpisodeId] = useState("");
+  const [rebuildSceneId, setRebuildSceneId] = useState("");
+  const [rebuildChangeType, setRebuildChangeType] = useState("subtitle");
+  const [budgetPolicy, setBudgetPolicy] = useState<BudgetPolicy>("balanced");
+  const [rebuildDecision, setRebuildDecision] = useState<any>(null);
+  const [rebuildLoading, setRebuildLoading] = useState(false);
+  const [rebuildExecuteResult, setRebuildExecuteResult] = useState<any>(null);
 
   const refresh = async () => {
     const [p, s, e, packData] = await Promise.all([
@@ -139,6 +152,40 @@ export default function ProjectWorkspacePage() {
     });
     setBatchResult(result);
     setBusy(false);
+  };
+
+  const handleGetRebuildDecision = async () => {
+    if (!rebuildEpisodeId || !rebuildSceneId) return;
+    setRebuildLoading(true);
+    setRebuildDecision(null);
+    setRebuildExecuteResult(null);
+    try {
+      const decision = await decideRebuild({
+        project_id: projectId,
+        episode_id: rebuildEpisodeId,
+        changed_scene_id: rebuildSceneId,
+        change_type: rebuildChangeType,
+        budget_policy: budgetPolicy,
+      });
+      setRebuildDecision(decision);
+    } catch (err) {
+      setRebuildDecision({ error: err instanceof Error ? err.message : "Decision failed" });
+    } finally {
+      setRebuildLoading(false);
+    }
+  };
+
+  const handleApproveRebuild = async (decision: any) => {
+    setBusy(true);
+    try {
+      const result = await approveRebuild(decision);
+      setRebuildExecuteResult(result);
+      setRebuildDecision(null);
+    } catch (err) {
+      setRebuildExecuteResult({ error: err instanceof Error ? err.message : "Approve failed" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -266,6 +313,46 @@ export default function ProjectWorkspacePage() {
           ))}
         </div>
       </section>
+      <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
+        <h2>Rebuild Decision</h2>
+        <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+          <input
+            placeholder="Episode ID"
+            value={rebuildEpisodeId}
+            onChange={(e) => setRebuildEpisodeId(e.target.value)}
+          />
+          <input
+            placeholder="Changed Scene ID"
+            value={rebuildSceneId}
+            onChange={(e) => setRebuildSceneId(e.target.value)}
+          />
+          <select value={rebuildChangeType} onChange={(e) => setRebuildChangeType(e.target.value)}>
+            <option value="subtitle">subtitle</option>
+            <option value="voice">voice</option>
+            <option value="avatar">avatar</option>
+            <option value="timeline">timeline</option>
+          </select>
+          <BudgetPolicySelector value={budgetPolicy} onChange={setBudgetPolicy} />
+          <button
+            onClick={handleGetRebuildDecision}
+            disabled={rebuildLoading || !rebuildEpisodeId || !rebuildSceneId}
+          >
+            Get Rebuild Decision
+          </button>
+        </div>
+        <RebuildDecisionPanel
+          decision={rebuildDecision}
+          loading={rebuildLoading}
+          onApprove={handleApproveRebuild}
+          onCancel={() => setRebuildDecision(null)}
+        />
+        {rebuildExecuteResult && (
+          <div style={{ marginTop: 12, padding: 8, background: "#f0f0f0", borderRadius: 4 }}>
+            <strong>Execute result:</strong> {JSON.stringify(rebuildExecuteResult)}
+          </div>
+        )}
+      </section>
+
     </main>
   );
 }

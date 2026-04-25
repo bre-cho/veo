@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
 
@@ -36,6 +37,16 @@ class IdempotencyBackend(Protocol):
     Production implementations persist to a database or Redis.  The
     ``_InMemoryIdempotency`` class below is used as the default for
     single-process testing only.
+
+    The atomic reserve/complete pattern eliminates the check-then-act race
+    condition present in plain check() / store() flows:
+
+    * ``reserve_key`` atomically claims a key (e.g. via INSERT with unique
+      constraint).  Returns ``True`` on success, ``False`` if the key was
+      already claimed by another request.
+    * ``complete_key`` updates the reserved entry to its final state once
+      the rebuild has finished (succeeded or failed).
+    * ``check`` / ``store`` are retained for backward compatibility.
     """
 
     def check(self, key: str) -> Optional[Dict[str, Any]]:
@@ -44,6 +55,18 @@ class IdempotencyBackend(Protocol):
 
     def store(self, key: str, result: Dict[str, Any]) -> None:
         """Persist a result dict under *key*."""
+        ...
+
+    def reserve_key(self, key: str, job_id: str) -> bool:
+        """Atomically claim *key* with status executing.
+
+        Returns ``True`` if the key was successfully reserved (no prior entry),
+        ``False`` if the key already exists (duplicate / concurrent request).
+        """
+        ...
+
+    def complete_key(self, key: str, result: Dict[str, Any]) -> None:
+        """Update the reserved entry to its final result."""
         ...
 
 
@@ -91,12 +114,27 @@ class _InMemoryIdempotency:
     """In-memory idempotency backend.
 
     Suitable for single-process development and unit tests only.
+    Uses a threading lock so that ``reserve_key`` is thread-safe.
     Use :class:`~app.render.execution.rebuild_persistence.DbRebuildPersistence`
     in production.
     """
 
     def __init__(self) -> None:
         self._store: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def reserve_key(self, key: str, job_id: str) -> bool:
+        """Atomically claim *key*.  Returns True if reserved, False if duplicate."""
+        with self._lock:
+            if key in self._store:
+                return False
+            self._store[key] = {"job_id": job_id, "status": STATUS_EXECUTING}
+            return True
+
+    def complete_key(self, key: str, result: Dict[str, Any]) -> None:
+        """Update a previously reserved key to its final result."""
+        with self._lock:
+            self._store[key] = result
 
     def check(self, key: str) -> Optional[Dict[str, Any]]:
         return self._store.get(key)
@@ -108,6 +146,84 @@ class _InMemoryIdempotency:
 # Module-level singleton kept for backward-compat with tests that call
 # get_default_audit_log / clear_default_audit_log.
 _DEFAULT_IDEMPOTENCY = _InMemoryIdempotency()
+
+
+# ---------------------------------------------------------------------------
+# Preflight validator
+# ---------------------------------------------------------------------------
+
+#: Decisions older than this many seconds are considered expired and will be
+#: rejected by ``RebuildPreflightValidator``.  The ``decided_at`` field must be
+#: present in the decision payload for the TTL check to apply.
+DECISION_MAX_AGE_SECONDS: int = 300  # 5 minutes
+
+
+class RebuildPreflightValidator:
+    """Lightweight sanity checks performed *before* executing a rebuild.
+
+    All checks operate on the decision payload dict — no database or filesystem
+    access is required.  Expensive infra-backed checks (e.g. "does the project
+    still exist in the DB?") belong in a separate, heavier validation layer.
+
+    Checks performed
+    ----------------
+    1. Required fields present: project_id, episode_id, changed_scene_id.
+    2. rebuild_scene_ids is a non-empty list.
+    3. Decision action is not already ``block``.
+    4. Decision has not expired (if ``decided_at`` ISO timestamp is present and
+       the age exceeds :data:`DECISION_MAX_AGE_SECONDS`).
+    """
+
+    @staticmethod
+    def validate(decision: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate *decision* and return a result dict.
+
+        Returns:
+            ``{"valid": True, "reason": ""}`` on success, or
+            ``{"valid": False, "reason": "<explanation>"}`` on failure.
+        """
+        # ── 1. Required fields ──────────────────────────────────────────
+        for field in ("project_id", "episode_id", "changed_scene_id"):
+            if not decision.get(field):
+                return {"valid": False, "reason": f"Missing required field: {field}"}
+
+        # ── 2. Non-empty scene list ─────────────────────────────────────
+        rebuild_scene_ids = decision.get("rebuild_scene_ids") or []
+        if not rebuild_scene_ids:
+            return {"valid": False, "reason": "rebuild_scene_ids is empty"}
+        if not isinstance(rebuild_scene_ids, (list, tuple)):
+            return {"valid": False, "reason": "rebuild_scene_ids must be a list"}
+
+        # ── 3. Decision not already blocked ────────────────────────────
+        # Accept both "block" (raw engine value) and "blocked" (executor status).
+        raw_decision = decision.get("decision", "")
+        if raw_decision in (STATUS_BLOCKED, "block"):
+            return {
+                "valid": False,
+                "reason": "Decision is blocked by budget guard — cannot execute",
+            }
+
+        # ── 4. Decision TTL ─────────────────────────────────────────────
+        decided_at = decision.get("decided_at")
+        if decided_at:
+            try:
+                dt = datetime.fromisoformat(decided_at)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                age_sec = (datetime.now(tz=timezone.utc) - dt).total_seconds()
+                if age_sec > DECISION_MAX_AGE_SECONDS:
+                    return {
+                        "valid": False,
+                        "reason": (
+                            f"Decision has expired "
+                            f"(age={age_sec:.0f}s > {DECISION_MAX_AGE_SECONDS}s). "
+                            "Re-run /decide to obtain a fresh decision."
+                        ),
+                    }
+            except (ValueError, TypeError):
+                pass  # Malformed decided_at — skip TTL check rather than block
+
+        return {"valid": True, "reason": ""}
 
 
 def _compute_idempotency_key(decision: Dict[str, Any]) -> str:
@@ -172,13 +288,14 @@ class ApprovedRebuildExecutor:
         """Execute the rebuild described by *decision*.
 
         Steps:
-        1. Validate decision is approved (not blocked/downgraded).
-        2. Derive idempotency key and reject duplicates.
-        3. Revalidate scene/job status.
-        4. Transition: approved → executing.
+        1. Guard: reject blocked / downgraded decisions without a scene list.
+        2. Atomic reserve: call ``reserve_key()`` — if it returns False another
+           request already claimed this key; return the cached result.
+        3. Preflight validation via :class:`RebuildPreflightValidator`.
+        4. Transition: queued → approved → executing.
         5. Call rebuild function.
         6. Transition: executing → succeeded | failed → incident_required.
-        7. Append audit trail entry.
+        7. Persist final result via ``complete_key()``.
         8. Return structured execution result.
 
         Args:
@@ -194,8 +311,16 @@ class ApprovedRebuildExecutor:
         if job_id is None:
             job_id = ikey[:16]
 
-        # ── Guard: blocked or downgraded decisions are not executable ──
+        # Normalize engine action names ("block"/"downgrade") to the executor's
+        # canonical status values ("blocked"/"downgraded").  The engine produces
+        # short forms; the executor uses longer forms internally.
         action = decision.get("decision", "block")
+        if action == "block":
+            action = STATUS_BLOCKED
+        elif action == "downgrade":
+            action = STATUS_DOWNGRADED
+
+        # ── Guard: blocked or downgraded decisions are not executable ──
         if action == STATUS_BLOCKED:
             result = self._execution_result(
                 job_id=job_id,
@@ -218,18 +343,28 @@ class ApprovedRebuildExecutor:
             self._update_status(job_id, STATUS_DOWNGRADED, result)
             return result
 
-        # ── Guard: idempotency ──────────────────────────────────────
-        previous = self._idempotency.check(ikey)
-        if previous is not None:
-            _logger.info(
-                "Idempotency hit for job %s (key=%s): returning previous result %s",
-                job_id,
-                ikey,
-                previous.get("status"),
+        # ── Atomic reserve — eliminates check-then-act race condition ──
+        reserved = self._idempotency.reserve_key(ikey, job_id)
+        if not reserved:
+            # Another request already claimed this key.
+            existing = self._idempotency.check(ikey)
+            if existing is not None:
+                _logger.info(
+                    "Idempotency hit for job %s (key=%s): returning cached result %s",
+                    job_id,
+                    ikey,
+                    existing.get("status"),
+                )
+                return existing
+            # Edge case: key was reserved but result not yet written (concurrent)
+            return self._execution_result(
+                job_id=job_id,
+                status=STATUS_EXECUTING,
+                decision=decision,
+                message="Rebuild already in progress for this idempotency key.",
             )
-            return previous
 
-        # ── Transition: queued → approved ──────────────────────────
+        # ── Transition: queued → approved ──────────────────────────────
         self._record_audit(job_id=job_id, event=STATUS_APPROVED, decision=decision)
         self._update_status(
             job_id,
@@ -237,7 +372,26 @@ class ApprovedRebuildExecutor:
             {"message": "Rebuild approved, execution starting."},
         )
 
-        # ── Revalidate scene list ───────────────────────────────────
+        # ── Preflight validation ────────────────────────────────────────
+        preflight = RebuildPreflightValidator.validate(decision)
+        if not preflight["valid"]:
+            result = self._execution_result(
+                job_id=job_id,
+                status=STATUS_BLOCKED,
+                decision=decision,
+                message=f"Preflight check failed: {preflight['reason']}",
+            )
+            self._record_audit(
+                job_id=job_id,
+                event="preflight_failed",
+                decision=decision,
+                extras={"reason": preflight["reason"]},
+            )
+            self._update_status(job_id, STATUS_BLOCKED, result)
+            self._idempotency.complete_key(ikey, result)
+            return result
+
+        # ── Revalidate scene list ───────────────────────────────────────
         rebuild_scene_ids: List[str] = decision.get("rebuild_scene_ids") or []
         if not rebuild_scene_ids:
             result = self._execution_result(
@@ -248,10 +402,10 @@ class ApprovedRebuildExecutor:
             )
             self._record_audit(job_id=job_id, event="blocked_empty_scenes", decision=decision)
             self._update_status(job_id, STATUS_BLOCKED, result)
-            self._idempotency.store(ikey, result)
+            self._idempotency.complete_key(ikey, result)
             return result
 
-        # ── Transition: approved → executing ───────────────────────
+        # ── Transition: approved → executing ───────────────────────────
         self._record_audit(job_id=job_id, event=STATUS_EXECUTING, decision=decision)
         self._update_status(
             job_id,
@@ -259,7 +413,7 @@ class ApprovedRebuildExecutor:
             {"rebuild_scene_ids": rebuild_scene_ids},
         )
 
-        # ── Execute rebuild ─────────────────────────────────────────
+        # ── Execute rebuild ─────────────────────────────────────────────
         try:
             rebuild_payload = {
                 "project_id": decision["project_id"],
@@ -292,10 +446,10 @@ class ApprovedRebuildExecutor:
                 extras={"error": str(exc), "incident": incident},
             )
             self._update_status(job_id, STATUS_INCIDENT_REQUIRED, result)
-            self._idempotency.store(ikey, result)
+            self._idempotency.complete_key(ikey, result)
             return result
 
-        # ── Transition: executing → succeeded ──────────────────────
+        # ── Transition: executing → succeeded ──────────────────────────
         result = self._execution_result(
             job_id=job_id,
             status=STATUS_SUCCEEDED,
@@ -310,7 +464,7 @@ class ApprovedRebuildExecutor:
             extras={"rebuild_result_status": rebuild_result.get("status")},
         )
         self._update_status(job_id, STATUS_SUCCEEDED, result)
-        self._idempotency.store(ikey, result)
+        self._idempotency.complete_key(ikey, result)
         return result
 
     def get_audit_trail(self, job_id: str) -> List[Dict[str, Any]]:

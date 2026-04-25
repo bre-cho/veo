@@ -76,8 +76,20 @@ jobs:
           cd frontend && npm ci
 
       # ── Gate 1: Unified runtime verification ────────────────────────
-      - name: Verify unified runtime
-        run: python backend/scripts/verify_unified_runtime.py
+      - name: Verify unified runtime (quick mode, ≤10 s)
+        timeout-minutes: 1
+        env:
+          QUICK_VERIFY_MAX_SECONDS: 10
+        run: |
+          START=$(date +%s)
+          python backend/scripts/verify_unified_runtime.py --mode quick
+          END=$(date +%s)
+          ELAPSED=$(( END - START ))
+          echo "Quick verify completed in ${ELAPSED}s (limit: ${QUICK_VERIFY_MAX_SECONDS}s)"
+          if [ "$ELAPSED" -gt "${QUICK_VERIFY_MAX_SECONDS}" ]; then
+            echo "::error::verify_unified_runtime.py --mode quick exceeded ${QUICK_VERIFY_MAX_SECONDS}s (took ${ELAPSED}s)"
+            exit 1
+          fi
 
       # ── Gate 2: Core render test suite ──────────────────────────────
       - name: Run render test suite

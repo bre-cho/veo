@@ -1191,3 +1191,38 @@ export async function getCreatorAnalytics(id: string): Promise<any> {
 export async function getMarketplaceTrending(): Promise<{ trending: any[]; period: string }> {
   return request<any>("/analytics/marketplace/trending", { cache: "no-store" });
 }
+
+// ─── Rebuild pipeline ────────────────────────────────────────────────────────
+
+export interface RebuildDecidePayload {
+  project_id: string;
+  episode_id: string;
+  changed_scene_id: string;
+  change_type?: string;
+  budget_policy?: string;
+  force_full_rebuild?: boolean;
+  force_quality_rebuild?: boolean;
+  include_optional_rebuilds?: boolean;
+  has_timeline_drift?: boolean;
+  max_rebuild_cost?: number | null;
+  max_rebuild_time_sec?: number | null;
+  allow_budget_downgrade?: boolean | null;
+}
+
+export async function decideRebuild(payload: RebuildDecidePayload): Promise<any> {
+  return request<any>("/render/rebuild/decide", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function approveRebuild(decision: any, jobId?: string): Promise<any> {
+  return request<any>("/render/rebuild/approve", {
+    method: "POST",
+    body: JSON.stringify({ decision, job_id: jobId ?? null }),
+  });
+}
+
+export async function getRebuildAudit(jobId: string): Promise<any[]> {
+  return request<any[]>(`/render/rebuild/${jobId}/audit`, { cache: "no-store" });
+}

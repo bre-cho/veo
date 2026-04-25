@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 _logger = logging.getLogger(__name__)
@@ -77,7 +78,62 @@ class DbRebuildPersistence:
             self._db.rollback()
 
     # ------------------------------------------------------------------
-    # Idempotency backend – implements check() / store() protocol
+    # Idempotency backend – atomic reserve / complete pattern
+    # ------------------------------------------------------------------
+
+    def reserve_key(self, key: str, job_id: str) -> bool:
+        """Atomically insert a row with status ``executing``.
+
+        Returns ``True`` if the row was inserted (key was unclaimed).
+        Returns ``False`` if the key already exists (duplicate / concurrent
+        request) — the caller should fetch the existing result via ``check()``.
+        """
+        from app.models.render_rebuild_idempotency_key import RenderRebuildIdempotencyKey  # lazy
+
+        row = RenderRebuildIdempotencyKey(
+            idempotency_key=key,
+            job_id=job_id,
+            status="executing",
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        try:
+            self._db.add(row)
+            self._db.commit()
+            return True
+        except IntegrityError:
+            # Expected: another request already claimed this key (race condition).
+            self._db.rollback()
+            return False
+        except Exception as exc:  # noqa: BLE001
+            # Unexpected DB error — log as warning and surface as failure.
+            _logger.warning(
+                "reserve_key: unexpected DB error for key %s: %s",
+                key,
+                exc,
+            )
+            self._db.rollback()
+            return False
+
+    def complete_key(self, key: str, result: Dict[str, Any]) -> None:
+        """Update the reserved row to its final status and result payload."""
+        from app.models.render_rebuild_idempotency_key import RenderRebuildIdempotencyKey  # lazy
+
+        try:
+            row = (
+                self._db.query(RenderRebuildIdempotencyKey)
+                .filter(RenderRebuildIdempotencyKey.idempotency_key == key)
+                .first()
+            )
+            if row is not None:
+                row.status = result.get("status", "unknown")
+                row.result_json = json.dumps(result)
+            self._db.commit()
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("complete_key failed for key %s: %s", key, exc)
+            self._db.rollback()
+
+    # ------------------------------------------------------------------
+    # Idempotency backend – check() / store() (legacy / fallback)
     # ------------------------------------------------------------------
 
     def check(self, key: str) -> Optional[Dict[str, Any]]:
