@@ -17,7 +17,7 @@ def build_scene_sequence(
     Purpose assignment rules:
     - Scene 0               → ``hook``
     - Last scene            → ``cliffhanger``
-    - Every 3rd scene (0-indexed, excluding scene 0) → ``reveal``
+    - Every 3rd scene (indices 3, 6, 9, … — index 0 is already "hook") → ``reveal``
     - All other scenes      → ``escalation``
 
     Args:

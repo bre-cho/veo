@@ -6,6 +6,8 @@ and avoids merge conflicts when new routers are added.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 
 # ── Core / infrastructure ──────────────────────────────────────────────────
@@ -64,8 +66,7 @@ try:
     from app.api.avatar_tournament import router as avatar_tournament_router
     from app.api.avatar_governance import router as avatar_governance_router
 except Exception as _tournament_import_err:  # pragma: no cover
-    import logging as _logging
-    _logging.getLogger(__name__).warning(
+    logging.getLogger(__name__).warning(
         "Avatar tournament/governance routers failed to import: %s", _tournament_import_err
     )
     avatar_tournament_router = None  # type: ignore[assignment]
@@ -100,8 +101,7 @@ from app.api.publish_webhooks import router as publish_webhooks_router
 try:
     from app.api.avatar_acting import router as avatar_acting_router
 except Exception as _acting_import_err:  # pragma: no cover
-    import logging as _logging
-    _logging.getLogger(__name__).warning(
+    logging.getLogger(__name__).warning(
         "Avatar acting router failed to import: %s", _acting_import_err
     )
     avatar_acting_router = None  # type: ignore[assignment]
@@ -110,8 +110,7 @@ except Exception as _acting_import_err:  # pragma: no cover
 try:
     from app.drama.api import ALL_DRAMA_ROUTERS
 except Exception as _drama_import_err:  # pragma: no cover
-    import logging as _logging
-    _logging.getLogger(__name__).warning(
+    logging.getLogger(__name__).warning(
         "Drama engine routers failed to import (drama features disabled): %s",
         _drama_import_err,
     )

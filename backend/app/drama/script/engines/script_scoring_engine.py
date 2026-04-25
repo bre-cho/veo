@@ -43,9 +43,9 @@ def score_script(
     elif word_count > 400:
         score["retention_power"] += 10
 
-    # Curiosity density — ellipsis usage
+    # Curiosity density — ellipsis usage (cap 10 per documentation)
     ellipsis_count = full_script.count("...") + full_script.count("…")
-    score["retention_power"] = min(25, score["retention_power"] + min(ellipsis_count * 2, 5))
+    score["retention_power"] = min(25, score["retention_power"] + min(ellipsis_count * 2, 10))
 
     # Binge potential — cliffhanger and callback segments
     purposes = [seg.get("purpose", "") for seg in segments]
