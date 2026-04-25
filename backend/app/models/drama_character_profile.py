@@ -1,4 +1,8 @@
-"""drama_character_profile — SQLAlchemy model for a drama character's fixed DNA."""
+"""drama_character_profile — SQLAlchemy model for a drama character's fixed DNA.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

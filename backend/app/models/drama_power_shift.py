@@ -1,4 +1,8 @@
-"""drama_power_shift — multi-dimensional power shift record per scene."""
+"""drama_power_shift — multi-dimensional power shift record per scene.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid

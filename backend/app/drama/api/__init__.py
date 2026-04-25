@@ -12,6 +12,7 @@ from app.drama.api.drama_memory import router as drama_memory_router
 from app.drama.api.drama_relationships import router as drama_relationships_router
 from app.drama.api.drama_scenes import router as drama_scenes_router
 from app.drama.api.drama_state import router as drama_state_router
+from app.drama.api.drama_script import router as drama_script_router
 
 try:
     from app.drama.script.api import router as drama_script_router

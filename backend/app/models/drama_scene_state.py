@@ -1,4 +1,8 @@
-"""drama_scene_state — scene-level drama state produced by the Drama Engine."""
+"""drama_scene_state — scene-level drama state produced by the Drama Engine.
+
+.. deprecated::
+    This module is a legacy copy. Use ``app.drama.models`` instead.
+"""
 from __future__ import annotations
 
 import uuid
