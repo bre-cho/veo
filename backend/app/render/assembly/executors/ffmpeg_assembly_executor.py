@@ -15,6 +15,7 @@ from app.render.assembly.vision.frame_sampler import FrameSampler
 from app.render.assembly.vision.subtitle_safe_zone_engine import SubtitleSafeZoneEngine
 from app.render.assembly.vision.video_hash import compute_video_hash
 from app.render.assembly.vision.visual_detector import VisualDetector
+from app.render.manifest.manifest_service import ManifestService
 
 _logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class FFmpegAssemblyExecutor:
         self.resolver = AssetResolver()
         self.validator = AssemblyValidator()
         self.builder = FFmpegCommandBuilder()
+        self._manifest = ManifestService()
 
     def _build_scene_placements(
         self,
@@ -175,6 +177,28 @@ class FFmpegAssemblyExecutor:
 
         if word_tracks:
             scene_placements = self._build_scene_placements(video_paths, video_tracks)
+
+            # Persist detection + placement to each scene's manifest.
+            for scene in video_tracks:
+                sid = scene["scene_id"]
+                placement_data = scene_placements.get(sid, {})
+                try:
+                    self._manifest.patch_scene(
+                        project_id=project_id,
+                        episode_id=episode_id,
+                        scene_id=sid,
+                        patch={
+                            "detection": placement_data.get("detection", {}),
+                            "subtitle_placement": {
+                                "placement": placement_data.get("placement"),
+                                "style_name": placement_data.get("style_name"),
+                                "cache_status": placement_data.get("cache_status"),
+                            },
+                        },
+                    )
+                except Exception as _exc:  # noqa: BLE001
+                    _logger.warning("Failed to write manifest for scene %s: %s", sid, _exc)
+
             write_visual_aware_karaoke_ass(
                 word_tracks=word_tracks,
                 scene_placements=scene_placements,
@@ -199,6 +223,25 @@ class FFmpegAssemblyExecutor:
             raise RuntimeError(
                 f"FFmpeg assembly failed. stderr: {result.stderr}"
             )
+
+        # Update every assembled scene's manifest with the final output paths.
+        for scene in video_tracks:
+            sid = scene["scene_id"]
+            try:
+                self._manifest.patch_scene(
+                    project_id=project_id,
+                    episode_id=episode_id,
+                    scene_id=sid,
+                    patch={
+                        "subtitle_path": subtitle_path,
+                        "final_output_path": output_path,
+                        "status": "assembled",
+                    },
+                )
+            except Exception as _exc:  # noqa: BLE001
+                _logger.warning(
+                    "Failed to write post-assembly manifest for scene %s: %s", sid, _exc
+                )
 
         return {
             "project_id": project_id,
