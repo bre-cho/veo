@@ -46,6 +46,7 @@ const en: Record<TranslationKey, string> = {
   home_card_settings: "Settings",
   home_card_settings_desc: "Manage Google AI accounts with account rotation to run multiple accounts simultaneously",
   home_card_api_docs: "API Docs",
+  home_card_api_docs_desc: "FastAPI OpenAPI docs for backend routes",
 
   // Dashboard / incidents
   dashboard_title: "Dashboard",
@@ -103,6 +104,21 @@ const en: Record<TranslationKey, string> = {
   time: "Time",
   status: "Status",
   actions: "Actions",
+  // VoicePanel
+  voice_dna_title: "Voice DNA",
+  voice_language_code: "Language Code",
+  voice_accent_code: "Accent Code",
+  voice_tone: "Tone",
+  voice_pitch: "Pitch",
+  voice_speed: "Speed",
+  voice_language_placeholder: "e.g. en, zh, es",
+  voice_accent_placeholder: "e.g. us, gb, au",
+  voice_tone_placeholder: "e.g. warm, professional, energetic",
+  voice_pitch_placeholder: "e.g. low, medium, high",
+  voice_speed_placeholder: "e.g. slow, normal, fast",
+  voice_dna_saved: "Voice DNA saved ✓",
+  voice_saving: "Saving…",
+  voice_save_continue: "Save & Continue",
 };
 
 export default en;

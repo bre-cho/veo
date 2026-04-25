@@ -12,14 +12,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.render.decision.unified_rebuild_decision_engine import UnifiedRebuildDecisionEngine
 from app.render.execution.approved_rebuild_executor import (
     ApprovedRebuildExecutor,
     get_default_audit_log,
 )
+from app.render.execution.rebuild_persistence import DbRebuildPersistence
 
 _logger = logging.getLogger(__name__)
 
@@ -53,6 +56,37 @@ class RebuildApproveRequest(BaseModel):
 
     decision: Dict[str, Any]
     job_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Real rebuild function – wraps SmartReassemblyService
+# ---------------------------------------------------------------------------
+
+
+def _make_smart_rebuild_fn():
+    """Return a callable that performs the actual reassembly via SmartReassemblyService."""
+
+    def _smart_rebuild(payload: Dict[str, Any]) -> Dict[str, Any]:
+        from app.render.reassembly.smart_reassembly_service import SmartReassemblyService
+        from app.render.reassembly.schemas import SmartReassemblyRequest
+
+        req = SmartReassemblyRequest(
+            project_id=payload["project_id"],
+            episode_id=payload["episode_id"],
+            changed_scene_id=payload["changed_scene_id"],
+            change_type=payload.get("change_type", "subtitle"),
+            force_full_rebuild=(payload.get("selected_strategy") == "full_rebuild"),
+            budget_policy=payload.get("budget_policy", "balanced"),
+            force_quality_rebuild=payload.get("force_quality_rebuild", False),
+            include_optional_rebuilds=payload.get("include_optional_rebuilds", False),
+            max_rebuild_cost=payload.get("max_rebuild_cost"),
+            max_rebuild_time_sec=payload.get("max_rebuild_time_sec"),
+            allow_budget_downgrade=payload.get("allow_budget_downgrade"),
+        )
+        svc = SmartReassemblyService()
+        return svc.reassemble(req)
+
+    return _smart_rebuild
 
 
 # ---------------------------------------------------------------------------
@@ -96,31 +130,43 @@ def rebuild_decide(req: RebuildDecideRequest) -> Dict[str, Any]:
 
 
 @router.post("/approve")
-def rebuild_approve(req: RebuildApproveRequest) -> Dict[str, Any]:
+def rebuild_approve(
+    req: RebuildApproveRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """Approve and execute a previously produced decision payload.
 
     Idempotent: re-submitting the same decision returns the cached result.
+    Audit trail and idempotency records are persisted to the database.
     """
     try:
-        executor = ApprovedRebuildExecutor()
+        persistence = DbRebuildPersistence(db)
+        executor = ApprovedRebuildExecutor(
+            rebuild_fn=_make_smart_rebuild_fn(),
+            audit_store=persistence.append_audit,
+            idempotency_backend=persistence,
+        )
         return executor.execute(decision=req.decision, job_id=req.job_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         _logger.exception("rebuild_approve: unexpected error")
-        raise HTTPException(status_code=500, detail="Rebuild execution failed") from exc
+        raise HTTPException(status_code=500, detail="Rebuild execution failed")
 
 
 @router.post("/execute")
-def rebuild_execute(req: RebuildApproveRequest) -> Dict[str, Any]:
+def rebuild_execute(
+    req: RebuildApproveRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
     """Alias for ``/approve`` – kept for backward compatibility."""
-    return rebuild_approve(req)
+    return rebuild_approve(req, db)
 
 
 @router.get("/{job_id}/audit")
-def rebuild_audit(job_id: str) -> List[Dict[str, Any]]:
-    """Return the audit trail for a rebuild job.
+def rebuild_audit(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Return the audit trail for a rebuild job from the persistent DB store."""
+    persistence = DbRebuildPersistence(db)
+    return persistence.get_audit_trail(job_id)
 
-    In the default configuration the audit log is in-process memory.
-    In production this should be wired to a persistent store.
-    """
-    log = get_default_audit_log()
-    return [entry for entry in log if entry.get("job_id") == job_id]

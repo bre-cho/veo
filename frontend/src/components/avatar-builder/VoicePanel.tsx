@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { saveAvatarDna } from "@/src/lib/api";
+import { useT } from "@/src/i18n/useT";
 
 interface Props {
   avatarId: string;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function VoicePanel({ avatarId, onSaved }: Props) {
+  const t = useT();
   const [languageCode, setLanguageCode] = useState("");
   const [accentCode, setAccentCode] = useState("");
   const [tone, setTone] = useState("");
@@ -42,16 +44,16 @@ export default function VoicePanel({ avatarId, onSaved }: Props) {
   }
 
   const fields: { label: string; value: string; set: (v: string) => void; placeholder: string }[] = [
-    { label: "Language Code", value: languageCode, set: setLanguageCode, placeholder: "e.g. en, zh, es" },
-    { label: "Accent Code", value: accentCode, set: setAccentCode, placeholder: "e.g. us, gb, au" },
-    { label: "Tone", value: tone, set: setTone, placeholder: "e.g. warm, professional, energetic" },
-    { label: "Pitch", value: pitch, set: setPitch, placeholder: "e.g. low, medium, high" },
-    { label: "Speed", value: speed, set: setSpeed, placeholder: "e.g. slow, normal, fast" },
+    { label: t("voice_language_code"), value: languageCode, set: setLanguageCode, placeholder: t("voice_language_placeholder") },
+    { label: t("voice_accent_code"), value: accentCode, set: setAccentCode, placeholder: t("voice_accent_placeholder") },
+    { label: t("voice_tone"), value: tone, set: setTone, placeholder: t("voice_tone_placeholder") },
+    { label: t("voice_pitch"), value: pitch, set: setPitch, placeholder: t("voice_pitch_placeholder") },
+    { label: t("voice_speed"), value: speed, set: setSpeed, placeholder: t("voice_speed_placeholder") },
   ];
 
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="text-base font-semibold text-neutral-100">Voice DNA</h3>
+      <h3 className="text-base font-semibold text-neutral-100">{t("voice_dna_title")}</h3>
 
       {fields.map((f) => (
         <label key={f.label} className="flex flex-col gap-1">
@@ -66,15 +68,16 @@ export default function VoicePanel({ avatarId, onSaved }: Props) {
       ))}
 
       {error && <p className="text-xs text-red-400">{error}</p>}
-      {saved && <p className="text-xs text-green-400">Voice DNA saved ✓</p>}
+      {saved && <p className="text-xs text-green-400">{t("voice_dna_saved")}</p>}
 
       <button
         onClick={handleSave}
         disabled={saving}
         className="self-start rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
       >
-        {saving ? "Saving…" : "Save & Continue"}
+        {saving ? t("voice_saving") : t("voice_save_continue")}
       </button>
     </div>
   );
 }
+

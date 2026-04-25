@@ -37,7 +37,7 @@ _storage_dir = PROJECT_STORAGE_DIR.parent
 _storage_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=str(_storage_dir)), name="storage")
 
-_artifacts_dir = Path("/app/artifacts")
+_artifacts_dir = Path(settings.audio_output_dir).parent
 _artifacts_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=str(_artifacts_dir)), name="artifacts")
 

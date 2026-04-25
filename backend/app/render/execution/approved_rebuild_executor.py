@@ -20,9 +20,31 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
 
 _logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Idempotency backend protocol
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class IdempotencyBackend(Protocol):
+    """Interface for pluggable idempotency storage.
+
+    Production implementations persist to a database or Redis.  The
+    ``_InMemoryIdempotency`` class below is used as the default for
+    single-process testing only.
+    """
+
+    def check(self, key: str) -> Optional[Dict[str, Any]]:
+        """Return a previously stored result dict, or ``None``."""
+        ...
+
+    def store(self, key: str, result: Dict[str, Any]) -> None:
+        """Persist a result dict under *key*."""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -61,10 +83,31 @@ def clear_default_audit_log() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Idempotency registry (in-memory; replace with Redis/DB in production)
+# In-memory idempotency backend (single-process / testing use only)
 # ---------------------------------------------------------------------------
 
-_IDEMPOTENCY_REGISTRY: Dict[str, Dict[str, Any]] = {}
+
+class _InMemoryIdempotency:
+    """In-memory idempotency backend.
+
+    Suitable for single-process development and unit tests only.
+    Use :class:`~app.render.execution.rebuild_persistence.DbRebuildPersistence`
+    in production.
+    """
+
+    def __init__(self) -> None:
+        self._store: Dict[str, Dict[str, Any]] = {}
+
+    def check(self, key: str) -> Optional[Dict[str, Any]]:
+        return self._store.get(key)
+
+    def store(self, key: str, result: Dict[str, Any]) -> None:
+        self._store[key] = result
+
+
+# Module-level singleton kept for backward-compat with tests that call
+# get_default_audit_log / clear_default_audit_log.
+_DEFAULT_IDEMPOTENCY = _InMemoryIdempotency()
 
 
 def _compute_idempotency_key(decision: Dict[str, Any]) -> str:
@@ -110,10 +153,12 @@ class ApprovedRebuildExecutor:
         rebuild_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         status_updater: Optional[Callable[[str, str, Dict[str, Any]], None]] = None,
         audit_store: Optional[Callable[[Dict[str, Any]], None]] = None,
+        idempotency_backend: Optional[IdempotencyBackend] = None,
     ) -> None:
         self._rebuild_fn = rebuild_fn or self._noop_rebuild
         self._status_updater = status_updater
         self._audit_store = audit_store or _default_append_audit
+        self._idempotency: IdempotencyBackend = idempotency_backend or _DEFAULT_IDEMPOTENCY
 
     # ------------------------------------------------------------------
     # Public
@@ -174,8 +219,8 @@ class ApprovedRebuildExecutor:
             return result
 
         # ── Guard: idempotency ──────────────────────────────────────
-        if ikey in _IDEMPOTENCY_REGISTRY:
-            previous = _IDEMPOTENCY_REGISTRY[ikey]
+        previous = self._idempotency.check(ikey)
+        if previous is not None:
             _logger.info(
                 "Idempotency hit for job %s (key=%s): returning previous result %s",
                 job_id,
@@ -203,7 +248,7 @@ class ApprovedRebuildExecutor:
             )
             self._record_audit(job_id=job_id, event="blocked_empty_scenes", decision=decision)
             self._update_status(job_id, STATUS_BLOCKED, result)
-            _IDEMPOTENCY_REGISTRY[ikey] = result
+            self._idempotency.store(ikey, result)
             return result
 
         # ── Transition: approved → executing ───────────────────────
@@ -247,7 +292,7 @@ class ApprovedRebuildExecutor:
                 extras={"error": str(exc), "incident": incident},
             )
             self._update_status(job_id, STATUS_INCIDENT_REQUIRED, result)
-            _IDEMPOTENCY_REGISTRY[ikey] = result
+            self._idempotency.store(ikey, result)
             return result
 
         # ── Transition: executing → succeeded ──────────────────────
@@ -265,7 +310,7 @@ class ApprovedRebuildExecutor:
             extras={"rebuild_result_status": rebuild_result.get("status")},
         )
         self._update_status(job_id, STATUS_SUCCEEDED, result)
-        _IDEMPOTENCY_REGISTRY[ikey] = result
+        self._idempotency.store(ikey, result)
         return result
 
     def get_audit_trail(self, job_id: str) -> List[Dict[str, Any]]:
