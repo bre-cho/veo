@@ -6,6 +6,8 @@ from celery import shared_task
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.drama.models.drama_blocking_plan import DramaBlockingPlan
+from app.drama.models.drama_camera_plan import DramaCameraPlan
 from app.drama.models.scene_drama_state import DramaSceneState
 from app.drama.services.arc_service import DramaArcService
 from app.drama.services.memory_service import DramaMemoryService
@@ -78,6 +80,31 @@ def process_scene(scene_id: str, scene_context: dict) -> dict:
         scene_state.analysis_payload = analysis
         scene_state.compile_payload = compile_payload
         db.flush()
+
+        episode_id = _to_uuid(scene_context.get("episode_id"))
+
+        blocking_plan = compile_payload.get("blocking_plan") or {}
+        blocking_row = db.query(DramaBlockingPlan).filter(DramaBlockingPlan.scene_id == scene_uuid).one_or_none()
+        if blocking_row is None:
+            blocking_row = DramaBlockingPlan(scene_id=scene_uuid, project_id=project_id, episode_id=episode_id)
+            db.add(blocking_row)
+        blocking_row.spatial_mode = blocking_plan.get("spatial_mode")
+        blocking_row.payload = blocking_plan
+        blocking_row.notes = "\n".join(blocking_plan.get("blocking_notes", [])) if blocking_plan.get("blocking_notes") else None
+
+        camera_plan = compile_payload.get("camera_plan") or {}
+        camera_row = db.query(DramaCameraPlan).filter(DramaCameraPlan.scene_id == scene_uuid).one_or_none()
+        if camera_row is None:
+            camera_row = DramaCameraPlan(scene_id=scene_uuid, project_id=project_id, episode_id=episode_id)
+            db.add(camera_row)
+        camera_row.primary_shot = camera_plan.get("primary_shot")
+        camera_row.primary_move = camera_plan.get("primary_move")
+        camera_row.lens_psychology_mode = camera_plan.get("lens_psychology_mode")
+        camera_row.reveal_timing = camera_plan.get("reveal_timing")
+        camera_row.movement_strategy = camera_plan.get("movement_strategy")
+        camera_row.render_bridge_tokens = camera_plan.get("render_bridge_tokens")
+        camera_row.payload = camera_plan
+        camera_row.notes = "\n".join(camera_plan.get("camera_notes", [])) if camera_plan.get("camera_notes") else None
 
         memory_payloads = memory_service.build_scene_memory_payloads(scene_uuid, analysis)
         if memory_payloads:

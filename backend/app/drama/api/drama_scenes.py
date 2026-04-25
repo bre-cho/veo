@@ -79,6 +79,8 @@ def analyze_scene_by_id(
     state.scene_temperature = float(drama_state.get("tension_score", 0.0))
     state.pressure_level = float(drama_state.get("pressure_level", 0.0))
     state.dominant_character_id = _to_uuid(drama_state.get("dominant_character_id"))
+    state.threatened_character_id = _to_uuid(drama_state.get("threatened_character_id"))
+    state.emotional_center_character_id = _to_uuid(drama_state.get("emotional_center_character_id"))
     state.turning_point = drama_state.get("turning_point")
     state.outcome_type = drama_state.get("outcome_type")
     state.power_shift_delta = float(drama_state.get("power_shift_delta", 0.0))
