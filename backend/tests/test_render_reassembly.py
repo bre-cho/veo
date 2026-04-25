@@ -311,6 +311,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", self._scene_manifest())
 
@@ -330,6 +331,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         _write_manifest(tmp_dirs["manifests"], "p1", "ep1", "s1", self._scene_manifest())
 
@@ -350,6 +352,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         for sid in ("s1", "s2"):
             _write_manifest(tmp_dirs["manifests"], "p1", "ep1", sid, {
@@ -370,6 +373,7 @@ class TestSmartReassemblyService:
         svc = SmartReassemblyService(
             manifest_base_dir=tmp_dirs["manifests"],
             chunk_base_dir=tmp_dirs["chunks"],
+            dependency_base_dir=tmp_dirs["final"],
         )
         with pytest.raises(FileNotFoundError):
             svc.reassemble(self._req())

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.render.dependency.dependency_service import DependencyService
 from app.render.manifest.manifest_service import ManifestService
 from app.render.reassembly.affected_range_resolver import AffectedRangeResolver
 from app.render.reassembly.burn_in_mode_resolver import BurnInModeResolver
@@ -36,6 +37,7 @@ class SmartReassemblyService:
         self,
         manifest_base_dir: str = "/data/renders/manifests",
         chunk_base_dir: str = "/data/renders/chunks",
+        dependency_base_dir: str = "/data/renders/dependency",
     ) -> None:
         self._manifest = ManifestService(base_dir=manifest_base_dir)
         self._chunk_index = ChunkIndex(base_dir=chunk_base_dir)
@@ -47,6 +49,10 @@ class SmartReassemblyService:
         self._affected_range = AffectedRangeResolver(manifest_base_dir=manifest_base_dir)
         self._burn_in_mode = BurnInModeResolver()
         self._per_scene_subtitles = PerSceneSubtitleService(manifest_base_dir=manifest_base_dir)
+        self._dependency = DependencyService(
+            manifest_base_dir=manifest_base_dir,
+            dependency_base_dir=dependency_base_dir,
+        )
 
     # ------------------------------------------------------------------
     # Public
@@ -117,11 +123,38 @@ class SmartReassemblyService:
             has_timeline_drift=drift_report["has_drift"],
         )
 
-        affected_manifests: List[Dict[str, Any]] = self._affected_range.resolve(
+        range_manifests: List[Dict[str, Any]] = self._affected_range.resolve(
             project_id=req.project_id,
             episode_id=req.episode_id,
             changed_scene_id=req.changed_scene_id,
             has_timeline_drift=requires_range,
+        )
+
+        # Graph-aware expansion: add scenes that have a dependency on the
+        # changed scene for the declared change_type.
+        dependency_scene_ids = self._dependency.affected_scenes(
+            project_id=req.project_id,
+            episode_id=req.episode_id,
+            changed_scene_id=req.changed_scene_id,
+            change_type=req.change_type,
+        )
+
+        affected_ids: set = {item["scene_id"] for item in range_manifests}
+        affected_ids.update(dependency_scene_ids)
+
+        affected_manifests = [
+            item
+            for item in self._manifest.list_episode(req.project_id, req.episode_id)
+            if item["scene_id"] in affected_ids
+        ]
+        affected_manifests.sort(
+            key=lambda x: (
+                next(
+                    (int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None),
+                    999999,
+                ),
+                x.get("scene_id", ""),
+            )
         )
 
         rebuilt_chunks: List[Dict[str, Any]] = []

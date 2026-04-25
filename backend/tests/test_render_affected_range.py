@@ -334,10 +334,11 @@ class TestSmartReassemblyAffectedRange:
     def _mock_chunk(self, scene_id: str, duration: float = 8.0) -> Dict[str, Any]:
         return {"scene_id": scene_id, "chunk_path": f"/chunks/{scene_id}.mp4", "duration_sec": duration}
 
-    def _make_svc(self, manifests_dir: str, chunks_dir: str) -> SmartReassemblyService:
+    def _make_svc(self, manifests_dir: str, chunks_dir: str, dep_dir: str = "/tmp/dep_unused") -> SmartReassemblyService:
         return SmartReassemblyService(
             manifest_base_dir=manifests_dir,
             chunk_base_dir=chunks_dir,
+            dependency_base_dir=dep_dir,
         )
 
     def test_no_drift_rebuilds_only_changed_scene(self, tmp_path):
@@ -354,7 +355,7 @@ class TestSmartReassemblyAffectedRange:
                 "word_timings": [],
             })
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
 
@@ -379,7 +380,7 @@ class TestSmartReassemblyAffectedRange:
         chunks_dir = str(tmp_path / "chunks")
         _write_5_scene_episode(manifests_dir, drift_on="scene_003")
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_per_scene_sub = {
@@ -410,7 +411,7 @@ class TestSmartReassemblyAffectedRange:
         chunks_dir = str(tmp_path / "chunks")
         _write_5_scene_episode(manifests_dir, drift_on="scene_003")
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_episode_sub = {
@@ -442,7 +443,7 @@ class TestSmartReassemblyAffectedRange:
         chunks_dir = str(tmp_path / "chunks")
         _write_5_scene_episode(manifests_dir, drift_on="scene_003")
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_episode_sub = {
@@ -476,7 +477,7 @@ class TestSmartReassemblyAffectedRange:
         chunks_dir = str(tmp_path / "chunks")
         _write_5_scene_episode(manifests_dir, drift_on="scene_003")
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_episode_sub = {
@@ -505,7 +506,7 @@ class TestSmartReassemblyAffectedRange:
         chunks_dir = str(tmp_path / "chunks")
         _write_5_scene_episode(manifests_dir, drift_on="scene_003")
 
-        svc = self._make_svc(manifests_dir, chunks_dir)
+        svc = self._make_svc(manifests_dir, chunks_dir, str(tmp_path / "dep"))
 
         mock_final = {"status": "succeeded", "output_path": "/final/ep1.mp4"}
         mock_tl = {"total_duration_sec": 35.0, "timeline": []}

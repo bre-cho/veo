@@ -313,6 +313,7 @@ class TestSmartReassemblyDrift:
         svc = SmartReassemblyService(
             manifest_base_dir=manifests_dir,
             chunk_base_dir=chunks_dir,
+            dependency_base_dir=str(tmp_path / "dep"),
         )
 
         mock_chunk = {"scene_id": "scene_002", "chunk_path": "/c/s2.mp4", "duration_sec": 8.0}
@@ -351,6 +352,7 @@ class TestSmartReassemblyDrift:
         svc = SmartReassemblyService(
             manifest_base_dir=manifests_dir,
             chunk_base_dir=chunks_dir,
+            dependency_base_dir=str(tmp_path / "dep"),
         )
 
         mock_chunk = {"scene_id": "scene_002", "chunk_path": "/c/s2.mp4", "duration_sec": 5.0}

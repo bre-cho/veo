@@ -261,6 +261,7 @@ _RENDER_ASSEMBLY_ROUTERS = [
         render_manifest_router,
         render_rerender_router,
         render_reassembly_router,
+        render_dependency_router,
     ]
     if r is not None
 ]
