@@ -252,6 +252,52 @@ class TestPerSceneSubtitleService:
         assert "ep1" in result["subtitle_path"]
         assert "scene_003.ass" in result["subtitle_path"]
 
+    def test_rebuild_episode_returns_all_scenes(self, tmp_path):
+        manifests_dir = str(tmp_path / "manifests")
+        for sid in ("scene_001", "scene_002", "scene_003"):
+            _write_manifest(manifests_dir, "p1", "ep1", sid, {"word_timings": []})
+
+        svc = PerSceneSubtitleService()
+        svc.manifest = _make_manifest_service(manifests_dir)
+
+        with patch(
+            "app.render.reassembly.per_scene_subtitle_service.write_visual_aware_karaoke_ass",
+        ) as mock_write, patch("pathlib.Path.mkdir"):
+            mock_write.side_effect = lambda word_tracks, scene_placements, output_path: output_path
+            result = svc.rebuild_episode_per_scene_subtitles("p1", "ep1")
+
+        assert result["status"] == "per_scene_subtitles_built"
+        assert result["count"] == 3
+        assert len(result["items"]) == 3
+
+    def test_rebuild_episode_each_item_has_scene_id(self, tmp_path):
+        manifests_dir = str(tmp_path / "manifests")
+        for sid in ("scene_001", "scene_002"):
+            _write_manifest(manifests_dir, "p1", "ep1", sid, {"word_timings": []})
+
+        svc = PerSceneSubtitleService()
+        svc.manifest = _make_manifest_service(manifests_dir)
+
+        with patch(
+            "app.render.reassembly.per_scene_subtitle_service.write_visual_aware_karaoke_ass",
+        ) as mock_write, patch("pathlib.Path.mkdir"):
+            mock_write.side_effect = lambda word_tracks, scene_placements, output_path: output_path
+            result = svc.rebuild_episode_per_scene_subtitles("p1", "ep1")
+
+        scene_ids = {item["scene_id"] for item in result["items"]}
+        assert scene_ids == {"scene_001", "scene_002"}
+
+    def test_rebuild_episode_empty_episode(self, tmp_path):
+        manifests_dir = str(tmp_path / "manifests")
+        svc = PerSceneSubtitleService()
+        svc.manifest = _make_manifest_service(manifests_dir)
+
+        result = svc.rebuild_episode_per_scene_subtitles("p1", "ep_empty")
+
+        assert result["status"] == "per_scene_subtitles_built"
+        assert result["count"] == 0
+        assert result["items"] == []
+
 
 # ===========================================================================
 # SmartReassemblyService — affected range behaviour

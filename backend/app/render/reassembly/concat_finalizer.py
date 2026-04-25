@@ -36,9 +36,16 @@ class ConcatFinalizer:
         out_dir = Path(f"/data/renders/final/{project_id}")
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # Sort by order_index so numeric scene ordering (1, 2, 10) is
+        # preserved.  Chunks without an order_index fall back to scene_id.
+        ordered_chunks = sorted(
+            chunks,
+            key=lambda c: (int(c.get("order_index", 999999)), c.get("scene_id", "")),
+        )
+
         concat_file = Path(f"/tmp/{project_id}_{episode_id}_smart_concat.txt")
         with open(concat_file, "w", encoding="utf-8") as fh:
-            for chunk in chunks:
+            for chunk in ordered_chunks:
                 fh.write(f"file '{chunk['chunk_path']}'\n")
 
         output_path = out_dir / f"{episode_id}.mp4"

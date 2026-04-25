@@ -149,6 +149,7 @@ class SmartReassemblyService:
                 scene_id=item["scene_id"],
                 chunk_path=chunk["chunk_path"],
                 duration_sec=chunk["duration_sec"] or 0.0,
+                order_index=int(item.get("order_index", item.get("scene_index", 999999))),
             )
 
             self._manifest.patch_scene(
@@ -203,7 +204,12 @@ class SmartReassemblyService:
             )
             chunks.append(chunk)
 
-        chunks.sort(key=lambda c: c["scene_id"])
+        chunks.sort(
+            key=lambda c: (
+                int(c.get("order_index", 999999)),
+                c.get("scene_id", ""),
+            )
+        )
 
         index: Dict[str, Any] = {
             "project_id": req.project_id,

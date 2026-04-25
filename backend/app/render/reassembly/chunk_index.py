@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class ChunkIndex:
@@ -55,18 +55,46 @@ class ChunkIndex:
         scene_id: str,
         chunk_path: str,
         duration_sec: float,
+        order_index: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Replace (or insert) the chunk entry for *scene_id* and persist.
 
-        Chunks are kept sorted by ``scene_id`` so that the concat order is
-        deterministic.  Returns the full updated index.
+        Chunks are kept in ``order_index`` order when that field is available,
+        otherwise they fall back to ``scene_id`` lexicographic order so the
+        concat step always processes scenes in the correct sequence.
+
+        Args:
+            project_id: Owning project identifier.
+            episode_id: Episode identifier.
+            scene_id: Scene whose chunk is being updated.
+            chunk_path: Absolute path to the encoded MP4 chunk.
+            duration_sec: Duration of the chunk in seconds.
+            order_index: Optional integer position of the scene within the
+                episode.  When provided, chunks are sorted by this value so
+                numeric ordering (1, 2, 10) is respected instead of
+                lexicographic ordering (1, 10, 2).
+
+        Returns:
+            The full updated index dict.
         """
         index = self.load(project_id, episode_id)
 
         # Remove any existing entry for this scene.
         chunks = [c for c in index.get("chunks", []) if c["scene_id"] != scene_id]
-        chunks.append({"scene_id": scene_id, "chunk_path": chunk_path, "duration_sec": duration_sec})
-        chunks.sort(key=lambda c: c["scene_id"])
+        entry: Dict[str, Any] = {
+            "scene_id": scene_id,
+            "chunk_path": chunk_path,
+            "duration_sec": duration_sec,
+        }
+        if order_index is not None:
+            entry["order_index"] = order_index
+        chunks.append(entry)
+        chunks.sort(
+            key=lambda c: (
+                int(c.get("order_index", 999999)),
+                c.get("scene_id", ""),
+            )
+        )
 
         index["chunks"] = chunks
         index["total_duration_sec"] = round(

@@ -133,6 +133,33 @@ class TestManifestReader:
         ids = [m["scene_id"] for m in items]
         assert ids == sorted(ids)
 
+    def test_list_episode_order_index_takes_priority_over_scene_id(self, tmp_path):
+        """Numeric order_index must beat lexicographic scene_id ordering."""
+        w = self._writer(str(tmp_path))
+        # scene_1=order 0, scene_2=order 1, scene_10=order 9
+        for sid, oi in (("scene_1", 0), ("scene_10", 9), ("scene_2", 1)):
+            w.write_scene_manifest({
+                "project_id": "p1", "episode_id": "e1",
+                "scene_id": sid, "order_index": oi,
+            })
+        r = self._reader(str(tmp_path))
+        items = r.list_episode_manifests("p1", "e1")
+        ids = [m["scene_id"] for m in items]
+        assert ids == ["scene_1", "scene_2", "scene_10"]
+
+    def test_list_episode_scene_index_fallback(self, tmp_path):
+        """scene_index is used when order_index is absent."""
+        w = self._writer(str(tmp_path))
+        for sid, si in (("scene_1", 0), ("scene_10", 9), ("scene_2", 1)):
+            w.write_scene_manifest({
+                "project_id": "p1", "episode_id": "e1",
+                "scene_id": sid, "scene_index": si,
+            })
+        r = self._reader(str(tmp_path))
+        items = r.list_episode_manifests("p1", "e1")
+        ids = [m["scene_id"] for m in items]
+        assert ids == ["scene_1", "scene_2", "scene_10"]
+
 
 # ---------------------------------------------------------------------------
 # ManifestService
@@ -191,3 +218,16 @@ class TestManifestSchema:
         from app.render.manifest.manifest_schema import SceneAssetManifest
         m = SceneAssetManifest(project_id="p", episode_id="e", scene_id="s")
         assert m.error is None
+
+    def test_scene_index_and_order_index_default_to_none(self):
+        from app.render.manifest.manifest_schema import SceneAssetManifest
+        m = SceneAssetManifest(project_id="p", episode_id="e", scene_id="s")
+        assert m.scene_index is None
+        assert m.order_index is None
+
+    def test_scene_index_and_order_index_can_be_set(self):
+        from app.render.manifest.manifest_schema import SceneAssetManifest
+        m = SceneAssetManifest(project_id="p", episode_id="e", scene_id="s",
+                               scene_index=3, order_index=3)
+        assert m.scene_index == 3
+        assert m.order_index == 3

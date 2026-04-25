@@ -81,3 +81,39 @@ class PerSceneSubtitleService:
             "scene_id": scene_id,
             "subtitle_path": subtitle_path,
         }
+
+    def rebuild_episode_per_scene_subtitles(
+        self,
+        project_id: str,
+        episode_id: str,
+    ) -> Dict[str, Any]:
+        """Generate a per-scene ``.ass`` file for every scene in *episode_id*.
+
+        Calls :meth:`rebuild_scene_subtitle` for each scene manifest returned
+        by the manifest service.
+
+        Args:
+            project_id: Owning project identifier.
+            episode_id: Episode to process.
+
+        Returns:
+            Dict with ``status``, ``count``, and ``items`` (list of per-scene
+            results from :meth:`rebuild_scene_subtitle`).
+        """
+        manifests = self.manifest.list_episode(project_id, episode_id)
+
+        results = []
+        for item in manifests:
+            results.append(
+                self.rebuild_scene_subtitle(
+                    project_id=project_id,
+                    episode_id=episode_id,
+                    scene_id=item["scene_id"],
+                )
+            )
+
+        return {
+            "status": "per_scene_subtitles_built",
+            "count": len(results),
+            "items": results,
+        }
