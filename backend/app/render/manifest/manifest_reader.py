@@ -47,7 +47,10 @@ class ManifestReader:
                 items.append(json.load(fh))
         items.sort(
             key=lambda x: (
-                int(x.get("order_index", x.get("scene_index", 999999))),
+                next(
+                    (int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None),
+                    999999,
+                ),
                 x.get("scene_id", ""),
             )
         )

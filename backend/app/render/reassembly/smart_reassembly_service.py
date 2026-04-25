@@ -143,13 +143,20 @@ class SmartReassemblyService:
 
             rebuilt_chunks.append(chunk)
 
+            order_index = next(
+                (int(v) for v in (
+                    item.get("order_index"),
+                    item.get("scene_index"),
+                ) if v is not None),
+                999999,
+            )
             self._chunk_index.update_chunk(
                 project_id=req.project_id,
                 episode_id=req.episode_id,
                 scene_id=item["scene_id"],
                 chunk_path=chunk["chunk_path"],
                 duration_sec=chunk["duration_sec"] or 0.0,
-                order_index=int(item.get("order_index", item.get("scene_index", 999999))),
+                order_index=order_index,
             )
 
             self._manifest.patch_scene(
@@ -206,7 +213,7 @@ class SmartReassemblyService:
 
         chunks.sort(
             key=lambda c: (
-                int(c.get("order_index", 999999)),
+                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
                 c.get("scene_id", ""),
             )
         )

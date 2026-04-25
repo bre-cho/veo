@@ -91,7 +91,7 @@ class ChunkIndex:
         chunks.append(entry)
         chunks.sort(
             key=lambda c: (
-                int(c.get("order_index", 999999)),
+                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
                 c.get("scene_id", ""),
             )
         )

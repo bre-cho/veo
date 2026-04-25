@@ -40,7 +40,10 @@ class ConcatFinalizer:
         # preserved.  Chunks without an order_index fall back to scene_id.
         ordered_chunks = sorted(
             chunks,
-            key=lambda c: (int(c.get("order_index", 999999)), c.get("scene_id", "")),
+            key=lambda c: (
+                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
+                c.get("scene_id", ""),
+            ),
         )
 
         concat_file = Path(f"/tmp/{project_id}_{episode_id}_smart_concat.txt")

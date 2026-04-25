@@ -70,7 +70,7 @@ class ChunkBootstrapper:
         manifests = self._manifest.list_episode(project_id, episode_id)
         manifests.sort(
             key=lambda x: (
-                int(x.get("order_index", x.get("scene_index", 999999))),
+                next((int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None), 999999),
                 x.get("scene_id", ""),
             )
         )
@@ -102,7 +102,7 @@ class ChunkBootstrapper:
 
         chunks.sort(
             key=lambda c: (
-                int(c.get("order_index", 999999)),
+                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
                 c.get("scene_id", ""),
             )
         )
