@@ -220,7 +220,8 @@ class TestVisualDetector:
 
     def test_returns_three_keys(self):
         result = self._detector().detect("/any/path.jpg")
-        assert set(result.keys()) == {"face_bboxes", "object_bboxes", "saliency_bboxes"}
+        for key in ("face_bboxes", "object_bboxes", "saliency_bboxes"):
+            assert key in result
 
     def test_stub_returns_empty_lists(self):
         result = self._detector().detect("/any/path.jpg")

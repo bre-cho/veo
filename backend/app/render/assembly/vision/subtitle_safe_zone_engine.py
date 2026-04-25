@@ -76,8 +76,20 @@ class SubtitleSafeZoneEngine:
         return False
 
     def _all_boxes(self, detection: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return (
-            detection.get("face_bboxes", [])
-            + detection.get("object_bboxes", [])
-            + detection.get("saliency_bboxes", [])
+        """Collect boxes in priority order: faces first, then labeled objects, then saliency.
+
+        Only object boxes whose label is in the high-priority set
+        (``person``, ``phone``, ``laptop``, ``car``) are included so that
+        irrelevant background detections do not push subtitles out of position.
+        """
+        _PRIORITY_LABELS = frozenset(["person", "phone", "laptop", "car"])
+
+        boxes: List[Dict[str, Any]] = []
+        boxes.extend(detection.get("face_bboxes", []))
+        boxes.extend(
+            box
+            for box in detection.get("object_bboxes", [])
+            if box.get("label") in _PRIORITY_LABELS
         )
+        boxes.extend(detection.get("saliency_bboxes", []))
+        return boxes

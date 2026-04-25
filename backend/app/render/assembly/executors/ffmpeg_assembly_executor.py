@@ -9,8 +9,10 @@ from app.render.assembly.executors.assembly_validator import AssemblyValidator
 from app.render.assembly.executors.ffmpeg_command_builder import FFmpegCommandBuilder
 from app.render.assembly.subtitles.karaoke_subtitle_writer import write_karaoke_ass
 from app.render.assembly.subtitles.visual_aware_karaoke_writer import write_visual_aware_karaoke_ass
+from app.render.assembly.vision.detector_cache import DetectorResultCache
 from app.render.assembly.vision.frame_sampler import FrameSampler
 from app.render.assembly.vision.subtitle_safe_zone_engine import SubtitleSafeZoneEngine
+from app.render.assembly.vision.video_hash import compute_video_hash
 from app.render.assembly.vision.visual_detector import VisualDetector
 
 
@@ -63,6 +65,7 @@ class FFmpegAssemblyExecutor:
         sampler = FrameSampler()
         detector = VisualDetector()
         safe_zone = SubtitleSafeZoneEngine()
+        cache = DetectorResultCache()
 
         _STYLE_MAP: Dict[str, str] = {
             "bottom": "Bottom",
@@ -76,14 +79,23 @@ class FFmpegAssemblyExecutor:
             scene_id = scene["scene_id"]
 
             try:
-                frame_path = sampler.sample_scene_frame(
-                    video_path=video_path,
-                    scene_id=scene_id,
-                )
-                detection = detector.detect(frame_path)
+                video_hash = compute_video_hash(video_path)
+                cached_result = cache.get(scene_id=scene_id, video_hash=video_hash)
+
+                if cached_result is not None:
+                    detection = cached_result
+                    cache_status = "hit"
+                else:
+                    frame_path = sampler.sample_scene_frame(
+                        video_path=video_path,
+                        scene_id=scene_id,
+                    )
+                    detection = detector.detect(frame_path)
+                    cache.set(scene_id=scene_id, video_hash=video_hash, result=detection)
+                    cache_status = "miss"
             except Exception as exc:  # noqa: BLE001
-                # Frame sampling can fail legitimately (video not yet on disk
-                # during dry-runs, or no FFmpeg in the environment).  Fall back
+                # Frame sampling / hashing can fail legitimately (video not yet on
+                # disk during dry-runs, or no FFmpeg in the environment).  Fall back
                 # to the safest default placement and log for diagnostics.
                 import logging
                 logging.getLogger(__name__).warning(
@@ -94,6 +106,7 @@ class FFmpegAssemblyExecutor:
                     exc,
                 )
                 detection = {"face_bboxes": [], "object_bboxes": [], "saliency_bboxes": []}
+                cache_status = "error"
 
             placement = safe_zone.choose_position(detection)
 
@@ -101,6 +114,7 @@ class FFmpegAssemblyExecutor:
                 "placement": placement["placement"],
                 "style_name": _STYLE_MAP[placement["placement"]],
                 "detection": detection,
+                "cache_status": cache_status,
             }
 
         return placements
