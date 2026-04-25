@@ -16,8 +16,7 @@ export default function ScriptUploadPage() {
             {t("script_upload_page_title")}
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-white/55">
-            {t("nav_script_upload")} <code className="rounded bg-white/10 px-1 py-0.5">.txt</code>{" "}
-            <code className="rounded bg-white/10 px-1 py-0.5">.docx</code>
+            {t("script_upload_page_desc")}
           </p>
         </header>
 

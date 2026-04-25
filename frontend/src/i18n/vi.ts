@@ -197,6 +197,7 @@ const vi = {
 
   // Script upload page
   script_upload_page_title: "Tải Kịch Bản → Xem Trước → Chỉnh Sửa → Xác Thực → Tạo Dự Án",
+  script_upload_page_desc: "Tải tệp .txt hoặc .docx, xem trước các cảnh và phụ đề đã phân tích, chỉnh sửa tại chỗ, xác thực cấu trúc, sau đó xác nhận để tạo dự án sẵn sàng cho lập kế hoạch render.",
   script_upload_flow_label: "Luồng",
   script_upload_flow_value: "Xem trước trước",
   script_upload_flow_hint: "Không tạo dự án cho đến khi người dùng xác nhận bản xem trước hợp lệ.",

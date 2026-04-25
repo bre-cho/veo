@@ -199,6 +199,7 @@ const en: Record<TranslationKey, string> = {
 
   // Script upload page
   script_upload_page_title: "Upload Script → Preview → Edit → Validate → Create Project",
+  script_upload_page_desc: "Upload a .txt or .docx script, preview parsed scenes and subtitles, edit them in place, validate the structure, then confirm to create a project ready for render planning.",
   script_upload_flow_label: "Flow",
   script_upload_flow_value: "Preview-first",
   script_upload_flow_hint: "No project is created until the user confirms a valid preview.",
