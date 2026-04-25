@@ -59,14 +59,19 @@ class SubtitleReadabilityGuard:
     # Private helpers
     # ------------------------------------------------------------------
 
+    # Resolution → base font-size lookup (height threshold, font size)
+    _RESOLUTION_FONT_MAP = [
+        (1080, 44),
+        (720, 38),
+        (0, 34),       # catch-all for resolutions below 720p
+    ]
+
     def _optimize_font_size(self, style: dict, video_height: int) -> dict:
         """Select base font size by resolution and bump for elder-readable mode."""
-        if video_height >= 1080:
-            style["font_size"] = 44
-        elif video_height >= 720:
-            style["font_size"] = 38
-        else:
-            style["font_size"] = 34
+        for min_height, size in self._RESOLUTION_FONT_MAP:
+            if video_height >= min_height:
+                style["font_size"] = size
+                break
 
         if style.get("elder_readable"):
             style["font_size"] = min(

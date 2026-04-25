@@ -81,9 +81,18 @@ class FFmpegAssemblyExecutor:
                     scene_id=scene_id,
                 )
                 detection = detector.detect(frame_path)
-            except Exception:
-                # If sampling fails (missing file, no FFmpeg, etc.) fall back
-                # to the safest default placement without aborting assembly.
+            except Exception as exc:  # noqa: BLE001
+                # Frame sampling can fail legitimately (video not yet on disk
+                # during dry-runs, or no FFmpeg in the environment).  Fall back
+                # to the safest default placement and log for diagnostics.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Frame sampling failed for scene %s (%s: %s); "
+                    "defaulting to bottom placement.",
+                    scene_id,
+                    type(exc).__name__,
+                    exc,
+                )
                 detection = {"face_bboxes": [], "object_bboxes": [], "saliency_bboxes": []}
 
             placement = safe_zone.choose_position(detection)

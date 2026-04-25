@@ -28,7 +28,8 @@ def group_words_readable(
 
     for word_dict in words:
         text = word_dict["word"]
-        # +1 for the space separator (except on the first word in a group)
+        # +1 accounts for the space separator between words.  It is omitted
+        # for the first word in a new group (no leading space needed).
         projected_chars = current_chars + len(text) + (1 if current else 0)
 
         if current and (

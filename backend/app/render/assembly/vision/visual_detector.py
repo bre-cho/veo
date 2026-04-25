@@ -13,6 +13,18 @@ class VisualDetector:
 
     Replace :meth:`detect` with a concrete implementation to enable
     face/object-aware subtitle placement.
+
+    Bounding box coordinate system
+    --------------------------------
+    All bounding boxes use pixel coordinates measured from the **top-left
+    corner** of the frame:
+
+    - ``x`` — horizontal offset in pixels from the left edge
+    - ``y`` — vertical offset in pixels from the top edge
+    - ``w`` — box width in pixels
+    - ``h`` — box height in pixels
+
+    So the bottom of a box is at ``y + h``.
     """
 
     def detect(self, frame_path: str) -> Dict[str, List[Dict[str, Any]]]:
