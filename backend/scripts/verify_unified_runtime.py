@@ -7,8 +7,9 @@ deploying or running CI.
 Modes
 -----
 quick (default for CI):
-    Checks 3, 4, 8 — import lõi, path writability, no hardcoded paths.
-    Fast; no infrastructure (DB / Redis / Celery) required.
+    Checks 3, 4, 8 — core imports only (app.core.*), path writability,
+    no hardcoded paths.  Fast; no infrastructure (DB / Redis / Celery)
+    required.  executor/persistence modules are checked in full mode only.
 
 full (deploy gate):
     All checks: Alembic, DB tables, imports, paths, Celery, router
@@ -127,13 +128,11 @@ def check_db_tables() -> None:
 
 # ── Check 3: Critical imports ─────────────────────────────────────────────
 
-# Quick mode: only lightweight modules with zero infrastructure dependencies
-# (no DB / Redis / Celery / heavy reassembly chains).  Must finish in < 10 s.
+# Quick mode: only the two lightest core modules — no DB / Redis / Celery /
+# SQLAlchemy / heavy reassembly chains.  Must finish in < 10 s.
 _QUICK_IMPORTS = [
     "app.core.config",
     "app.core.runtime_paths",
-    "app.render.execution.approved_rebuild_executor",
-    "app.render.execution.rebuild_persistence",
 ]
 
 # Full mode: complete set including heavier reassembly / rebuild modules.

@@ -189,9 +189,16 @@ def get_storage_service() -> StorageAdapter:
     backend = os.getenv("STORAGE_BACKEND", "local").strip().lower()
 
     if backend == "local":
+        try:
+            from app.core.config import settings
+            storage_root = settings.storage_root
+            public_base_url = settings.public_base_url
+        except Exception:  # pragma: no cover  # noqa: BLE001
+            storage_root = os.getenv("STORAGE_ROOT", "storage")
+            public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
         return LocalStorageAdapter(
-            storage_root=os.getenv("STORAGE_ROOT", "storage"),
-            public_base_url=os.getenv("PUBLIC_BASE_URL", "http://localhost:8000"),
+            storage_root=storage_root,
+            public_base_url=public_base_url,
         )
 
     if backend in {"s3", "minio"}:

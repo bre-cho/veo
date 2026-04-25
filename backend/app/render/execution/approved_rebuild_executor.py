@@ -26,6 +26,19 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checka
 _logger = logging.getLogger(__name__)
 
 
+def _get_app_env() -> str:
+    """Return the current APP_ENV value from settings.
+
+    Isolated in a helper so tests can patch it without importing settings at
+    module load time (which would fail in bare environments without config).
+    """
+    try:
+        from app.core.config import settings
+        return settings.app_env.strip().lower()
+    except Exception:  # noqa: BLE001
+        return "development"
+
+
 # ---------------------------------------------------------------------------
 # Idempotency backend protocol
 # ---------------------------------------------------------------------------
@@ -226,6 +239,225 @@ class RebuildPreflightValidator:
         return {"valid": True, "reason": ""}
 
 
+class RuntimeRebuildPreflightValidator:
+    """Infrastructure-backed preflight checks run before executing a rebuild.
+
+    Unlike :class:`RebuildPreflightValidator` (which only inspects the payload
+    dict), this validator queries the database and filesystem to confirm the
+    runtime environment is valid before work begins.
+
+    Checks performed
+    ----------------
+    1. Project exists in the database.
+    2. Episode manifest file exists on disk.
+    3. Every scene in ``rebuild_scene_ids`` exists in the manifest.
+    4. No scene in ``rebuild_scene_ids`` is currently locked / processing.
+    5. Output path for the episode is writable.
+
+    The validator is intentionally *lenient* when infrastructure is
+    unavailable (e.g. in unit-test environments without a real DB).  Each
+    check degrades to a warning rather than a hard failure when its
+    dependencies cannot be imported or reached, so that the validator can
+    also be used in integration tests with partial infrastructure.
+    """
+
+    def __init__(self, db: Any = None) -> None:
+        """
+        Args:
+            db: Optional SQLAlchemy ``Session`` used for DB checks.  When
+                ``None`` the DB checks are skipped with a warning.
+        """
+        self._db = db
+
+    def validate(self, decision: Dict[str, Any]) -> Dict[str, Any]:
+        """Run all runtime checks and return a result dict.
+
+        Returns:
+            ``{"valid": True, "reason": "", "warnings": [...]}`` on success,
+            ``{"valid": False, "reason": "<explanation>", "warnings": [...]}``
+            on failure.
+        """
+        warnings: List[str] = []
+        project_id = decision.get("project_id", "")
+        episode_id = decision.get("episode_id", "")
+        rebuild_scene_ids: List[str] = decision.get("rebuild_scene_ids") or []
+
+        # ── 1. Project exists ───────────────────────────────────────────
+        project_check = self._check_project_exists(project_id, warnings)
+        if not project_check["ok"]:
+            return {
+                "valid": False,
+                "reason": project_check["reason"],
+                "warnings": warnings,
+            }
+
+        # ── 2. Episode manifest exists ──────────────────────────────────
+        manifest_check = self._check_episode_manifest(episode_id, warnings)
+        if not manifest_check["ok"]:
+            return {
+                "valid": False,
+                "reason": manifest_check["reason"],
+                "warnings": warnings,
+            }
+        manifest_data: Dict[str, Any] = manifest_check.get("manifest") or {}
+
+        # ── 3. All rebuild scenes exist in the manifest ─────────────────
+        if rebuild_scene_ids and manifest_data:
+            scene_check = self._check_scenes_exist(
+                rebuild_scene_ids, manifest_data, warnings
+            )
+            if not scene_check["ok"]:
+                return {
+                    "valid": False,
+                    "reason": scene_check["reason"],
+                    "warnings": warnings,
+                }
+
+        # ── 4. No scene is locked / processing ─────────────────────────
+        lock_check = self._check_scenes_not_locked(rebuild_scene_ids, warnings)
+        if not lock_check["ok"]:
+            return {
+                "valid": False,
+                "reason": lock_check["reason"],
+                "warnings": warnings,
+            }
+
+        # ── 5. Output path is writable ──────────────────────────────────
+        path_check = self._check_output_path_writable(episode_id, warnings)
+        if not path_check["ok"]:
+            return {
+                "valid": False,
+                "reason": path_check["reason"],
+                "warnings": warnings,
+            }
+
+        return {"valid": True, "reason": "", "warnings": warnings}
+
+    # ------------------------------------------------------------------
+    # Internal check helpers
+    # ------------------------------------------------------------------
+
+    def _check_project_exists(
+        self, project_id: str, warnings: List[str]
+    ) -> Dict[str, Any]:
+        if not self._db:
+            warnings.append("DB not provided — project existence check skipped")
+            return {"ok": True}
+        try:
+            from sqlalchemy import text
+            row = self._db.execute(
+                text("SELECT id FROM projects WHERE id = :id LIMIT 1"),
+                {"id": project_id},
+            ).fetchone()
+            if row is None:
+                return {
+                    "ok": False,
+                    "reason": f"Project '{project_id}' does not exist in the database",
+                }
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"project existence check skipped ({exc})")
+        return {"ok": True}
+
+    def _check_episode_manifest(
+        self, episode_id: str, warnings: List[str]
+    ) -> Dict[str, Any]:
+        try:
+            from pathlib import Path
+            from app.core.runtime_paths import render_paths
+
+            manifest_dir = Path(render_paths.manifests_dir)
+            manifest_path = manifest_dir / f"{episode_id}.json"
+            if not manifest_path.exists():
+                return {
+                    "ok": False,
+                    "reason": (
+                        f"Episode manifest not found: {manifest_path}. "
+                        "Run manifest generation before executing a rebuild."
+                    ),
+                    "manifest": {},
+                }
+            import json as _json
+            manifest_data = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            return {"ok": True, "manifest": manifest_data}
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"manifest check skipped ({exc})")
+        return {"ok": True, "manifest": {}}
+
+    def _check_scenes_exist(
+        self,
+        rebuild_scene_ids: List[str],
+        manifest_data: Dict[str, Any],
+        warnings: List[str],
+    ) -> Dict[str, Any]:
+        try:
+            scenes_in_manifest: set[str] = set()
+            for scene in manifest_data.get("scenes", []):
+                sid = scene.get("scene_id") or scene.get("id")
+                if sid:
+                    scenes_in_manifest.add(str(sid))
+            missing = [s for s in rebuild_scene_ids if s not in scenes_in_manifest]
+            if missing:
+                return {
+                    "ok": False,
+                    "reason": (
+                        f"Scene(s) not found in manifest: {', '.join(missing)}"
+                    ),
+                }
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"scene existence check skipped ({exc})")
+        return {"ok": True}
+
+    def _check_scenes_not_locked(
+        self, rebuild_scene_ids: List[str], warnings: List[str]
+    ) -> Dict[str, Any]:
+        if not self._db or not rebuild_scene_ids:
+            return {"ok": True}
+        try:
+            from sqlalchemy import text
+            placeholders = ", ".join(f":s{i}" for i in range(len(rebuild_scene_ids)))
+            params = {f"s{i}": sid for i, sid in enumerate(rebuild_scene_ids)}
+            rows = self._db.execute(
+                text(
+                    f"SELECT id FROM render_tasks "
+                    f"WHERE scene_id IN ({placeholders}) "
+                    f"AND status IN ('executing', 'locked') LIMIT 1"
+                ),
+                params,
+            ).fetchall()
+            if rows:
+                return {
+                    "ok": False,
+                    "reason": (
+                        "One or more scenes are currently locked or processing. "
+                        "Wait for the active rebuild to finish before retrying."
+                    ),
+                }
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"scene lock check skipped ({exc})")
+        return {"ok": True}
+
+    def _check_output_path_writable(
+        self, episode_id: str, warnings: List[str]
+    ) -> Dict[str, Any]:
+        try:
+            from pathlib import Path
+            from app.core.runtime_paths import render_paths
+
+            output_dir = Path(render_paths.final_dir) / episode_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            probe = output_dir / ".write_probe"
+            probe.write_text("ok")
+            probe.unlink()
+        except PermissionError as exc:
+            return {
+                "ok": False,
+                "reason": f"Output path for episode '{episode_id}' is not writable: {exc}",
+            }
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"output path writability check skipped ({exc})")
+        return {"ok": True}
+
+
 def _compute_idempotency_key(decision: Dict[str, Any]) -> str:
     """Derive a stable idempotency key from the decision payload.
 
@@ -271,6 +503,24 @@ class ApprovedRebuildExecutor:
         audit_store: Optional[Callable[[Dict[str, Any]], None]] = None,
         idempotency_backend: Optional[IdempotencyBackend] = None,
     ) -> None:
+        # ── Production guard ───────────────────────────────────────────
+        # In production, a real rebuild_fn and a DB-backed idempotency
+        # backend MUST be provided.  Falling back to noop/in-memory in
+        # production would silently skip rebuilds and lose audit records.
+        _is_production = _get_app_env() == "production"
+
+        if _is_production and rebuild_fn is None:
+            raise RuntimeError(
+                "ApprovedRebuildExecutor: rebuild_fn is required in production. "
+                "Wire SmartReassemblyService via _make_smart_rebuild_fn() instead of "
+                "relying on the noop fallback."
+            )
+        if _is_production and idempotency_backend is None:
+            raise RuntimeError(
+                "ApprovedRebuildExecutor: idempotency_backend is required in production. "
+                "Provide a DbRebuildPersistence instance instead of the in-memory fallback."
+            )
+
         self._rebuild_fn = rebuild_fn or self._noop_rebuild
         self._status_updater = status_updater
         self._audit_store = audit_store or _default_append_audit
