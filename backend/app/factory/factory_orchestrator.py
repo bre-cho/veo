@@ -445,32 +445,32 @@ class FactoryOrchestrator:
         return ctx.render_plan
 
     def _stage_execute_render(self, ctx: FactoryContext) -> dict:
-        """Create a render job and dispatch the Celery render task."""
+        """Build a full render manifest and dispatch the Celery render task."""
+        from app.factory.factory_render_adapter import FactoryRenderAdapter
+
         # Always generate an idempotent job ID for this run
         render_job_id = str(uuid.uuid5(_FACTORY_RENDER_NS, f"factory:{ctx.run_id}"))
         ctx.render_job_id = render_job_id
 
+        # Build manifest and persist RenderJob + scene tasks
+        adapter = FactoryRenderAdapter()
+        manifest = adapter.build_and_persist(
+            run_id=ctx.run_id,
+            project_id=ctx.project_id,
+            render_job_id=render_job_id,
+            scenes=ctx.scenes,
+            avatar_id=ctx.avatar_id,
+            audio_url=ctx.audio_url,
+            render_plan=ctx.render_plan,
+            db=self.db,
+        )
+        ctx.extras["render_manifest"] = manifest
+
+        # Dispatch Celery task when project context is available
         dispatched = False
         if ctx.project_id:
             try:
-                from app.models.render_job import RenderJob
                 from app.workers.render_tasks import render_dispatch_task
-
-                # Upsert a minimal render job record if absent
-                existing = (
-                    self.db.query(RenderJob)
-                    .filter(RenderJob.id == render_job_id)
-                    .first()
-                )
-                if existing is None:
-                    job_row = RenderJob(
-                        id=render_job_id,
-                        project_id=ctx.project_id,
-                        provider="auto",
-                        status="queued",
-                    )
-                    self.db.add(job_row)
-                    self.db.commit()
 
                 render_dispatch_task.delay(render_job_id)
                 dispatched = True
@@ -480,56 +480,74 @@ class FactoryOrchestrator:
                     exc, render_job_id,
                 )
 
+        # Attempt to read output URL from a completed/cached render job
+        if ctx.project_id:
+            try:
+                from app.models.render_job import RenderJob
+
+                job = (
+                    self.db.query(RenderJob)
+                    .filter(RenderJob.id == render_job_id)
+                    .first()
+                )
+                if job and (job.final_video_url or job.output_url):
+                    ctx.output_video_url = job.final_video_url or job.output_url
+            except Exception:  # noqa: BLE001
+                pass
+
         return {
             "render_job_id": render_job_id,
             "status": "dispatched" if dispatched else "queued",
             "dispatched": dispatched,
+            "manifest_scene_count": manifest.get("scene_count", 0),
+            "estimated_duration_seconds": manifest.get("estimated_duration_seconds", 0),
         }
 
     def _stage_qa_validate(self, ctx: FactoryContext) -> dict:
-        """Run quality gates on pipeline outputs."""
-        issues: list[str] = []
+        """Run quality gates on pipeline outputs via FactoryQAVerifier."""
+        from app.factory.factory_qa_verifier import FactoryQAVerifier
 
-        # Scene count check
-        scene_count = len(ctx.scenes)
-        if scene_count == 0:
-            issues.append("no_scenes_built")
-
-        # Render job must exist
-        if not ctx.render_job_id:
-            issues.append("no_render_job_id")
-
-        # Script plan must have a title
-        plan = ctx.script_plan or {}
-        if not plan.get("title"):
-            issues.append("missing_script_title")
-
-        # SEO bridge decision must not be BLOCK
-        if plan.get("decision") == "BLOCK":
-            issues.append("brain_decision_block")
-
-        # Avatar must be assigned
-        if not ctx.avatar_id:
-            issues.append("no_avatar_assigned")
-
-        # Render plan must exist and have scenes
-        render_plan = ctx.render_plan or {}
-        if not render_plan.get("scene_count"):
-            issues.append("empty_render_plan")
-
-        ctx.qa_passed = len(issues) == 0
-        result = {
-            "qa_passed": ctx.qa_passed,
-            "scene_count": scene_count,
-            "issues": issues,
-        }
-        if issues:
-            result["retry_strategy"] = "downgrade" if len(issues) <= 2 else "human_review"
+        verifier = FactoryQAVerifier()
+        result = verifier.verify(
+            scenes=ctx.scenes,
+            render_job_id=ctx.render_job_id,
+            script_plan=ctx.script_plan,
+            avatar_id=ctx.avatar_id,
+            render_plan=ctx.render_plan,
+            audio_url=ctx.audio_url,
+            seo_package=ctx.seo_package,
+            publish_result=ctx.publish_result,
+            render_manifest=ctx.extras.get("render_manifest"),
+            db=self.db,
+        )
+        ctx.qa_passed = result["qa_passed"]
         return result
 
     def _stage_seo_package(self, ctx: FactoryContext) -> dict:
-        """Generate SEO package via PostRenderSEOOrchestrator."""
+        """Generate SEO package via PostRenderSEOOrchestrator.
+
+        Reads real output URL from the persisted RenderJob record when
+        available so the SEO package references the actual video artifact.
+        """
         plan = ctx.script_plan or {}
+
+        # Refresh output_video_url from the real render job artifact
+        if ctx.render_job_id and ctx.project_id:
+            try:
+                from app.models.render_job import RenderJob
+
+                job = (
+                    self.db.query(RenderJob)
+                    .filter(RenderJob.id == ctx.render_job_id)
+                    .first()
+                )
+                if job:
+                    real_url = job.final_video_url or job.output_url
+                    if real_url:
+                        ctx.output_video_url = real_url
+            except Exception:  # noqa: BLE001
+                pass
+
         try:
             from app.services.post_render_seo_orchestrator import PostRenderSEOOrchestrator
 

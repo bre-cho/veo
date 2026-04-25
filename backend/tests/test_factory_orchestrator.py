@@ -267,11 +267,20 @@ class TestStageExecuteRender:
 class TestStageQAValidate:
     def test_passes_with_full_context(self, db_session):
         ctx = _make_ctx()
-        ctx.scenes = [{"scene_index": i} for i in range(3)]
+        ctx.scenes = [
+            {
+                "scene_index": i,
+                "voiceover": f"Scene {i}",
+                "subtitle_text": f"Subtitle {i}",
+                "duration": 5.0,
+            }
+            for i in range(3)
+        ]
         ctx.render_job_id = "rj-123"
         ctx.script_plan = {"title": "Test title", "decision": "WINNER"}
         ctx.avatar_id = "av1"
         ctx.render_plan = {"scene_count": 3}
+        ctx.seo_package = {"title": "Test title", "description": "desc"}
         orch = _make_orchestrator(db_session)
         result = orch._stage_qa_validate(ctx)
         assert result["qa_passed"] is True
