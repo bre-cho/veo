@@ -41,7 +41,7 @@ export default function FactoryRunPanel({ runs, onRunCreated, onRunUpdated, onSe
       const run = await startFactoryRun(form);
       onRunCreated(run);
     } catch (err: any) {
-      setError(err?.message ?? "Unknown error");
+      setError(err?.message ?? t("factory_unknown_error"));
     } finally {
       setSubmitting(false);
     }
@@ -87,10 +87,10 @@ export default function FactoryRunPanel({ runs, onRunCreated, onRunUpdated, onSe
               onChange={(e) => setForm((f) => ({ ...f, input_type: e.target.value as any }))}
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
             >
-              <option value="topic">topic</option>
-              <option value="script">script</option>
-              <option value="avatar">avatar</option>
-              <option value="series">series</option>
+              <option value="topic">{t("factory_input_type_topic")}</option>
+              <option value="script">{t("factory_input_type_script")}</option>
+              <option value="avatar">{t("factory_input_type_avatar")}</option>
+              <option value="series">{t("factory_input_type_series")}</option>
             </select>
           </div>
 
@@ -101,7 +101,7 @@ export default function FactoryRunPanel({ runs, onRunCreated, onRunUpdated, onSe
                 type="text"
                 value={form.input_topic ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, input_topic: e.target.value }))}
-                placeholder="AI trends 2026..."
+                placeholder={t("factory_topic_placeholder")}
                 className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30"
               />
             </div>

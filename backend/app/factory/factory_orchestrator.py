@@ -26,6 +26,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+# Stable namespace for deriving deterministic render job IDs from factory run IDs.
+_FACTORY_RENDER_NS = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430ca")
+
 from sqlalchemy.orm import Session
 
 from app.factory.factory_context import FactoryContext
@@ -278,66 +281,305 @@ class FactoryOrchestrator:
         return {"skill": skill}
 
     def _stage_script_plan(self, ctx: FactoryContext) -> dict:
-        """Generate or validate the script plan."""
-        text = ctx.input_script or ctx.input_topic or ""
-        ctx.script_plan = {
-            "title": text[:80] if text else "Untitled",
-            "scenes_estimate": 3,
-            "skill": ctx.selected_skill,
-        }
+        """Generate the script plan via AutopilotBrainRuntime."""
+        try:
+            from app.services.autopilot_brain_runtime import AutopilotBrainRuntime
+            from app.schemas.autopilot_brain import AutopilotBrainCompileRequest
+
+            req = AutopilotBrainCompileRequest(
+                topic=ctx.input_topic,
+                script_text=ctx.input_script,
+                platform="youtube",
+                store_if_winner=True,
+            )
+            brain = AutopilotBrainRuntime()
+            resp = brain.compile(db=self.db, req=req)
+            seo = resp.seo_bridge
+            ctx.script_plan = {
+                "title": seo.title,
+                "hook": seo.description[:120] if seo.description else "",
+                "voiceover_script": ctx.input_script or ctx.input_topic or "",
+                "scene_count": max(len(resp.series_map), 3),
+                "retention_map": [ep.model_dump() for ep in resp.series_map],
+                "visual_prompt_plan": [],
+                "skill": ctx.selected_skill,
+                "decision": resp.scorecard.decision,
+                "scorecard": resp.scorecard.model_dump(),
+                "seo_bridge": seo.model_dump(),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("script_plan brain compile failed (%s), using fallback", exc)
+            text = ctx.input_script or ctx.input_topic or ""
+            ctx.script_plan = {
+                "title": text[:80] if text else "Untitled",
+                "hook": "",
+                "voiceover_script": text,
+                "scene_count": 3,
+                "retention_map": [],
+                "visual_prompt_plan": [],
+                "skill": ctx.selected_skill,
+                "decision": "TEST",
+            }
         return ctx.script_plan
 
     def _stage_scene_build(self, ctx: FactoryContext) -> dict:
-        """Build scene list from script plan."""
-        n = (ctx.script_plan or {}).get("scenes_estimate", 3)
-        ctx.scenes = [{"scene_index": i, "status": "pending"} for i in range(n)]
-        return {"scene_count": len(ctx.scenes)}
+        """Build scene list via StoryboardEngine."""
+        text = ctx.input_script or ctx.input_topic or ""
+        try:
+            from app.services.storyboard_engine import StoryboardEngine
+
+            engine = StoryboardEngine()
+            result = engine.generate_from_script(
+                script_text=text,
+                platform="youtube",
+                avatar_id=ctx.input_avatar_id,
+                db=self.db,
+            )
+            ctx.scenes = [
+                {
+                    "scene_index": s.scene_index,
+                    "voiceover": s.voice_direction or s.title,
+                    "visual_prompt": s.title,
+                    "avatar_instruction": f"emotion={s.emotion or 'neutral'}",
+                    "camera_instruction": s.shot_hint or "medium_shot",
+                    "duration": round(s.pacing_weight * 5.0, 1),
+                    "subtitle_text": s.title,
+                    "dependency_reason": s.scene_goal,
+                    "visual_type": s.visual_type,
+                    "status": "pending",
+                }
+                for s in result.scenes
+            ]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("scene_build storyboard failed (%s), using fallback", exc)
+            n = (ctx.script_plan or {}).get("scene_count", 3)
+            ctx.scenes = [
+                {
+                    "scene_index": i,
+                    "voiceover": text[i * 80 : (i + 1) * 80] if text else "",
+                    "visual_prompt": f"Scene {i + 1}",
+                    "avatar_instruction": "emotion=neutral",
+                    "camera_instruction": "medium_shot",
+                    "duration": 5.0,
+                    "subtitle_text": f"Scene {i + 1}",
+                    "dependency_reason": "sequential",
+                    "status": "pending",
+                }
+                for i in range(n)
+            ]
+        return {"scene_count": len(ctx.scenes), "scenes": ctx.scenes}
 
     def _stage_avatar_audio_build(self, ctx: FactoryContext) -> dict:
+        """Build avatar/audio resources.  Dispatches a narration job if available."""
         ctx.avatar_id = ctx.input_avatar_id or "default_avatar"
-        ctx.audio_url = None  # real impl calls audio service
-        return {"avatar_id": ctx.avatar_id, "audio_url": ctx.audio_url}
+        voice_job_id: str | None = None
+        subtitle_url: str | None = None
+        duration_ms: int | None = None
+
+        try:
+            from app.services.audio.audio_mix_service import create_audio_render_output
+
+            script_text = ctx.input_script or ctx.input_topic or ""
+            if script_text:
+                audio_out = create_audio_render_output(
+                    db=self.db,
+                    run_id=ctx.run_id,
+                    script_text=script_text,
+                    voice_profile_id=ctx.avatar_id,
+                )
+                ctx.audio_url = getattr(audio_out, "output_url", None)
+                voice_job_id = getattr(audio_out, "id", None)
+                duration_ms = getattr(audio_out, "duration_ms", None)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("avatar_audio_build audio service failed (%s), continuing without audio", exc)
+            ctx.audio_url = None
+
+        return {
+            "avatar_id": ctx.avatar_id,
+            "audio_url": ctx.audio_url,
+            "voice_job_id": voice_job_id,
+            "subtitle_url": subtitle_url,
+            "duration_ms": duration_ms,
+        }
 
     def _stage_render_plan(self, ctx: FactoryContext) -> dict:
+        """Build the render execution plan from available scene/budget context."""
+        scene_count = len(ctx.scenes)
+        budget_cents = ctx.budget_cents or 0
+        cost_per_scene = max(1, budget_cents // max(scene_count, 1))
+
+        # Attempt decision-engine enrichment when project context is available
+        selected_strategy = "full_rebuild"
+        warnings: list[str] = []
+        if ctx.project_id and ctx.scenes:
+            try:
+                from app.render.decision.unified_rebuild_decision_engine import (
+                    UnifiedRebuildDecisionEngine,
+                )
+
+                engine = UnifiedRebuildDecisionEngine()
+                decision = engine.decide(
+                    project_id=ctx.project_id,
+                    episode_id=ctx.run_id,
+                    changed_scene_id=str(ctx.scenes[0].get("scene_index", 0)),
+                    change_type="new_content",
+                    budget_policy="balanced",
+                    force_full_rebuild=True,
+                )
+                selected_strategy = decision.get("selected_strategy", selected_strategy)
+                warnings = decision.get("warnings", [])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("render_plan decision engine failed (%s), using defaults", exc)
+
         ctx.render_plan = {
             "provider": "auto",
-            "scene_count": len(ctx.scenes),
+            "scene_count": scene_count,
             "avatar_id": ctx.avatar_id,
+            "selected_strategy": selected_strategy,
+            "affected_scenes": list(range(scene_count)),
+            "mandatory_scenes": list(range(scene_count)),
+            "estimated_cost": {"cents": budget_cents, "per_scene": cost_per_scene},
+            "estimated_time": {"seconds": scene_count * 30},
+            "warnings": warnings,
         }
         return ctx.render_plan
 
     def _stage_execute_render(self, ctx: FactoryContext) -> dict:
-        """Dispatch render job (stub; real impl enqueues Celery task)."""
-        ctx.render_job_id = str(uuid.uuid4())
-        return {"render_job_id": ctx.render_job_id, "status": "dispatched"}
+        """Create a render job and dispatch the Celery render task."""
+        # Always generate an idempotent job ID for this run
+        render_job_id = str(uuid.uuid5(_FACTORY_RENDER_NS, f"factory:{ctx.run_id}"))
+        ctx.render_job_id = render_job_id
+
+        dispatched = False
+        if ctx.project_id:
+            try:
+                from app.models.render_job import RenderJob
+                from app.workers.render_tasks import render_dispatch_task
+
+                # Upsert a minimal render job record if absent
+                existing = (
+                    self.db.query(RenderJob)
+                    .filter(RenderJob.id == render_job_id)
+                    .first()
+                )
+                if existing is None:
+                    job_row = RenderJob(
+                        id=render_job_id,
+                        project_id=ctx.project_id,
+                        provider="auto",
+                        status="queued",
+                    )
+                    self.db.add(job_row)
+                    self.db.commit()
+
+                render_dispatch_task.delay(render_job_id)
+                dispatched = True
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "execute_render dispatch failed (%s), job_id=%s recorded without dispatch",
+                    exc, render_job_id,
+                )
+
+        return {
+            "render_job_id": render_job_id,
+            "status": "dispatched" if dispatched else "queued",
+            "dispatched": dispatched,
+        }
 
     def _stage_qa_validate(self, ctx: FactoryContext) -> dict:
-        ctx.qa_passed = True  # real impl checks render output
-        return {"qa_passed": ctx.qa_passed}
+        """Run quality gates on pipeline outputs."""
+        issues: list[str] = []
+
+        # Scene count check
+        scene_count = len(ctx.scenes)
+        if scene_count == 0:
+            issues.append("no_scenes_built")
+
+        # Render job must exist
+        if not ctx.render_job_id:
+            issues.append("no_render_job_id")
+
+        # Script plan must have a title
+        plan = ctx.script_plan or {}
+        if not plan.get("title"):
+            issues.append("missing_script_title")
+
+        # SEO bridge decision must not be BLOCK
+        if plan.get("decision") == "BLOCK":
+            issues.append("brain_decision_block")
+
+        # Avatar must be assigned
+        if not ctx.avatar_id:
+            issues.append("no_avatar_assigned")
+
+        # Render plan must exist and have scenes
+        render_plan = ctx.render_plan or {}
+        if not render_plan.get("scene_count"):
+            issues.append("empty_render_plan")
+
+        ctx.qa_passed = len(issues) == 0
+        result = {
+            "qa_passed": ctx.qa_passed,
+            "scene_count": scene_count,
+            "issues": issues,
+        }
+        if issues:
+            result["retry_strategy"] = "downgrade" if len(issues) <= 2 else "human_review"
+        return result
 
     def _stage_seo_package(self, ctx: FactoryContext) -> dict:
         """Generate SEO package via PostRenderSEOOrchestrator."""
+        plan = ctx.script_plan or {}
         try:
             from app.services.post_render_seo_orchestrator import PostRenderSEOOrchestrator
 
             orchestrator = PostRenderSEOOrchestrator()
-            # Pass minimal stub objects; real impl passes live job/project
             pkg = orchestrator.generate_seo_package(
                 job=type("J", (), {
                     "id": ctx.run_id,
-                    "title": (ctx.script_plan or {}).get("title", ""),
+                    "title": plan.get("title", ""),
                     "project_id": ctx.project_id,
                     "provider_job_id": ctx.render_job_id,
+                    "final_video_url": ctx.output_video_url,
                 })(),
-                project=None,
+                project={
+                    "title": plan.get("title", ""),
+                    "series_id": ctx.input_series_id,
+                    "avatar_id": ctx.avatar_id,
+                    "scenes": ctx.scenes,
+                    "hook": plan.get("hook", ""),
+                } if plan else None,
             )
             ctx.seo_package = _to_dict(pkg)
+            # Enrich with brain SEO bridge if available
+            seo_bridge = plan.get("seo_bridge") or {}
+            if seo_bridge and not ctx.seo_package.get("hashtags_video"):
+                ctx.seo_package.setdefault("hashtags_video", seo_bridge.get("video_hashtags", []))
+                ctx.seo_package.setdefault("hashtags_channel", seo_bridge.get("channel_hashtags", []))
         except Exception:  # noqa: BLE001
-            ctx.seo_package = {"title": (ctx.script_plan or {}).get("title", ""), "generated": False}
+            ctx.seo_package = {"title": plan.get("title", ""), "generated": False}
         return ctx.seo_package
 
     def _stage_publish(self, ctx: FactoryContext) -> dict:
-        ctx.publish_result = {"status": "scheduled", "run_id": ctx.run_id}
+        """Build the publish payload.  Live upload requires explicit approval."""
+        import os
+
+        dry_run = os.environ.get("FACTORY_PUBLISH_DRY_RUN", "1") != "0"
+        seo = ctx.seo_package or {}
+        payload = {
+            "run_id": ctx.run_id,
+            "render_job_id": ctx.render_job_id,
+            "title": seo.get("title") or (ctx.script_plan or {}).get("title", ""),
+            "description": seo.get("description", ""),
+            "tags": seo.get("hashtags_video", []),
+            "video_url": ctx.output_video_url,
+            "dry_run": dry_run,
+        }
+        if dry_run:
+            ctx.publish_result = {"status": "dry_run", **payload}
+        else:
+            # Live publish: future YouTube / provider integration
+            ctx.publish_result = {"status": "scheduled", **payload}
         return ctx.publish_result
 
     def _stage_telemetry_learn(self, ctx: FactoryContext) -> dict:
