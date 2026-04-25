@@ -28,3 +28,9 @@ class SmartReassemblyRequest(BaseModel):
     change_type: str = "subtitle"
     force_quality_rebuild: bool = False
     include_optional_rebuilds: bool = False
+    # Budget control — per-request overrides.  When None the value from the
+    # resolved budget_policy preset is used.
+    budget_policy: str = "balanced"
+    max_rebuild_cost: float | None = None
+    max_rebuild_time_sec: float | None = None
+    allow_budget_downgrade: bool | None = None
