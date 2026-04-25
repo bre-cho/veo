@@ -69,5 +69,7 @@ class PowerShiftEngine:
             "spatial_delta": spatial_delta,
             "narrative_control_delta": narrative_control_delta,
             "total_delta": round(total_delta, 3),
+            "dominant_character_id": dominant_character_id,
+            "threatened_character_id": threatened_character_id,
             "relationship_shifts": relationship_shifts,
         }
