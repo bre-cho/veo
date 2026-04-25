@@ -1226,3 +1226,136 @@ export async function approveRebuild(decision: any, jobId?: string): Promise<any
 export async function getRebuildAudit(jobId: string): Promise<any[]> {
   return request<any[]>(`/render/rebuild/${jobId}/audit`, { cache: "no-store" });
 }
+
+// ---------------------------------------------------------------------------
+// Factory API
+// ---------------------------------------------------------------------------
+
+export interface FactoryRunRequest {
+  input_type: "topic" | "script" | "avatar" | "series";
+  input_topic?: string;
+  input_script?: string;
+  input_avatar_id?: string;
+  input_series_id?: string;
+  project_id?: string;
+  budget_cents?: number;
+}
+
+export interface FactoryRunOut {
+  id: string;
+  trace_id?: string;
+  project_id?: string;
+  input_type: string;
+  input_topic?: string;
+  status: string;
+  current_stage: string;
+  percent_complete: number;
+  render_job_id?: string;
+  output_video_url?: string;
+  output_thumbnail_url?: string;
+  seo_title?: string;
+  seo_description?: string;
+  blocking_reason?: string;
+  error_detail?: string;
+  policy_mode: string;
+  budget_cents?: number;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  updated_at?: string;
+}
+
+export interface FactoryStageOut {
+  id: string;
+  run_id: string;
+  stage_name: string;
+  stage_index: number;
+  status: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+  input_summary?: string;
+  output_summary?: string;
+  error_detail?: string;
+  retry_count: number;
+}
+
+export interface FactoryGateOut {
+  id: string;
+  run_id: string;
+  stage_name: string;
+  gate_name: string;
+  result: string;
+  score?: number;
+  threshold?: number;
+  action_taken: string;
+  detail?: string;
+  evaluated_at: string;
+}
+
+export interface FactoryIncidentOut {
+  id: string;
+  run_id: string;
+  stage_name?: string;
+  severity: string;
+  incident_type: string;
+  detail?: string;
+  resolved: boolean;
+  occurred_at: string;
+  resolved_at?: string;
+}
+
+export interface FactoryRunDetailOut extends FactoryRunOut {
+  stages: FactoryStageOut[];
+  quality_gates: FactoryGateOut[];
+  incidents: FactoryIncidentOut[];
+}
+
+export interface FactoryMetricOut {
+  id: string;
+  run_id: string;
+  stage_name: string;
+  metric_name: string;
+  metric_value?: string;
+  unit?: string;
+  recorded_at: string;
+}
+
+export interface FactoryMemoryEventOut {
+  id: string;
+  run_id: string;
+  memory_type: string;
+  payload_json?: string;
+  recorded_at: string;
+}
+
+export async function startFactoryRun(req: FactoryRunRequest): Promise<FactoryRunOut> {
+  return request<FactoryRunOut>("/factory/run", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export async function getFactoryRun(runId: string): Promise<FactoryRunDetailOut> {
+  return request<FactoryRunDetailOut>(`/factory/runs/${runId}`, { cache: "no-store" });
+}
+
+export async function approveFactoryRun(runId: string): Promise<FactoryRunOut> {
+  return request<FactoryRunOut>(`/factory/runs/${runId}/approve`, { method: "POST" });
+}
+
+export async function retryFactoryRun(runId: string): Promise<FactoryRunOut> {
+  return request<FactoryRunOut>(`/factory/runs/${runId}/retry`, { method: "POST" });
+}
+
+export async function cancelFactoryRun(runId: string): Promise<FactoryRunOut> {
+  return request<FactoryRunOut>(`/factory/runs/${runId}/cancel`, { method: "POST" });
+}
+
+export async function getFactoryRunTimeline(runId: string): Promise<{ run_id: string; stages: FactoryStageOut[] }> {
+  return request<{ run_id: string; stages: FactoryStageOut[] }>(`/factory/runs/${runId}/timeline`, { cache: "no-store" });
+}
+
+export async function getFactoryRunMetrics(runId: string): Promise<{ run_id: string; metrics: FactoryMetricOut[] }> {
+  return request<{ run_id: string; metrics: FactoryMetricOut[] }>(`/factory/runs/${runId}/metrics`, { cache: "no-store" });
+}

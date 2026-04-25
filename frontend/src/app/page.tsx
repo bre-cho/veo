@@ -15,6 +15,7 @@ export default function HomePage() {
         </header>
         <section className="grid gap-4 md:grid-cols-3">
           <Card title={t("home_card_dashboard")} href="/render-jobs" desc={t("home_card_dashboard_desc")} />
+          <Card title={t("home_card_factory")} href="/factory" desc={t("home_card_factory_desc")} />
           <Card title={t("home_card_script_upload")} href="/script-upload" desc={t("home_card_script_upload_desc")} />
           <Card title={t("home_card_audio_studio")} href="/audio" desc={t("home_card_audio_studio_desc")} />
           <Card title={t("home_card_autopilot")} href="/autopilot" desc={t("home_card_autopilot_desc")} />

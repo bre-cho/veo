@@ -89,6 +89,8 @@ _REQUIRED_ROUTER_SPECS: list[tuple[str, str]] = [
     ("app.api.creative_runs", "router"),
     ("app.api.publish_signal", "router"),
     ("app.api.publish_webhooks", "router"),
+    # Factory Orchestrator
+    ("app.api.factory", "router"),
     # Phase 10-12 extensions
     ("app.api.experiment_variants", "router"),
     ("app.api.experiment_variants", "outcome_router"),

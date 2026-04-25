@@ -13,6 +13,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { labelKey: "nav_dashboard", href: "/", descKey: "home_card_dashboard_desc" },
+  { labelKey: "nav_factory", href: "/factory", descKey: "home_card_factory_desc" },
   { labelKey: "nav_script_upload", href: "/script-upload", descKey: "home_card_script_upload_desc" },
   { labelKey: "nav_render_jobs", href: "/render-jobs", descKey: "sidebar_nav_desc_render_jobs" },
   { labelKey: "nav_settings", href: "/settings", descKey: "home_card_settings_desc" },
