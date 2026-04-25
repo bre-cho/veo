@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.render.manifest.manifest_service import ManifestService
+from app.render.reassembly._sort_utils import scene_sort_key
 from app.render.reassembly.chunk_builder import ChunkBuilder
 from app.render.reassembly.chunk_index import ChunkIndex
 from app.render.reassembly.per_scene_subtitle_service import PerSceneSubtitleService
@@ -68,12 +69,7 @@ class ChunkBootstrapper:
 
         # Re-read manifests so chunks pick up the freshly written subtitle_path.
         manifests = self._manifest.list_episode(project_id, episode_id)
-        manifests.sort(
-            key=lambda x: (
-                next((int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None), 999999),
-                x.get("scene_id", ""),
-            )
-        )
+        manifests.sort(key=scene_sort_key)
 
         chunks = []
         for scene_manifest in manifests:
@@ -100,12 +96,7 @@ class ChunkBootstrapper:
                 },
             )
 
-        chunks.sort(
-            key=lambda c: (
-                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
-                c.get("scene_id", ""),
-            )
-        )
+        chunks.sort(key=scene_sort_key)
 
         index: Dict[str, Any] = {
             "project_id": project_id,

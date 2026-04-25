@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import List
 
+from app.render.reassembly._sort_utils import scene_sort_key
+
 
 class ManifestReader:
     """Reads per-scene JSON manifests from ``base_dir``."""
@@ -45,13 +47,5 @@ class ManifestReader:
         for path in folder.glob("*.json"):
             with open(path, "r", encoding="utf-8") as fh:
                 items.append(json.load(fh))
-        items.sort(
-            key=lambda x: (
-                next(
-                    (int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None),
-                    999999,
-                ),
-                x.get("scene_id", ""),
-            )
-        )
+        items.sort(key=scene_sort_key)
         return items

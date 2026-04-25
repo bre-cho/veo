@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from app.render.reassembly._sort_utils import scene_sort_key
+
 
 class ChunkIndex:
     """Persists and manages the per-episode chunk manifest.
@@ -89,12 +91,7 @@ class ChunkIndex:
         if order_index is not None:
             entry["order_index"] = order_index
         chunks.append(entry)
-        chunks.sort(
-            key=lambda c: (
-                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
-                c.get("scene_id", ""),
-            )
-        )
+        chunks.sort(key=scene_sort_key)
 
         index["chunks"] = chunks
         index["total_duration_sec"] = round(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from app.render.manifest.manifest_service import ManifestService
+from app.render.reassembly._sort_utils import scene_sort_key
 
 
 class AffectedRangeResolver:
@@ -13,8 +14,8 @@ class AffectedRangeResolver:
     comes after it** must be rebuilt because the burnt-in subtitle timestamps
     for those scenes have shifted.
 
-    Scenes are sorted lexicographically by ``scene_id`` — the same order used
-    by :class:`~app.render.reassembly.timeline_rebuilder.TimelineRebuilder`.
+    Scenes are sorted by ``order_index`` (numeric, ascending), falling back to
+    ``scene_index`` and then ``scene_id``.
     """
 
     def __init__(self, manifest_base_dir: str = "/data/renders/manifests") -> None:
@@ -38,13 +39,13 @@ class AffectedRangeResolver:
                 changed scene.
 
         Returns:
-            List of scene manifest dicts sorted by ``scene_id``.
+            List of scene manifest dicts sorted by ``order_index``.
 
         Raises:
             ValueError: If *changed_scene_id* is not found in the episode.
         """
         manifests = self.manifest.list_episode(project_id, episode_id)
-        manifests.sort(key=lambda x: x["scene_id"])
+        manifests.sort(key=scene_sort_key)
 
         if not has_timeline_drift:
             return [item for item in manifests if item["scene_id"] == changed_scene_id]

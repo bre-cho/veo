@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from app.render.dependency.dependency_service import DependencyService
 from app.render.manifest.manifest_service import ManifestService
+from app.render.reassembly._sort_utils import scene_sort_key
 from app.render.reassembly.affected_range_resolver import AffectedRangeResolver
 from app.render.reassembly.burn_in_mode_resolver import BurnInModeResolver
 from app.render.reassembly.chunk_builder import ChunkBuilder
@@ -147,15 +148,7 @@ class SmartReassemblyService:
             for item in self._manifest.list_episode(req.project_id, req.episode_id)
             if item["scene_id"] in affected_ids
         ]
-        affected_manifests.sort(
-            key=lambda x: (
-                next(
-                    (int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None),
-                    999999,
-                ),
-                x.get("scene_id", ""),
-            )
-        )
+        affected_manifests.sort(key=scene_sort_key)
 
         rebuilt_chunks: List[Dict[str, Any]] = []
 
@@ -176,13 +169,9 @@ class SmartReassemblyService:
 
             rebuilt_chunks.append(chunk)
 
-            order_index = next(
-                (int(v) for v in (
-                    item.get("order_index"),
-                    item.get("scene_index"),
-                ) if v is not None),
-                999999,
-            )
+            order_index = scene_sort_key(item)[0]
+            if order_index == 999_999:
+                order_index = None  # type: ignore[assignment]
             self._chunk_index.update_chunk(
                 project_id=req.project_id,
                 episode_id=req.episode_id,
@@ -244,12 +233,7 @@ class SmartReassemblyService:
             )
             chunks.append(chunk)
 
-        chunks.sort(
-            key=lambda c: (
-                next((int(v) for v in (c.get("order_index"),) if v is not None), 999999),
-                c.get("scene_id", ""),
-            )
-        )
+        chunks.sort(key=scene_sort_key)
 
         index: Dict[str, Any] = {
             "project_id": req.project_id,

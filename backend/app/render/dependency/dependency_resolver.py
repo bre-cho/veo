@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from app.render.reassembly._sort_utils import scene_sort_key
+
 
 class DependencyResolver:
     """Builds a dependency edge list from a list of scene manifests.
@@ -37,16 +39,7 @@ class DependencyResolver:
         """
         dependencies: List[Dict[str, Any]] = []
 
-        sorted_manifests = sorted(
-            manifests,
-            key=lambda x: (
-                next(
-                    (int(v) for v in (x.get("order_index"), x.get("scene_index")) if v is not None),
-                    999999,
-                ),
-                x.get("scene_id", ""),
-            ),
-        )
+        sorted_manifests = sorted(manifests, key=scene_sort_key)
 
         for idx, scene in enumerate(sorted_manifests):
             scene_id: str = scene["scene_id"]
