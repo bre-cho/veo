@@ -9,9 +9,10 @@ GET  /api/v1/render/rebuild/{job_id}/audit → return audit trail for a job
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.render.decision.unified_rebuild_decision_engine import UnifiedRebuildDecisionEngine
@@ -19,6 +20,8 @@ from app.render.execution.approved_rebuild_executor import (
     ApprovedRebuildExecutor,
     get_default_audit_log,
 )
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/render/rebuild",
@@ -65,21 +68,31 @@ def rebuild_decide(req: RebuildDecideRequest) -> Dict[str, Any]:
     mandatory/optional scene lists, warnings, and budget policy outcome.
     A human operator (or the frontend) can then call ``/approve`` to proceed.
     """
-    engine = UnifiedRebuildDecisionEngine()
-    return engine.decide(
-        project_id=req.project_id,
-        episode_id=req.episode_id,
-        changed_scene_id=req.changed_scene_id,
-        change_type=req.change_type,
-        budget_policy=req.budget_policy,
-        force_full_rebuild=req.force_full_rebuild,
-        force_quality_rebuild=req.force_quality_rebuild,
-        include_optional_rebuilds=req.include_optional_rebuilds,
-        has_timeline_drift=req.has_timeline_drift,
-        max_rebuild_cost=req.max_rebuild_cost,
-        max_rebuild_time_sec=req.max_rebuild_time_sec,
-        allow_budget_downgrade=req.allow_budget_downgrade,
-    )
+    try:
+        engine = UnifiedRebuildDecisionEngine()
+        return engine.decide(
+            project_id=req.project_id,
+            episode_id=req.episode_id,
+            changed_scene_id=req.changed_scene_id,
+            change_type=req.change_type,
+            budget_policy=req.budget_policy,
+            force_full_rebuild=req.force_full_rebuild,
+            force_quality_rebuild=req.force_quality_rebuild,
+            include_optional_rebuilds=req.include_optional_rebuilds,
+            has_timeline_drift=req.has_timeline_drift,
+            max_rebuild_cost=req.max_rebuild_cost,
+            max_rebuild_time_sec=req.max_rebuild_time_sec,
+            allow_budget_downgrade=req.allow_budget_downgrade,
+        )
+    except FileNotFoundError as exc:
+        _logger.warning("rebuild_decide: resource not found: %s", exc)
+        raise HTTPException(status_code=404, detail="Episode or manifest not found") from exc
+    except ValueError as exc:
+        _logger.warning("rebuild_decide: bad request: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid rebuild request parameters") from exc
+    except Exception as exc:  # noqa: BLE001
+        _logger.exception("rebuild_decide: unexpected error")
+        raise HTTPException(status_code=500, detail="Rebuild decision failed") from exc
 
 
 @router.post("/approve")
@@ -88,8 +101,12 @@ def rebuild_approve(req: RebuildApproveRequest) -> Dict[str, Any]:
 
     Idempotent: re-submitting the same decision returns the cached result.
     """
-    executor = ApprovedRebuildExecutor()
-    return executor.execute(decision=req.decision, job_id=req.job_id)
+    try:
+        executor = ApprovedRebuildExecutor()
+        return executor.execute(decision=req.decision, job_id=req.job_id)
+    except Exception as exc:  # noqa: BLE001
+        _logger.exception("rebuild_approve: unexpected error")
+        raise HTTPException(status_code=500, detail="Rebuild execution failed") from exc
 
 
 @router.post("/execute")

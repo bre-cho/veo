@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.core.runtime_paths import render_paths
 from app.render.assembly.executors.asset_resolver import AssetResolver
 from app.render.assembly.executors.assembly_validator import AssemblyValidator
 from app.render.assembly.executors.ffmpeg_command_builder import FFmpegCommandBuilder
@@ -215,7 +216,6 @@ class FFmpegAssemblyExecutor:
         else:
             write_karaoke_ass(subtitle_tracks, subtitle_path)
 
-        from app.core.runtime_paths import render_paths  # noqa: PLC0415
         concat_file = render_paths.concat_scratch_path(project_id, episode_id)
         self.builder.build_concat_file(video_paths=video_paths, concat_path=concat_file)
 
