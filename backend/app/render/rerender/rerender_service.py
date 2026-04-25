@@ -133,6 +133,7 @@ class RerenderService:
                     "status": "rerendered",
                     "rerender_finished_at": datetime.utcnow().isoformat(),
                     "needs_reassembly": True,
+                    "needs_smart_reassembly": True,
                     "error": None,
                 },
             )

@@ -251,11 +251,27 @@ class FFmpegAssemblyExecutor:
                     "Failed to write post-assembly manifest for scene %s: %s", sid, _exc
                 )
 
+        # Bootstrap the chunk index so that subsequent scene rerenders can use
+        # SmartReassemblyService without a forced full rebuild.
+        try:
+            from app.render.reassembly.chunk_bootstrapper import ChunkBootstrapper  # noqa: PLC0415
+            bootstrap_result = ChunkBootstrapper().bootstrap_episode(
+                project_id=project_id,
+                episode_id=episode_id,
+            )
+        except Exception as _exc:  # noqa: BLE001
+            _logger.warning("Chunk bootstrap failed (non-fatal): %s", _exc)
+            bootstrap_result = {
+                "status": "failed",
+                "error": {"type": type(_exc).__name__, "message": str(_exc)},
+            }
+
         return {
             "project_id": project_id,
             "episode_id": episode_id,
             "status": "succeeded",
             "output_path": output_path,
             "subtitle_path": subtitle_path,
+            "chunk_bootstrap": bootstrap_result,
             "command": command,
         }

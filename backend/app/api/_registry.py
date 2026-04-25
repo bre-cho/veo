@@ -112,6 +112,12 @@ try:
 except Exception:  # pragma: no cover
     render_rerender_router = None  # type: ignore[assignment]
 
+# ── Render Smart Reassembly ───────────────────────────────────────────────
+try:
+    from app.render.reassembly.api import router as render_reassembly_router
+except Exception:  # pragma: no cover
+    render_reassembly_router = None  # type: ignore[assignment]
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
@@ -228,7 +234,12 @@ _DRAMA_ROUTERS = [
 ]
 
 _RENDER_ASSEMBLY_ROUTERS = [
-    r for r in [render_assembly_router, render_manifest_router, render_rerender_router]
+    r for r in [
+        render_assembly_router,
+        render_manifest_router,
+        render_rerender_router,
+        render_reassembly_router,
+    ]
     if r is not None
 ]
 
