@@ -33,7 +33,11 @@ def compile_subtitle_timing(render_scenes: List[Dict[str, Any]]) -> List[Dict[st
 
 
 def split_subtitle_text(text: str) -> List[str]:
-    """Split subtitle text into chunks of up to 7 words each."""
+    """Split subtitle text into chunks of up to 7 words each.
+
+    For empty input, returns a list containing the original string so that
+    callers always receive at least one chunk.
+    """
     words = text.split()
     chunks = [" ".join(words[i:i + 7]) for i in range(0, len(words), 7)]
     return chunks or [text]

@@ -4,7 +4,23 @@ from typing import Any, Dict, List
 
 
 def create_render_job_from_script(project_id: str, script_output: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Build a list of render job dicts from a script engine output that contains render_scenes."""
+    """Build a list of render job dicts from a script engine output.
+
+    Args:
+        project_id: The project identifier to stamp on every job.
+        script_output: Dict produced by :class:`NextLevelScriptService`.  Must
+            contain a ``render_scenes`` key whose value is a list of scene dicts
+            with the keys ``scene_id``, ``voiceover_text``, ``duration_sec``,
+            ``render_purpose``, ``voice_directive`` (tone/speed/pause/stress_words),
+            and ``drama_metadata`` (subtext/intent/emotion).
+
+    Returns:
+        A list of job dicts, one per scene.  Each dict includes:
+        ``project_id``, ``scene_id``, ``status``, ``voiceover_text``,
+        ``duration_sec``, ``voice_tone``, ``voice_speed``, ``voice_pause``,
+        ``stress_words``, ``render_purpose``, ``subtext``, ``intent``,
+        ``emotion``.
+    """
     render_scenes: List[Dict[str, Any]] = script_output.get("render_scenes", [])
     jobs: List[Dict[str, Any]] = []
 

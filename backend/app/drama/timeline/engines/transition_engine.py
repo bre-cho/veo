@@ -27,6 +27,14 @@ def compile_transitions(render_scenes: List[Dict[str, Any]]) -> List[Dict[str, A
 
 
 def select_transition(current_purpose: str | None, next_purpose: str | None) -> str:
+    """Select a transition type based on adjacent scene purposes.
+
+    Rules:
+    - next_purpose == 'reveal'      → 'hard_cut'
+    - next_purpose == 'cliffhanger' → 'slow_fade'
+    - current_purpose == 'hook'     → 'match_cut'
+    - default                       → 'cinematic_cut'
+    """
     if next_purpose == "reveal":
         return "hard_cut"
     if next_purpose == "cliffhanger":
