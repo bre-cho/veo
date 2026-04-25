@@ -1,5 +1,9 @@
 """script_engine — orchestrator that assembles the full voiceover script.
 
+# Kept for backward-compat: ScriptToRenderAdapter imports this constant.
+DEFAULT_VOICE_TONE = "documentary, calm"
+
+
 Contains two engines:
 
 ``ScriptEngine`` (single-scene)

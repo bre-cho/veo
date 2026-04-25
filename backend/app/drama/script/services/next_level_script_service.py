@@ -1,17 +1,24 @@
 """next_level_script_service — service wrapper for NextLevelScriptEngine."""
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from app.drama.script.engines.script_engine import NextLevelScriptEngine
 from app.drama.script.schemas.next_level_script_request import NextLevelScriptRequest
 from app.drama.script.schemas.next_level_script_output import NextLevelScriptOutput
+from app.drama.render.adapters.script_to_render_adapter import ScriptToRenderAdapter
 
-_engine = NextLevelScriptEngine()
 
+class NextLevelScriptService:
+    """Orchestrates script generation and attaches render-ready scene payloads."""
 
-def generate_next_level_script(request: NextLevelScriptRequest) -> NextLevelScriptOutput:
-    """Generate a cinematic multi-scene script from a ``NextLevelScriptRequest``.
+    def __init__(self) -> None:
+        self.engine = NextLevelScriptEngine()
+        self.render_adapter = ScriptToRenderAdapter()
 
-    This is the primary entry point used by the API route and any downstream
-    orchestration layer that needs full episode script generation.
-    """
-    return _engine.generate(request)
+    def generate(self, payload: NextLevelScriptRequest) -> Dict[str, Any]:
+        """Generate a cinematic multi-scene script and attach render-ready scenes."""
+        script_output: NextLevelScriptOutput = self.engine.generate(payload)
+        output_dict = script_output.model_dump()
+        output_dict["render_scenes"] = self.render_adapter.adapt(output_dict)
+        return output_dict

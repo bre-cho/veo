@@ -116,6 +116,30 @@ except Exception as _drama_import_err:  # pragma: no cover
     )
     ALL_DRAMA_ROUTERS = []
 
+# ── Render Assembly (FFmpeg) ──────────────────────────────────────────────
+try:
+    from app.render.assembly.api import router as render_assembly_router
+except Exception:  # pragma: no cover
+    render_assembly_router = None  # type: ignore[assignment]
+
+# ── Render Manifest ───────────────────────────────────────────────────────
+try:
+    from app.render.manifest.api import router as render_manifest_router
+except Exception:  # pragma: no cover
+    render_manifest_router = None  # type: ignore[assignment]
+
+# ── Render Rerender ───────────────────────────────────────────────────────
+try:
+    from app.render.rerender.api import router as render_rerender_router
+except Exception:  # pragma: no cover
+    render_rerender_router = None  # type: ignore[assignment]
+
+# ── Render Smart Reassembly ───────────────────────────────────────────────
+try:
+    from app.render.reassembly.api import router as render_reassembly_router
+except Exception:  # pragma: no cover
+    render_reassembly_router = None  # type: ignore[assignment]
+
 # ── Phase 10-12: Commerce / Avatar / Storyboard / Publish extensions ──────
 from app.api.experiment_variants import router as experiment_variants_router
 from app.api.experiment_variants import outcome_router as experiment_outcome_router
@@ -231,6 +255,16 @@ _DRAMA_ROUTERS = [
     *ALL_DRAMA_ROUTERS,
 ]
 
+_RENDER_ASSEMBLY_ROUTERS = [
+    r for r in [
+        render_assembly_router,
+        render_manifest_router,
+        render_rerender_router,
+        render_reassembly_router,
+    ]
+    if r is not None
+]
+
 
 def register_all_routers(app: FastAPI) -> None:
     """Register every domain router with the FastAPI application."""
@@ -248,6 +282,7 @@ def register_all_routers(app: FastAPI) -> None:
         _CREATIVE_ROUTERS,
         _PHASE_10_12_ROUTERS,
         _DRAMA_ROUTERS,
+        _RENDER_ASSEMBLY_ROUTERS,
     ):
         for router in group:
             if router is None:
