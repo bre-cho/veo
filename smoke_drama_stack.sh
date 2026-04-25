@@ -3,9 +3,9 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8000/api/v1}"
 TOKEN="${TOKEN:-}"
-PROJECT_ID="${PROJECT_ID:-00000000-0000-0000-0000-000000000001}"
-EPISODE_ID="${EPISODE_ID:-00000000-0000-0000-0000-000000000101}"
-SCENE_ID="${SCENE_ID:-00000000-0000-0000-0000-000000000201}"
+PROJECT_ID="${PROJECT_ID:-$(python -c 'import uuid; print(uuid.uuid4())')}"
+EPISODE_ID="${EPISODE_ID:-$(python -c 'import uuid; print(uuid.uuid4())')}"
+SCENE_ID="${SCENE_ID:-$(python -c 'import uuid; print(uuid.uuid4())')}"
 
 AUTH_HEADER=()
 if [[ -n "$TOKEN" ]]; then
@@ -139,13 +139,9 @@ test "$ARC_COUNT" -ge 1 || { echo "FAIL: expected >=1 arc entry, got ${ARC_COUNT
 echo "  arc entries: ${ARC_COUNT}"
 
 echo "[10/11] Recall memory"
-set +e
-json_get "/drama/memory/characters/${REBEL_ID}/recall?trigger=authority_pressure&limit=5"
-RECALL_STATUS=$?
-set -e
-if [[ "$RECALL_STATUS" -ne 0 ]]; then
-  echo "memory recall returned no data yet; this is expected before first persisted worker run"
-fi
+RECALL_COUNT=$(json_get "/drama/memory/characters/${AUTHORITY_ID}/recall?trigger=discipline&limit=5" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
+test "$RECALL_COUNT" -ge 1 || { echo "FAIL: expected recalled memory, got ${RECALL_COUNT}" >&2; exit 1; }
+echo "  recalled memories: ${RECALL_COUNT}"
 
 echo "[11/11] Recompute episode continuity"
 set +e
@@ -155,7 +151,8 @@ curl -fsS -X POST "${BASE_URL}/drama/admin/episodes/${EPISODE_ID}/recompute?star
 RECOMPUTE_EPISODE_STATUS=$?
 set -e
 if [[ "$RECOMPUTE_EPISODE_STATUS" -ne 0 ]]; then
-  echo "episode recompute endpoint unavailable or no persisted states yet"
+  echo "FAIL: episode recompute failed" >&2
+  exit 1
 fi
 
 echo "DRAMA STACK SMOKE: COMPLETED"
