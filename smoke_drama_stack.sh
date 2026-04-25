@@ -122,6 +122,21 @@ if [[ "$RECOMPUTE_SCENE_STATUS" -ne 0 ]]; then
   echo "process endpoint unavailable or contract differs; continuing read checks"
 fi
 
+echo "[6a/8] Assert power shifts persisted"
+POWER_COUNT=$(json_get "/drama/scenes/${SCENE_ID}/power-shifts" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
+test "$POWER_COUNT" -ge 1 || { echo "FAIL: expected >=1 DramaPowerShift, got ${POWER_COUNT}" >&2; exit 1; }
+echo "  power shifts: ${POWER_COUNT}"
+
+echo "[6b/8] Assert memory traces created"
+MEMORY_COUNT=$(json_get "/drama/memory/characters/${AUTHORITY_ID}" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
+test "$MEMORY_COUNT" -ge 1 || { echo "FAIL: expected >=1 memory trace, got ${MEMORY_COUNT}" >&2; exit 1; }
+echo "  memory traces: ${MEMORY_COUNT}"
+
+echo "[6c/8] Assert arc updated"
+ARC_COUNT=$(json_get "/drama/arcs/${AUTHORITY_ID}" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
+test "$ARC_COUNT" -ge 1 || { echo "FAIL: expected >=1 arc entry, got ${ARC_COUNT}" >&2; exit 1; }
+echo "  arc entries: ${ARC_COUNT}"
+
 echo "[7/8] Recall memory"
 set +e
 json_get "/drama/memory/characters/${REBEL_ID}/recall?trigger=authority_pressure&limit=5"

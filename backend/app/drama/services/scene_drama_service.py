@@ -99,7 +99,10 @@ class SceneDramaService:
         power_shift = {
             **power_shift,
             "dominant_character_id": dominant_character_id,
-            "threatened_character_id": scene_context.get("threatened_character_id"),
+            "threatened_character_id": (
+                power_shift.get("threatened_character_id")
+                or scene_context.get("threatened_character_id")
+            ),
             "outcome_type": scene_context.get("outcome_type", "scene_shift"),
         }
 
@@ -115,6 +118,7 @@ class SceneDramaService:
             "tension_score": tension.get("tension_score", 0.0),
             "pressure_level": tension.get("tension_score", 0.0),
             "dominant_character_id": dominant_character_id,
+            "threatened_character_id": power_shift.get("threatened_character_id"),
             "outcome_type": scene_context.get("outcome_type", "scene_shift"),
             "turning_point": scene_context.get("turning_point"),
             "power_shift_delta": power_shift.get("total_delta", 0.0),
