@@ -1,26 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function resolveApiBaseUrl(): string {
-  const raw =
-    process.env.API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  if (!raw && process.env.NODE_ENV === "production") {
-    throw new Error(
-      "API_BASE_URL (or NEXT_PUBLIC_API_BASE_URL) is not set. " +
-      "This environment variable is required in production."
-    );
-  }
-
-  return (raw || "http://localhost:8000/api/v1").replace(/\/+$/, "");
-}
+import { getRequiredApiBaseUrl } from "@/src/lib/get-api-url";
 
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ jobId: string }> },
 ) {
   const { jobId } = await context.params;
-  const base = resolveApiBaseUrl();
+  const base = getRequiredApiBaseUrl();
   const target = `${base}/render/jobs/${jobId}`;
 
   try {

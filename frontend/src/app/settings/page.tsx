@@ -134,7 +134,7 @@ export default function SettingsPage() {
                 : "border-transparent text-neutral-400 hover:text-white",
             ].join(" ")}
           >
-            Accounts
+            {t("settings_tab_accounts")}
           </button>
           <button
             onClick={() => setTab("ai_engine")}
@@ -145,7 +145,7 @@ export default function SettingsPage() {
                 : "border-transparent text-neutral-400 hover:text-white",
             ].join(" ")}
           >
-            AI Engine
+            {t("settings_tab_ai_engine")}
           </button>
         </div>
 
@@ -320,6 +320,7 @@ export default function SettingsPage() {
 // ─── AI Engine Tab ───────────────────────────────────────────────────────────
 
 function AiEngineTab() {
+  const t = useT();
   const [config, setConfig] = useState<AiEngineConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [keyInput, setKeyInput] = useState("");
@@ -465,7 +466,7 @@ function AiEngineTab() {
             disabled={saving || !keyInput.trim()}
             className="rounded-xl bg-white text-black px-5 py-2 text-sm font-semibold hover:bg-neutral-200 transition disabled:opacity-50"
           >
-            {saving ? "Đang lưu..." : "Save & Reload"}
+            {saving ? "Đang lưu..." : t("settings_save_reload")}
           </button>
           <button
             type="button"
@@ -473,7 +474,7 @@ function AiEngineTab() {
             disabled={testing || !keyInput.trim()}
             className="rounded-xl border border-neutral-700 px-5 py-2 text-sm font-medium hover:border-neutral-500 transition disabled:opacity-50"
           >
-            {testing ? "Đang kiểm tra..." : "Test API Key"}
+            {testing ? "Đang kiểm tra..." : t("settings_test_api_key")}
           </button>
         </div>
       </form>

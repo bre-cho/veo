@@ -7,9 +7,14 @@ deploying or running CI.
 Modes
 -----
 quick (default for CI):
-    Checks 3, 4, 8 — core imports only (app.core.*), path writability,
-    no hardcoded paths.  Fast; no infrastructure (DB / Redis / Celery)
-    required.  executor/persistence modules are checked in full mode only.
+    Checks 3, 4 only — lightweight imports (app.core.*) and path
+    writability.  No source scan, no infrastructure (DB / Redis / Celery).
+    Designed to complete in < 5 s on a bare CI runner.
+
+fast (extended CI gate):
+    Everything in quick, plus check 8 — source scan for residual
+    /data/renders hardcodes.  Adds ~1–2 s for the filesystem walk but
+    still requires no live infrastructure.
 
 full (deploy gate):
     All checks: Alembic, DB tables, imports, paths, Celery, router
@@ -19,12 +24,12 @@ Checks performed
 ----------------
 1.  Alembic single-head validation              [full]
 2.  Required DB tables present                  [full]
-3.  Critical model/schema imports succeed       [quick + full]
-4.  Render output / cache / storage paths       [quick + full]
+3.  Critical model/schema imports succeed       [quick + fast + full]
+4.  Render output / cache / storage paths       [quick + fast + full]
 5.  Celery broker reachable                     [full]
 6.  API router registry loads without error     [full]
 7.  Storage + artefact paths exist              [full]
-8.  No hardcoded ``/data/renders`` paths        [quick + full]
+8.  No hardcoded ``/data/renders`` paths        [fast + full]
 
 Exit codes: 0 = all checks passed, 1 = one or more checks failed.
 """
@@ -329,13 +334,14 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Modes:\n"
-            "  quick  – fast CI check: imports, paths, no hardcoded paths\n"
+            "  quick  – fastest CI check: imports + paths only (< 5 s, no infra, no scan)\n"
+            "  fast   – quick + source hardcode scan (still no live infrastructure)\n"
             "  full   – deploy gate: all checks including DB, Celery, router"
         ),
     )
     parser.add_argument(
         "--mode",
-        choices=["quick", "full"],
+        choices=["quick", "fast", "full"],
         default="quick",
         help="Verification mode (default: quick)",
     )
@@ -351,8 +357,12 @@ def main() -> int:
     print("=" * 65)
 
     if mode == "quick":
-        # Quick: only lightweight checks — no DB / Redis / Celery required.
-        # Imports are restricted to app.core + app.render.execution to stay fast.
+        # Quick: only imports + path writability — no source scan, no infra.
+        # Must complete in < 5 s on a bare CI runner.
+        check_imports(mode="quick")
+        check_render_paths(mode="quick")
+    elif mode == "fast":
+        # Fast: quick checks + source hardcode scan.  Still no live infra.
         check_imports(mode="quick")
         check_render_paths(mode="quick")
         check_no_hardcoded_data_renders()

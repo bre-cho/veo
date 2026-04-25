@@ -17,12 +17,14 @@ import {
   approveRebuild,
 } from "@/src/lib/api";
 import { useSmartPoll } from "@/src/hooks/useSmartPoll";
+import { useT } from "@/src/i18n/useT";
 import RebuildDecisionPanel from "@/src/components/RebuildDecisionPanel";
 import BudgetPolicySelector, { type BudgetPolicy } from "@/src/components/BudgetPolicySelector";
 
 export default function ProjectWorkspacePage() {
   const params = useParams<{ id: string }>();
   const projectId = Array.isArray(params?.id) ? params.id[0] : (params?.id ?? "");
+  const t = useT();
   const [project, setProject] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -190,39 +192,39 @@ export default function ProjectWorkspacePage() {
 
   return (
     <main style={{ padding: 24 }}>
-      <h1>{project?.name || "Project Workspace"}</h1>
+      <h1>{project?.name || t("project_workspace_default_title")}</h1>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16 }}>
         <section style={{ border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-          <h2>Idea & Style</h2>
+          <h2>{t("project_idea_style")}</h2>
           <div>Idea: {project?.idea}</div>
           <div>Style: {project?.style_preset}</div>
           <div>Platform: {project?.target_platform}</div>
           <div>Format: {project?.format}</div>
-          <div>Status: {project?.status}</div>
+          <div>{t("status")}: {project?.status}</div>
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={async () => { setBusy(true); await triggerProjectRender(projectId); await refresh(); setBusy(false); }} disabled={!canRender || busy}>Render Video</button>
-            <button onClick={async () => { setBusy(true); await retryProjectRender(projectId); await refresh(); setBusy(false); }} disabled={busy}>Retry Render</button>
-            <button onClick={async () => { setBusy(true); await processTemplateProjectFeedback(projectId); await refresh(); setBusy(false); }} disabled={busy}>Process Template Feedback</button>
+            <button onClick={async () => { setBusy(true); await triggerProjectRender(projectId); await refresh(); setBusy(false); }} disabled={!canRender || busy}>{t("project_render_video")}</button>
+            <button onClick={async () => { setBusy(true); await retryProjectRender(projectId); await refresh(); setBusy(false); }} disabled={busy}>{t("project_retry_render")}</button>
+            <button onClick={async () => { setBusy(true); await processTemplateProjectFeedback(projectId); await refresh(); setBusy(false); }} disabled={busy}>{t("project_process_feedback")}</button>
           </div>
         </section>
 
         <section style={{ border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-          <h2>Render Status</h2>
-          <div>Current step: {status?.current_step || "-"}</div>
-          <div>Progress: {status?.progress_percent || 0}%</div>
-          <div>Render status: {status?.render_status || "-"}</div>
-          <div>Fail reason: {status?.fail_reason || "-"}</div>
-          {status?.preview_video_url && <div>Preview: <a href={status.preview_video_url}>Open preview</a></div>}
-          {status?.final_video_url && <div>Final: <a href={status.final_video_url}>Open final</a></div>}
-          {status?.thumbnail_url && <div>Thumbnail: <a href={status.thumbnail_url}>Open thumbnail</a></div>}
+          <h2>{t("project_render_status_section")}</h2>
+          <div>{t("project_current_step")}: {status?.current_step || "-"}</div>
+          <div>{t("project_progress")}: {status?.progress_percent || 0}%</div>
+          <div>{t("project_render_status_label")}: {status?.render_status || "-"}</div>
+          <div>{t("project_fail_reason")}: {status?.fail_reason || "-"}</div>
+          {status?.preview_video_url && <div>Preview: <a href={status.preview_video_url}>{t("project_open_preview")}</a></div>}
+          {status?.final_video_url && <div>Final: <a href={status.final_video_url}>{t("project_open_final")}</a></div>}
+          {status?.thumbnail_url && <div>Thumbnail: <a href={status.thumbnail_url}>{t("project_open_thumbnail")}</a></div>}
         </section>
       </div>
 
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Veo 3.1 Controls</h2>
+        <h2>{t("project_veo_controls")}</h2>
         <div style={{ display: "grid", gap: 10 }}>
-          <label>Model
+          <label>{t("project_model_label")}
             <select value={providerModel} onChange={(e) => setProviderModel(e.target.value)}>
               <option value="veo-3.1-generate-001">veo-3.1-generate-001</option>
               <option value="veo-3.1-fast-generate-001">veo-3.1-fast-generate-001</option>
@@ -230,70 +232,70 @@ export default function ProjectWorkspacePage() {
               <option value="veo-3.1-fast-generate-preview">veo-3.1-fast-generate-preview</option>
             </select>
           </label>
-          <label>Mode
+          <label>{t("project_mode_label")}
             <select value={veoMode} onChange={(e) => setVeoMode(e.target.value)}>
-              <option value="text_to_video">Text to Video</option>
-              <option value="image_to_video">Image to Video</option>
-              <option value="first_last_frames">Start - End</option>
-              <option value="reference_image_to_video">Preview Reference Image to Video</option>
+              <option value="text_to_video">{t("project_mode_text_to_video")}</option>
+              <option value="image_to_video">{t("project_mode_image_to_video")}</option>
+              <option value="first_last_frames">{t("project_mode_first_last")}</option>
+              <option value="reference_image_to_video">{t("project_mode_reference")}</option>
             </select>
           </label>
-          <label>Character Reference Pack
+          <label>{t("project_character_pack_label")}
             <select value={characterReferencePackId} onChange={(e) => setCharacterReferencePackId(e.target.value)}>
               <option value="">None</option>
               {packs.map((p: any) => <option key={p.id} value={p.id}>{p.pack_name}</option>)}
             </select>
           </label>
-          <label>Start Image URL
+          <label>{t("project_start_image_url")}
             <input value={startImageUrl} onChange={(e) => setStartImageUrl(e.target.value)} />
           </label>
-          <label>End Image URL
+          <label>{t("project_end_image_url")}
             <input value={endImageUrl} onChange={(e) => setEndImageUrl(e.target.value)} />
           </label>
-          <label><input type="checkbox" checked={applyLockAll} onChange={(e) => setApplyLockAll(e.target.checked)} /> Apply character lock to all scenes</label>
-          <label><input type="checkbox" checked={previewReferenceMode} onChange={(e) => setPreviewReferenceMode(e.target.checked)} /> Use preview reference mode</label>
-          <label><input type="checkbox" checked={soundGeneration} onChange={(e) => setSoundGeneration(e.target.checked)} /> Request native sound generation</label>
-          <button onClick={saveVeoConfig} disabled={busy}>Save Veo Config</button>
+          <label><input type="checkbox" checked={applyLockAll} onChange={(e) => setApplyLockAll(e.target.checked)} /> {t("project_apply_character_lock")}</label>
+          <label><input type="checkbox" checked={previewReferenceMode} onChange={(e) => setPreviewReferenceMode(e.target.checked)} /> {t("project_preview_reference_mode")}</label>
+          <label><input type="checkbox" checked={soundGeneration} onChange={(e) => setSoundGeneration(e.target.checked)} /> {t("project_sound_generation")}</label>
+          <button onClick={saveVeoConfig} disabled={busy}>{t("project_save_veo_config")}</button>
         </div>
       </section>
 
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Character Reference Pack</h2>
+        <h2>{t("project_character_pack_section")}</h2>
         <div style={{ display: "grid", gap: 8 }}>
-          <input placeholder="Pack name" value={newPackName} onChange={(e) => setNewPackName(e.target.value)} />
-          <textarea placeholder="Identity summary" value={newPackSummary} onChange={(e) => setNewPackSummary(e.target.value)} />
-          <input placeholder="Hero image URL" value={newPackHeroImage} onChange={(e) => setNewPackHeroImage(e.target.value)} />
-          <button onClick={createPack} disabled={busy || !newPackName}>Create Pack</button>
+          <input placeholder={t("project_pack_name_placeholder")} value={newPackName} onChange={(e) => setNewPackName(e.target.value)} />
+          <textarea placeholder={t("project_identity_summary_placeholder")} value={newPackSummary} onChange={(e) => setNewPackSummary(e.target.value)} />
+          <input placeholder={t("project_hero_image_placeholder")} value={newPackHeroImage} onChange={(e) => setNewPackHeroImage(e.target.value)} />
+          <button onClick={createPack} disabled={busy || !newPackName}>{t("project_create_pack")}</button>
         </div>
       </section>
 
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Veo Batch Run</h2>
-        <p>Separate scripts with <code>---</code> on its own line.</p>
+        <h2>{t("project_veo_batch_run")}</h2>
+        <p>{t("project_batch_separator_hint")}</p>
         <textarea rows={10} value={batchScripts} onChange={(e) => setBatchScripts(e.target.value)} style={{ width: "100%" }} />
         <div style={{ marginTop: 8 }}>
-          <button onClick={createBatch} disabled={busy || !batchScripts.trim()}>Create Veo Batch</button>
+          <button onClick={createBatch} disabled={busy || !batchScripts.trim()}>{t("project_create_batch")}</button>
         </div>
         {batchResult && (
           <div style={{ marginTop: 12 }}>
-            <div>Batch ID: {batchResult.veo_batch_run_id}</div>
-            <div>Total scripts: {batchResult.total_scripts}</div>
-            <div>Status: {batchResult.status}</div>
+            <div>{t("project_batch_id")}: {batchResult.veo_batch_run_id}</div>
+            <div>{t("project_total_scripts")}: {batchResult.total_scripts}</div>
+            <div>{t("status")}: {batchResult.status}</div>
           </div>
         )}
       </section>
 
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Scenes</h2>
+        <h2>{t("scenes")}</h2>
         <div style={{ display: "grid", gap: 10 }}>
           {(project?.scenes || []).map((scene: any) => (
             <div key={scene.scene_index} style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-              <div><strong>Scene {scene.scene_index} — {scene.title}</strong></div>
+              <div><strong>{t("scene")} {scene.scene_index} — {scene.title}</strong></div>
               <div>{scene.script_text}</div>
-              <div>Duration: {scene.target_duration_sec}s</div>
-              <div>Mode: {scene.provider_mode || veoMode}</div>
+              <div>{t("time")}: {scene.target_duration_sec}s</div>
+              <div>{t("project_mode_label")}: {scene.provider_mode || veoMode}</div>
               <button onClick={async () => { setBusy(true); await rerenderScene(projectId, scene.scene_index); await refresh(); setBusy(false); }} disabled={busy}>
-                Rerender Scene
+                {t("project_rerender_scene")}
               </button>
             </div>
           ))}
@@ -301,20 +303,20 @@ export default function ProjectWorkspacePage() {
       </section>
 
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Render Events</h2>
+        <h2>{t("project_render_events")}</h2>
         <div style={{ display: "grid", gap: 8 }}>
           {events.map((event: any) => (
             <div key={event.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 8 }}>
               <div><strong>{event.event_type}</strong> — {event.status || "-"}</div>
-              <div>Scene: {event.scene_index ?? "-"}</div>
-              <div>At: {event.occurred_at || "-"}</div>
+              <div>{t("scene")}: {event.scene_index ?? "-"}</div>
+              <div>{t("project_at_label")}: {event.occurred_at || "-"}</div>
               <div>{event.error_message || ""}</div>
             </div>
           ))}
         </div>
       </section>
       <section style={{ marginTop: 16, border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-        <h2>Rebuild Decision</h2>
+        <h2>{t("rebuild_decision_title")}</h2>
         <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <input
             placeholder="Episode ID"
@@ -337,7 +339,7 @@ export default function ProjectWorkspacePage() {
             onClick={handleGetRebuildDecision}
             disabled={rebuildLoading || !rebuildEpisodeId || !rebuildSceneId}
           >
-            Get Rebuild Decision
+            {t("project_get_rebuild_decision")}
           </button>
         </div>
         <RebuildDecisionPanel
