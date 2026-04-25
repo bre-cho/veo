@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import Any, Dict, List
+
+from app.render.assembly.executors.asset_resolver import AssetResolver
+from app.render.assembly.executors.assembly_validator import AssemblyValidator
+from app.render.assembly.executors.ffmpeg_command_builder import FFmpegCommandBuilder
+from app.render.assembly.subtitles.karaoke_subtitle_writer import write_karaoke_ass
+from app.render.assembly.subtitles.word_level_karaoke_writer import write_word_level_karaoke_ass
+
+
+class FFmpegAssemblyExecutor:
+    """Executes the final FFmpeg assembly pass for a compiled episode timeline.
+
+    Given an ``assembly_plan`` produced by
+    :class:`app.drama.timeline.engines.assembly_plan_engine.build_assembly_plan`,
+    this executor:
+
+    1. Validates that the plan is well-formed.
+    2. Resolves all scene video/audio asset paths.
+    3. Validates that every asset exists on disk.
+    4. Writes a karaoke ASS subtitle file (word-level if word timings are
+       available, otherwise evenly distributed).
+    5. Writes an FFmpeg concat demuxer file.
+    6. Runs FFmpeg to concatenate videos, mix audio, burn subtitles, and
+       encode the final MP4.
+    """
+
+    def __init__(self) -> None:
+        self.resolver = AssetResolver()
+        self.validator = AssemblyValidator()
+        self.builder = FFmpegCommandBuilder()
+
+    def execute(
+        self,
+        project_id: str,
+        episode_id: str,
+        assembly_plan: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run the full assembly pipeline for one episode.
+
+        Args:
+            project_id: Identifier for the owning project.
+            episode_id: Identifier for the episode being assembled.
+            assembly_plan: The plan dict from the Scene Timeline Compiler,
+                containing ``video_tracks``, ``audio_tracks``,
+                ``subtitle_tracks``, and optionally per-track ``word_timings``.
+
+        Returns:
+            A result dict with ``project_id``, ``episode_id``, ``status``,
+            ``output_path``, ``subtitle_path``, and the ``command`` list.
+
+        Raises:
+            ValueError: If required plan keys are missing.
+            FileNotFoundError: If expected scene assets are absent.
+            RuntimeError: If the FFmpeg process exits with a non-zero code.
+        """
+        self.validator.validate_plan(assembly_plan)
+
+        video_tracks: List[Dict[str, Any]] = assembly_plan["video_tracks"]
+        audio_tracks: List[Dict[str, Any]] = assembly_plan["audio_tracks"]
+        subtitle_tracks: List[Dict[str, Any]] = assembly_plan.get("subtitle_tracks", [])
+
+        video_paths = [
+            self.resolver.resolve_scene_video(scene["scene_id"])
+            for scene in video_tracks
+        ]
+        audio_paths = [
+            self.resolver.resolve_scene_audio(audio["scene_id"])
+            for audio in audio_tracks
+        ]
+
+        self.validator.validate_assets(video_paths, audio_paths)
+
+        output_path = self.resolver.resolve_output_path(project_id, episode_id)
+        subtitle_path = self.resolver.resolve_subtitle_path(project_id, episode_id)
+
+        # Choose word-level karaoke if any audio track carries word timings;
+        # otherwise fall back to evenly-distributed karaoke.
+        word_tracks = [
+            {"scene_id": audio["scene_id"], "words": audio["word_timings"]}
+            for audio in audio_tracks
+            if audio.get("word_timings")
+        ]
+
+        if word_tracks:
+            write_word_level_karaoke_ass(word_tracks, subtitle_path)
+        else:
+            write_karaoke_ass(subtitle_tracks, subtitle_path)
+
+        concat_file = f"/tmp/{project_id}_{episode_id}_concat.txt"
+        self.builder.build_concat_file(video_paths=video_paths, concat_path=concat_file)
+
+        command = self.builder.build_command(
+            concat_file=concat_file,
+            audio_paths=audio_paths,
+            subtitle_path=subtitle_path,
+            output_path=output_path,
+        )
+
+        result = subprocess.run(command, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError({
+                "error": "FFmpeg assembly failed",
+                "stderr": result.stderr,
+            })
+
+        return {
+            "project_id": project_id,
+            "episode_id": episode_id,
+            "status": "succeeded",
+            "output_path": output_path,
+            "subtitle_path": subtitle_path,
+            "command": command,
+        }

@@ -28,6 +28,12 @@ def process_scene_render_job(
     tts_payload = build_tts_payload(job)
     audio_result = tts_service.generate(tts_payload)
 
+    # Propagate word-level timestamps so the timeline compiler and subtitle
+    # writer can produce accurate karaoke timing.
+    job["audio_url"] = audio_result.get("audio_url")
+    job["audio_duration_sec"] = audio_result.get("duration_sec")
+    job["word_timings"] = audio_result.get("word_timings", [])
+
     drama_metadata = job.get("drama_metadata", {})
 
     video_result = video_service.render_scene({
@@ -38,5 +44,7 @@ def process_scene_render_job(
         "emotion": job.get("emotion") or drama_metadata.get("emotion"),
         "subtext": job.get("subtext") or drama_metadata.get("subtext"),
     })
+
+    video_result["word_timings"] = job["word_timings"]
 
     return video_result

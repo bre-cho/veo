@@ -29,4 +29,5 @@ def build_tts_payload(scene: Dict[str, Any]) -> Dict[str, Any]:
             "pause": voice_directive.get("pause"),
             "stress_words": voice_directive.get("stress_words", []),
         },
+        "return_word_timestamps": True,
     }
