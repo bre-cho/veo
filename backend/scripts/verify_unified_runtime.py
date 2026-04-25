@@ -4,21 +4,32 @@
 Checks that the full render operating environment is consistent before
 deploying or running CI.
 
+Modes
+-----
+quick (default for CI):
+    Checks 3, 4, 8 — import lõi, path writability, no hardcoded paths.
+    Fast; no infrastructure (DB / Redis / Celery) required.
+
+full (deploy gate):
+    All checks: Alembic, DB tables, imports, paths, Celery, router
+    registry, storage paths, and no hardcoded paths.
+
 Checks performed
 ----------------
-1.  Alembic single-head validation
-2.  Required DB tables present (via SQLAlchemy engine)
-3.  Critical model/schema imports succeed
-4.  Render output / cache / storage paths are writable
-5.  Celery broker reachable (if CELERY_VERIFY_RUNTIME is set)
-6.  API router registry loads without error
-7.  Storage + artefact paths exist or are creatable
-8.  No hardcoded ``/data/renders`` paths remain in source (residual check)
+1.  Alembic single-head validation              [full]
+2.  Required DB tables present                  [full]
+3.  Critical model/schema imports succeed       [quick + full]
+4.  Render output / cache / storage paths       [quick + full]
+5.  Celery broker reachable                     [full]
+6.  API router registry loads without error     [full]
+7.  Storage + artefact paths exist              [full]
+8.  No hardcoded ``/data/renders`` paths        [quick + full]
 
 Exit codes: 0 = all checks passed, 1 = one or more checks failed.
 """
 from __future__ import annotations
 
+import argparse
 import importlib
 import os
 import sys
@@ -292,19 +303,48 @@ def check_no_hardcoded_data_renders() -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Unified Render Runtime Verification",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Modes:\n"
+            "  quick  – fast CI check: imports, paths, no hardcoded paths\n"
+            "  full   – deploy gate: all checks including DB, Celery, router"
+        ),
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["quick", "full"],
+        default="quick",
+        help="Verification mode (default: quick)",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = _parse_args()
+    mode = args.mode
+
     print("=" * 65)
-    print(" UNIFIED RENDER RUNTIME VERIFICATION")
+    print(f" UNIFIED RENDER RUNTIME VERIFICATION  [mode={mode}]")
     print("=" * 65)
 
-    check_alembic_head()
-    check_db_tables()
-    check_imports()
-    check_render_paths()
-    check_celery_broker()
-    check_router_registry()
-    check_storage_paths()
-    check_no_hardcoded_data_renders()
+    if mode == "quick":
+        # Quick: only lightweight checks — no DB / Redis / Celery required
+        check_imports()
+        check_render_paths()
+        check_no_hardcoded_data_renders()
+    else:
+        # Full: all checks
+        check_alembic_head()
+        check_db_tables()
+        check_imports()
+        check_render_paths()
+        check_celery_broker()
+        check_router_registry()
+        check_storage_paths()
+        check_no_hardcoded_data_renders()
 
     print("\n" + "=" * 65)
     if _failures:

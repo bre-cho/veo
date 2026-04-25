@@ -15,15 +15,25 @@ from pathlib import Path
 
 
 _CI_OUTPUT_ID = "ci-verify"
-_AUDIO_ARTIFACT_PATH = f"/app/artifacts/audio/mix/{_CI_OUTPUT_ID}/mixed_audio.mp3"
-_VIDEO_ARTIFACT_PATH = f"/app/artifacts/video/mux/{_CI_OUTPUT_ID}/final_muxed_video.mp4"
-_AUDIO_URL = f"/artifacts/audio/mix/{_CI_OUTPUT_ID}/mixed_audio.mp3"
-_VIDEO_URL = f"/artifacts/video/mux/{_CI_OUTPUT_ID}/final_muxed_video.mp4"
+
+
+def _get_paths() -> tuple[str, str, str, str]:
+    """Resolve artifact paths from settings (or env vars as fallback)."""
+    import os
+    audio_dir = os.environ.get("AUDIO_OUTPUT_DIR", "/app/artifacts/audio")
+    video_dir = os.environ.get("VIDEO_OUTPUT_DIR", "/app/artifacts/video")
+    audio_artifact_path = f"{audio_dir}/mix/{_CI_OUTPUT_ID}/mixed_audio.mp3"
+    video_artifact_path = f"{video_dir}/mux/{_CI_OUTPUT_ID}/final_muxed_video.mp4"
+    # Derive public URLs relative to the artifacts mount root (parent of audio_dir)
+    audio_url = f"/artifacts/audio/mix/{_CI_OUTPUT_ID}/mixed_audio.mp3"
+    video_url = f"/artifacts/video/mux/{_CI_OUTPUT_ID}/final_muxed_video.mp4"
+    return audio_artifact_path, video_artifact_path, audio_url, video_url
 
 
 def _create_artifact_files() -> None:
     """Write minimal placeholder files so FastAPI's StaticFiles can serve them."""
-    for path_str in (_AUDIO_ARTIFACT_PATH, _VIDEO_ARTIFACT_PATH):
+    audio_artifact_path, video_artifact_path, _, _ = _get_paths()
+    for path_str in (audio_artifact_path, video_artifact_path):
         path = Path(path_str)
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
@@ -35,6 +45,7 @@ def _create_artifact_files() -> None:
 
 def _seed_db_row(db_url: str | None) -> None:
     """Insert (or skip) the CI verify row in audio_render_outputs."""
+    _, _, audio_url, video_url = _get_paths()
     effective_url = db_url or os.environ.get(
         "DATABASE_URL",
         "postgresql+psycopg://postgres:postgres@localhost:5432/render_factory",
@@ -60,8 +71,8 @@ def _seed_db_row(db_url: str | None) -> None:
             ),
             {
                 "id": _CI_OUTPUT_ID,
-                "audio_url": _AUDIO_URL,
-                "video_url": _VIDEO_URL,
+                "audio_url": audio_url,
+                "video_url": video_url,
             },
         )
         print(f"[seed] Inserted row id={_CI_OUTPUT_ID!r} with status='succeeded'")

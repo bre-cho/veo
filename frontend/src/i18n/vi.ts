@@ -101,6 +101,21 @@ const vi = {
   time: "Thời gian",
   status: "Trạng thái",
   actions: "Hành động",
+  // VoicePanel
+  voice_dna_title: "Giọng DNA",
+  voice_language_code: "Mã ngôn ngữ",
+  voice_accent_code: "Mã giọng vùng",
+  voice_tone: "Giọng điệu",
+  voice_pitch: "Cao độ",
+  voice_speed: "Tốc độ",
+  voice_language_placeholder: "vd. en, zh, es",
+  voice_accent_placeholder: "vd. us, gb, au",
+  voice_tone_placeholder: "vd. ấm áp, chuyên nghiệp, năng động",
+  voice_pitch_placeholder: "vd. thấp, trung bình, cao",
+  voice_speed_placeholder: "vd. chậm, bình thường, nhanh",
+  voice_dna_saved: "Đã lưu DNA giọng ✓",
+  voice_saving: "Đang lưu…",
+  voice_save_continue: "Lưu & Tiếp tục",
 } as const;
 
 export type TranslationKey = keyof typeof vi;

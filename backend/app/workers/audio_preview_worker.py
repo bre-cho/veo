@@ -14,7 +14,7 @@ from app.services.object_storage import upload_file_to_object_storage
 
 logger = logging.getLogger(__name__)
 
-_ARTIFACTS_AUDIO_DIR = Path("/app/artifacts/audio")
+_ARTIFACTS_AUDIO_DIR = Path(settings.audio_output_dir)
 
 
 async def _run_preview(job_id: str) -> AudioPreviewJob | None:
@@ -46,7 +46,7 @@ async def _run_preview(job_id: str) -> AudioPreviewJob | None:
             local_path = preview_dir / preview_filename
             local_path.write_bytes(audio_bytes)
 
-            artifacts_root = Path("/app/artifacts")
+            artifacts_root = Path(settings.audio_output_dir).parent
             try:
                 relative_path = local_path.relative_to(artifacts_root)
                 local_fallback_url = f"/artifacts/{relative_path}"
