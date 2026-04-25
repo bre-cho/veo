@@ -28,7 +28,7 @@ json_get() {
     "${AUTH_HEADER[@]}"
 }
 
-echo "[1/8] Create Authority character"
+echo "[1/11] Create Authority character"
 AUTHORITY=$(json_post "/drama/characters" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"name\": \"Director Vale\",
@@ -41,7 +41,7 @@ AUTHORITY=$(json_post "/drama/characters" "{
 echo "$AUTHORITY"
 AUTHORITY_ID=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("id", ""))' <<<"$AUTHORITY")
 
-echo "[2/8] Create Rebel character"
+echo "[2/11] Create Rebel character"
 REBEL=$(json_post "/drama/characters" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"name\": \"Mara\",
@@ -59,7 +59,7 @@ if [[ -z "$AUTHORITY_ID" || -z "$REBEL_ID" ]]; then
   exit 1
 fi
 
-echo "[3/8] Upsert relationship Authority -> Rebel"
+echo "[3/11] Upsert relationship Authority -> Rebel"
 json_post "/drama/relationships" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"source_character_id\": \"${AUTHORITY_ID}\",
@@ -72,7 +72,7 @@ json_post "/drama/relationships" "{
   \"unresolved_tension_score\": 0.78
 }"
 
-echo "[4/8] Analyze scene"
+echo "[4/11] Analyze scene"
 ANALYZE_RESP=$(json_post "/drama/scenes/analyze" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"scene_id\": \"${SCENE_ID}\",
@@ -88,7 +88,7 @@ ANALYZE_RESP=$(json_post "/drama/scenes/analyze" "{
 }")
 echo "$ANALYZE_RESP"
 
-echo "[5/8] Compile render bridge"
+echo "[5/11] Compile render bridge"
 json_post "/drama/scenes/${SCENE_ID}/compile" "{
   \"project_id\": \"${PROJECT_ID}\",
   \"episode_id\": \"${EPISODE_ID}\",
@@ -101,7 +101,7 @@ json_post "/drama/scenes/${SCENE_ID}/compile" "{
   \"scene_analysis\": ${ANALYZE_RESP}
 }"
 
-echo "[6/8] Persist via process endpoint"
+echo "[6/11] Persist via process endpoint"
 set +e
 json_post "/drama/admin/scenes/${SCENE_ID}/process" "{
   \"project_id\": \"${PROJECT_ID}\",
@@ -122,22 +122,22 @@ if [[ "$RECOMPUTE_SCENE_STATUS" -ne 0 ]]; then
   echo "process endpoint unavailable or contract differs; continuing read checks"
 fi
 
-echo "[6a/8] Assert power shifts persisted"
+echo "[7/11] Assert power shifts persisted"
 POWER_COUNT=$(json_get "/drama/scenes/${SCENE_ID}/power-shifts" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
 test "$POWER_COUNT" -ge 1 || { echo "FAIL: expected >=1 DramaPowerShift, got ${POWER_COUNT}" >&2; exit 1; }
 echo "  power shifts: ${POWER_COUNT}"
 
-echo "[6b/8] Assert memory traces created"
+echo "[8/11] Assert memory traces created"
 MEMORY_COUNT=$(json_get "/drama/memory/characters/${AUTHORITY_ID}" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
 test "$MEMORY_COUNT" -ge 1 || { echo "FAIL: expected >=1 memory trace, got ${MEMORY_COUNT}" >&2; exit 1; }
 echo "  memory traces: ${MEMORY_COUNT}"
 
-echo "[6c/8] Assert arc updated"
+echo "[9/11] Assert arc updated"
 ARC_COUNT=$(json_get "/drama/arcs/${AUTHORITY_ID}" | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
 test "$ARC_COUNT" -ge 1 || { echo "FAIL: expected >=1 arc entry, got ${ARC_COUNT}" >&2; exit 1; }
 echo "  arc entries: ${ARC_COUNT}"
 
-echo "[7/8] Recall memory"
+echo "[10/11] Recall memory"
 set +e
 json_get "/drama/memory/characters/${REBEL_ID}/recall?trigger=authority_pressure&limit=5"
 RECALL_STATUS=$?
@@ -146,7 +146,7 @@ if [[ "$RECALL_STATUS" -ne 0 ]]; then
   echo "memory recall returned no data yet; this is expected before first persisted worker run"
 fi
 
-echo "[8/8] Recompute episode continuity"
+echo "[11/11] Recompute episode continuity"
 set +e
 curl -fsS -X POST "${BASE_URL}/drama/admin/episodes/${EPISODE_ID}/recompute?starting_scene_id=${SCENE_ID}&scene_ids=${SCENE_ID}" \
   -H "Content-Type: application/json" \
