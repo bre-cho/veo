@@ -32,8 +32,10 @@ from app.schemas.factory import (
     FactoryRunDetailOut,
     FactoryRunOut,
     FactoryRunRequest,
+    IncidentOut,
     MetricsOut,
     MetricOut,
+    QualityGateOut,
     StageOut,
     TimelineOut,
 )
@@ -104,14 +106,8 @@ def get_factory_run(run_id: str, db: Session = Depends(get_db)) -> FactoryRunDet
     )
     out = FactoryRunDetailOut.model_validate(run)
     out.stages = [StageOut.model_validate(s) for s in stages]
-    out.quality_gates = [
-        __import__("app.schemas.factory", fromlist=["QualityGateOut"]).QualityGateOut.model_validate(g)
-        for g in gates
-    ]
-    out.incidents = [
-        __import__("app.schemas.factory", fromlist=["IncidentOut"]).IncidentOut.model_validate(i)
-        for i in incidents
-    ]
+    out.quality_gates = [QualityGateOut.model_validate(g) for g in gates]
+    out.incidents = [IncidentOut.model_validate(i) for i in incidents]
     return out
 
 

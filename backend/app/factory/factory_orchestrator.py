@@ -50,6 +50,15 @@ from app.models.factory_run import (
     FactoryRunStage,
 )
 
+
+def _to_dict(obj: Any) -> dict[str, Any]:
+    """Coerce a service result to a plain dict."""
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "__dict__"):
+        return vars(obj)
+    return {"raw": str(obj)}
+
 logger = logging.getLogger(__name__)
 
 
@@ -322,7 +331,7 @@ class FactoryOrchestrator:
                 })(),
                 project=None,
             )
-            ctx.seo_package = pkg if isinstance(pkg, dict) else vars(pkg) if hasattr(pkg, "__dict__") else {"raw": str(pkg)}
+            ctx.seo_package = _to_dict(pkg)
         except Exception:  # noqa: BLE001
             ctx.seo_package = {"title": (ctx.script_plan or {}).get("title", ""), "generated": False}
         return ctx.seo_package
