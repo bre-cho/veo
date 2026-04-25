@@ -8,7 +8,10 @@ from app.render.assembly.executors.asset_resolver import AssetResolver
 from app.render.assembly.executors.assembly_validator import AssemblyValidator
 from app.render.assembly.executors.ffmpeg_command_builder import FFmpegCommandBuilder
 from app.render.assembly.subtitles.karaoke_subtitle_writer import write_karaoke_ass
-from app.render.assembly.subtitles.word_level_karaoke_writer import write_word_level_karaoke_ass
+from app.render.assembly.subtitles.visual_aware_karaoke_writer import write_visual_aware_karaoke_ass
+from app.render.assembly.vision.frame_sampler import FrameSampler
+from app.render.assembly.vision.subtitle_safe_zone_engine import SubtitleSafeZoneEngine
+from app.render.assembly.vision.visual_detector import VisualDetector
 
 
 class FFmpegAssemblyExecutor:
@@ -32,6 +35,66 @@ class FFmpegAssemblyExecutor:
         self.resolver = AssetResolver()
         self.validator = AssemblyValidator()
         self.builder = FFmpegCommandBuilder()
+
+    def _build_scene_placements(
+        self,
+        video_paths: List[str],
+        video_tracks: List[Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Sample one frame per scene and detect content to choose subtitle placement.
+
+        For each scene, extracts a frame via FFmpeg, runs the stub visual
+        detector, and asks :class:`SubtitleSafeZoneEngine` which of the three
+        placement zones (bottom / top / middle_low) is safe.
+
+        When the scene video file does not yet exist on disk (e.g. in tests or
+        dry-run mode) the frame sampling step is skipped gracefully and the
+        default ``bottom`` placement is used.
+
+        Args:
+            video_paths: Ordered list of resolved scene video paths.
+            video_tracks: Corresponding list of video track dicts from the
+                assembly plan (each must have a ``scene_id`` key).
+
+        Returns:
+            A mapping of ``scene_id`` → placement dict (``placement``,
+            ``style_name``, ``detection``).
+        """
+        sampler = FrameSampler()
+        detector = VisualDetector()
+        safe_zone = SubtitleSafeZoneEngine()
+
+        _STYLE_MAP: Dict[str, str] = {
+            "bottom": "Bottom",
+            "top": "Top",
+            "middle_low": "MiddleLow",
+        }
+
+        placements: Dict[str, Dict[str, Any]] = {}
+
+        for video_path, scene in zip(video_paths, video_tracks):
+            scene_id = scene["scene_id"]
+
+            try:
+                frame_path = sampler.sample_scene_frame(
+                    video_path=video_path,
+                    scene_id=scene_id,
+                )
+                detection = detector.detect(frame_path)
+            except Exception:
+                # If sampling fails (missing file, no FFmpeg, etc.) fall back
+                # to the safest default placement without aborting assembly.
+                detection = {"face_bboxes": [], "object_bboxes": [], "saliency_bboxes": []}
+
+            placement = safe_zone.choose_position(detection)
+
+            placements[scene_id] = {
+                "placement": placement["placement"],
+                "style_name": _STYLE_MAP[placement["placement"]],
+                "detection": detection,
+            }
+
+        return placements
 
     def execute(
         self,
@@ -77,8 +140,8 @@ class FFmpegAssemblyExecutor:
         output_path = self.resolver.resolve_output_path(project_id, episode_id)
         subtitle_path = self.resolver.resolve_subtitle_path(project_id, episode_id)
 
-        # Choose word-level karaoke if any audio track carries word timings;
-        # otherwise fall back to evenly-distributed karaoke.
+        # Choose word-level visual-aware karaoke if any audio track carries
+        # word timings; otherwise fall back to evenly-distributed karaoke.
         word_tracks = [
             {"scene_id": audio["scene_id"], "words": audio["word_timings"]}
             for audio in audio_tracks
@@ -86,7 +149,12 @@ class FFmpegAssemblyExecutor:
         ]
 
         if word_tracks:
-            write_word_level_karaoke_ass(word_tracks, subtitle_path)
+            scene_placements = self._build_scene_placements(video_paths, video_tracks)
+            write_visual_aware_karaoke_ass(
+                word_tracks=word_tracks,
+                scene_placements=scene_placements,
+                output_path=subtitle_path,
+            )
         else:
             write_karaoke_ass(subtitle_tracks, subtitle_path)
 
