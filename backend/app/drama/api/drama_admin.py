@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -34,16 +34,17 @@ class ProcessSceneRequest(BaseModel):
     async_mode: bool = False
 
 
-@router.post("/scenes/{scene_id}/process", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/scenes/{scene_id}/process", status_code=status.HTTP_200_OK)
 def process_scene_endpoint(
     scene_id: UUID,
     payload: ProcessSceneRequest,
+    response: Response,
 ) -> Dict[str, Any]:
     """Trigger the full drama processing pipeline for a single scene.
 
     When async_mode is True the task is dispatched to the Celery queue and the
-    endpoint returns immediately.  When async_mode is False (default) the task
-    runs synchronously in-process, which is convenient for smoke-testing.
+    endpoint returns 202 immediately.  When async_mode is False (default) the
+    task runs synchronously in-process and returns 200.
     """
     ctx: Dict[str, Any] = {
         "scene_id": str(scene_id),
@@ -55,6 +56,7 @@ def process_scene_endpoint(
 
     if payload.async_mode:
         task = process_scene.delay(str(scene_id), ctx)
+        response.status_code = status.HTTP_202_ACCEPTED
         return {"queued": True, "task_id": task.id, "scene_id": str(scene_id)}
 
     result = process_scene(str(scene_id), ctx)

@@ -119,7 +119,8 @@ json_post "/drama/admin/scenes/${SCENE_ID}/process" "{
 RECOMPUTE_SCENE_STATUS=$?
 set -e
 if [[ "$RECOMPUTE_SCENE_STATUS" -ne 0 ]]; then
-  echo "process endpoint unavailable or contract differs; continuing read checks"
+  echo "FAIL: process endpoint failed" >&2
+  exit 1
 fi
 
 echo "[7/11] Assert power shifts persisted"
