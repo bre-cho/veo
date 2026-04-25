@@ -37,11 +37,19 @@ class FFmpegAssemblyExecutor:
        encode the final MP4.
     """
 
+    #: Maximum seconds FFmpeg is allowed to run for the full assembly pass.
+    #: Override via the ``FFMPEG_ASSEMBLY_TIMEOUT_SEC`` environment variable.
+    _DEFAULT_ASSEMBLY_TIMEOUT_SEC: int = 3600
+
     def __init__(self) -> None:
+        import os as _os
         self.resolver = AssetResolver()
         self.validator = AssemblyValidator()
         self.builder = FFmpegCommandBuilder()
         self._manifest = ManifestService()
+        self._assembly_timeout: int = int(
+            _os.getenv("FFMPEG_ASSEMBLY_TIMEOUT_SEC", self._DEFAULT_ASSEMBLY_TIMEOUT_SEC)
+        )
 
     def _build_scene_placements(
         self,
@@ -217,7 +225,7 @@ class FFmpegAssemblyExecutor:
             output_path=output_path,
         )
 
-        result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=self._assembly_timeout)
 
         if result.returncode != 0:
             raise RuntimeError(
