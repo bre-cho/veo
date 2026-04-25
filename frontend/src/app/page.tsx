@@ -25,7 +25,7 @@ export default function HomePage() {
           <Card title={t("home_card_settings")} href="/settings" desc={t("home_card_settings_desc")} />
           <Card
             title={t("home_card_api_docs")}
-            href={process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/v1$/, "") ? `${process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/v1$/, "")}/docs` : "http://localhost:8000/docs"}
+            href={`${(process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/api\/v1$/, "")}/docs`}
             desc={t("home_card_api_docs_desc")}
             external
           />

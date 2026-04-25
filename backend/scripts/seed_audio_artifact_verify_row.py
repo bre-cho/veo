@@ -19,9 +19,14 @@ _CI_OUTPUT_ID = "ci-verify"
 
 def _get_paths() -> tuple[str, str, str, str]:
     """Resolve artifact paths from settings (or env vars as fallback)."""
-    import os
-    audio_dir = os.environ.get("AUDIO_OUTPUT_DIR", "/app/artifacts/audio")
-    video_dir = os.environ.get("VIDEO_OUTPUT_DIR", "/app/artifacts/video")
+    try:
+        from app.core.config import settings
+        audio_dir = settings.audio_output_dir
+        video_dir = settings.video_output_dir
+    except Exception:
+        # Fallback to env vars when settings cannot be imported (bare CI)
+        audio_dir = os.environ.get("AUDIO_OUTPUT_DIR", "/app/storage/artifacts/audio")
+        video_dir = os.environ.get("VIDEO_OUTPUT_DIR", "/app/storage/artifacts/video")
     audio_artifact_path = f"{audio_dir}/mix/{_CI_OUTPUT_ID}/mixed_audio.mp3"
     video_artifact_path = f"{video_dir}/mux/{_CI_OUTPUT_ID}/final_muxed_video.mp4"
     # Derive public URLs relative to the artifacts mount root (parent of audio_dir)
