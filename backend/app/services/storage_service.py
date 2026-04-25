@@ -195,7 +195,7 @@ def get_storage_service() -> StorageAdapter:
             public_base_url = settings.public_base_url
         except Exception:  # pragma: no cover  # noqa: BLE001
             storage_root = os.getenv("STORAGE_ROOT", "storage")
-            public_base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+            public_base_url = os.getenv("PUBLIC_BASE_URL", "")
         return LocalStorageAdapter(
             storage_root=storage_root,
             public_base_url=public_base_url,

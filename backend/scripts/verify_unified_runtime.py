@@ -135,7 +135,7 @@ def check_db_tables() -> None:
 # bare CI environments without a full virtualenv pre-warmed.
 _QUICK_IMPORTS = [
     "app.core.light_runtime_config",
-    "app.core.runtime_paths",
+    "app.core.light_runtime_paths",
 ]
 
 # Full mode: complete set including heavier reassembly / rebuild modules.
@@ -181,10 +181,13 @@ def check_imports(mode: str = "quick") -> None:
 
 # ── Check 4: Render paths writable ───────────────────────────────────────
 
-def check_render_paths() -> None:
+def check_render_paths(mode: str = "quick") -> None:
     print("\n[4] Render path writability")
     try:
-        from app.core.runtime_paths import render_paths
+        if mode == "quick":
+            from app.core.light_runtime_paths import light_render_paths as render_paths
+        else:
+            from app.core.runtime_paths import render_paths  # type: ignore[assignment]
         dirs_to_check = {
             "manifests_dir": render_paths.manifests_dir,
             "chunks_dir": render_paths.chunks_dir,
@@ -351,14 +354,14 @@ def main() -> int:
         # Quick: only lightweight checks — no DB / Redis / Celery required.
         # Imports are restricted to app.core + app.render.execution to stay fast.
         check_imports(mode="quick")
-        check_render_paths()
+        check_render_paths(mode="quick")
         check_no_hardcoded_data_renders()
     else:
         # Full: all checks
         check_alembic_head()
         check_db_tables()
         check_imports(mode="full")
-        check_render_paths()
+        check_render_paths(mode="full")
         check_celery_broker()
         check_router_registry()
         check_storage_paths()
