@@ -10,4 +10,7 @@ python -m alembic history | tail -n 80 || true
 echo "=== migration PR guard: lineage validator ==="
 python scripts/check_single_alembic_head.py
 
+echo "=== migration PR guard: schema coverage validator ==="
+python scripts/verify_unified_runtime.py --mode full
+
 echo "=== migration PR guard: done ==="

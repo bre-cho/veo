@@ -22,3 +22,10 @@ class NextLevelScriptService:
         output_dict = script_output.model_dump()
         output_dict["render_scenes"] = self.render_adapter.adapt(output_dict)
         return output_dict
+
+
+def generate_next_level_script(payload: NextLevelScriptRequest) -> NextLevelScriptOutput:
+    """Compatibility wrapper used by API modules importing function-level service."""
+    service = NextLevelScriptService()
+    output = service.generate(payload)
+    return NextLevelScriptOutput.model_validate(output)

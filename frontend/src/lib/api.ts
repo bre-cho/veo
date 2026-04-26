@@ -759,23 +759,42 @@ export async function getProductionRuns() {
 }
 
 
+const _deprecatedApiWarnings = new Set<string>();
+
+
+function _warnDeprecatedApi(legacyName: string, replacement: string): void {
+  const key = `${legacyName}->${replacement}`;
+  if (_deprecatedApiWarnings.has(key)) {
+    return;
+  }
+  _deprecatedApiWarnings.add(key);
+  console.warn(
+    `[api] ${legacyName} is deprecated and will be removed; use ${replacement} instead.`,
+  );
+}
+
+
 export async function getFactoryRuns() {
-  return request<{items: any[]}>("/factory/runs", { cache: "no-store" });
+  _warnDeprecatedApi("getFactoryRuns", "getProductionRuns");
+  return getProductionRuns();
 }
 
 
 export async function getFactoryRunDetail(runId: string) {
-  return request<any>(`/factory/runs/${runId}`, { cache: "no-store" });
+  _warnDeprecatedApi("getFactoryRunDetail", "getFactoryRun");
+  return getFactoryRun(runId);
 }
 
 
 export async function approveFactoryPublish(runId: string) {
-  return request<any>(`/factory/runs/${runId}/approve_publish`, { method: "POST" });
+  _warnDeprecatedApi("approveFactoryPublish", "approveFactoryRun");
+  return approveFactoryRun(runId);
 }
 
 
 export async function publishFactoryRun(runId: string) {
-  return request<any>(`/factory/runs/${runId}/publish`, { method: "POST" });
+  _warnDeprecatedApi("publishFactoryRun", "approveFactoryRun");
+  return approveFactoryRun(runId);
 }
 
 
@@ -784,10 +803,9 @@ export async function retryFactoryStage(runId: string, payload: {
   error_code?: string;
   attempt?: number;
 }) {
-  return request<any>(`/factory/runs/${runId}/retry-stage`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  _warnDeprecatedApi("retryFactoryStage", "retryFactoryRun");
+  void payload;
+  return retryFactoryRun(runId);
 }
 
 

@@ -9,7 +9,7 @@
 
 import { useCallback } from "react";
 import { useLocale } from "@/src/store/locale-store";
-import vi, { type TranslationKey } from "./vi";
+import vi from "./vi";
 import en from "./en";
 
 const DICTIONARIES: Record<string, Record<string, string>> = {
@@ -22,7 +22,7 @@ export function useT() {
   const dict = DICTIONARIES[state.languageCode] ?? DICTIONARIES.vi;
 
   return useCallback(
-    (key: TranslationKey, fallback?: string): string => {
+    (key: string, fallback?: string): string => {
       return dict[key] ?? fallback ?? key;
     },
     [dict],

@@ -5,6 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "lint": "npm run typecheck && npm run i18n:check",
     "typecheck": "tsc --noEmit",
     "i18n:check": "python ../scripts/ci/check_frontend_i18n.py"
   },

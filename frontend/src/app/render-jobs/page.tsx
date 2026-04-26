@@ -53,7 +53,6 @@ import {
   type RenderEventItem,
   type RenderJobListItem,
 } from "@/src/lib/api";
-import { useT } from "@/src/i18n/useT";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +113,6 @@ function RenderJobsDashboardPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const t = useT();
 
   const initialProvider = searchParams.get("provider") || "all";
   const initialHealth = searchParams.get("health") || "all";

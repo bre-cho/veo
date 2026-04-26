@@ -25,7 +25,7 @@ full (deploy gate):
 Checks performed
 ----------------
 1.  Alembic single-head validation              [full]
-2.  Required DB tables present                  [full]
+2.  DB schema coverage vs model metadata        [full]
 3.  Critical model/schema imports succeed       [quick + fast + full]
 4.  Render output / cache / storage paths       [fast + full]
 5.  Celery broker reachable                     [full]
@@ -102,20 +102,27 @@ def check_alembic_head() -> None:
         warn(f"Alembic check skipped ({type(exc).__name__}: {exc})")
 
 
-# ── Check 2: DB tables ────────────────────────────────────────────────────
+# ── Check 2: DB schema coverage ───────────────────────────────────────────
 
-_REQUIRED_TABLES = [
-    "render_jobs",
-    "render_tasks",
-    "render_events",
-]
+_SCHEMA_IGNORE_TABLES = {
+    "alembic_version",
+}
 
 
 def check_db_tables() -> None:
-    print("\n[2] Database tables")
+    print("\n[2] Database schema coverage")
     try:
         import sqlalchemy as sa
         from app.core.config import settings
+        from app.db.base import Base
+
+        # Ensure all mapped models are loaded into metadata before comparing.
+        import app.models  # noqa: F401
+
+        expected = {
+            name for name in Base.metadata.tables.keys()
+            if name not in _SCHEMA_IGNORE_TABLES
+        }
         engine = sa.create_engine(
             settings.database_url,
             connect_args={"connect_timeout": 5},
@@ -124,11 +131,17 @@ def check_db_tables() -> None:
         with engine.connect() as conn:
             inspector = sa.inspect(engine)
             existing = set(inspector.get_table_names())
-        missing = [t for t in _REQUIRED_TABLES if t not in existing]
+
+        missing = sorted(expected - existing)
         if missing:
-            fail("Missing required tables", ", ".join(missing))
+            preview = ", ".join(missing[:25])
+            tail = "" if len(missing) <= 25 else f" ... (+{len(missing) - 25} more)"
+            fail(
+                f"Schema coverage mismatch: missing {len(missing)} model table(s)",
+                preview + tail,
+            )
         else:
-            ok(f"All required tables present ({', '.join(_REQUIRED_TABLES)})")
+            ok(f"Schema coverage OK ({len(expected)} model tables reflected)")
     except Exception as exc:
         warn(f"DB check skipped ({type(exc).__name__}: {exc})")
 

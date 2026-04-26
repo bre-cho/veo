@@ -11,6 +11,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.workers.render_tasks",
+        "app.workers.factory_worker",
         "app.workers.stuck_job_recovery_worker",
         "app.workers.template_analytics_worker",
         "app.workers.template_batch_worker",
@@ -48,6 +49,7 @@ celery_app.conf.update(
     # configured per queue (e.g. higher concurrency for poll, single worker
     # for postprocess, low-priority queue for template work).
     task_routes={
+        "factory.run": {"queue": "celery"},
         "render.dispatch": {"queue": "render_dispatch"},
         "render.poll": {"queue": "render_poll"},
         "render.postprocess": {"queue": "render_postprocess"},
