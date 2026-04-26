@@ -67,7 +67,7 @@ services:
       - path: ./backend/.env.dev
         required: false
     environment:
-      BACKEND_SCHEMA_BOOTSTRAP: ${BACKEND_SCHEMA_BOOTSTRAP:-}
+      BACKEND_SCHEMA_BOOTSTRAP: ${BACKEND_SCHEMA_BOOTSTRAP:-metadata-create-all}
       PYTHONPATH: /app
       CELERY_EXPECTED_QUEUES: celery,render_dispatch,render_poll,render_postprocess,render_callback,render_maintenance,audio,template,autopilot,drama
     volumes:

@@ -60,7 +60,7 @@ run_e2e_gate() {
   export BACKEND_SCHEMA_BOOTSTRAP="${BACKEND_SCHEMA_BOOTSTRAP:-metadata-create-all}"
 
   # E2E smoke specs call backend APIs directly; ensure runtime services are up.
-  docker compose up -d postgres redis minio minio-init api worker
+  docker compose up -d postgres redis minio minio-init api worker-render worker-audio worker-template worker-drama
 
   for _ in $(seq 1 80); do
     if curl -fsS http://localhost:8000/healthz >/dev/null; then

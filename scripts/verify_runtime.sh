@@ -23,8 +23,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Starting runtime dependencies (postgres, redis, minio, api, worker)..."
-docker compose up -d postgres redis minio minio-init api worker
+echo "Starting runtime dependencies (postgres, redis, minio, api, workers)..."
+docker compose up -d postgres redis minio minio-init api worker-render worker-audio worker-template worker-drama
 
 echo "Waiting for API health..."
 for _ in $(seq 1 80); do
