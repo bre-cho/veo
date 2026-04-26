@@ -3,10 +3,10 @@ export type TargetPlatform = "shorts" | "tiktok" | "reels" | "youtube";
 export type SourceMode = "script_upload";
 export type SubtitleMode = "none" | "soft" | "burn";
 export type RenderProvider =
+  | "veo"
+  | "veo_3"
   | "veo_3_1"
-  | "runway_gen4_turbo"
-  | "kling_text"
-  | "kling_image";
+  | "google_veo";
 
 export interface ScriptScene {
   scene_index: number;
@@ -199,7 +199,7 @@ async function parseErrorResponse(res: Response): Promise<string> {
     // fall through
   }
 
-  return `Request failed with status ${res.status}`;
+  return `Yeu cau that bai voi ma ${res.status}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -239,7 +239,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (typeof json === "object" && json !== null && "ok" in json && ("data" in json || "error" in json)) {
     const envelope = json as ApiEnvelope<T>;
     if (!envelope.ok) {
-      throw new Error(envelope.error?.message || "Request failed");
+      throw new Error(envelope.error?.message || "Yeu cau that bai");
     }
     return envelope.data;
   }
@@ -316,11 +316,13 @@ export async function createProjectFromPreview(input: {
   idea?: string;
   preview_payload: ScriptPreviewPayload;
   confirmed?: boolean;
+  auto_start_render?: boolean;
 }): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>("/projects/create-from-script-preview", {
     method: "POST",
     body: JSON.stringify({
       confirmed: true,
+      auto_start_render: false,
       ...input,
     }),
   });
@@ -331,6 +333,7 @@ export async function createProjectFromScriptPreview(input: {
   idea?: string;
   preview_payload: ScriptPreviewPayload;
   confirmed?: boolean;
+  auto_start_render?: boolean;
 }): Promise<Record<string, unknown>> {
   return createProjectFromPreview(input);
 }
@@ -374,18 +377,28 @@ export async function createRenderJob(input: {
   subtitle_mode?: SubtitleMode;
   planned_scenes: RenderPlannedScene[];
 }): Promise<{
+  id: string;
   job_id: string;
   status: string;
-  queue_message?: Record<string, unknown>;
+  dispatch_task?: Record<string, unknown>;
 }> {
-  return request<{
+  const created = await request<{
+    id?: string;
     job_id: string;
     status: string;
-    queue_message?: Record<string, unknown>;
+    dispatch_task?: Record<string, unknown>;
   }>("/render/jobs", {
     method: "POST",
     body: JSON.stringify(input),
   });
+
+  const normalizedJobId = created.job_id || created.id || "";
+  return {
+    id: created.id || normalizedJobId,
+    job_id: normalizedJobId,
+    status: created.status,
+    dispatch_task: created.dispatch_task,
+  };
 }
 
 export async function getRenderJob(jobId: string): Promise<RenderJob> {
@@ -743,6 +756,38 @@ export async function createAudioMixJob(payload: {
 
 export async function getProductionRuns() {
   return request<{items: any[]}>("/dashboard/production-runs", { cache: "no-store" });
+}
+
+
+export async function getFactoryRuns() {
+  return request<{items: any[]}>("/factory/runs", { cache: "no-store" });
+}
+
+
+export async function getFactoryRunDetail(runId: string) {
+  return request<any>(`/factory/runs/${runId}`, { cache: "no-store" });
+}
+
+
+export async function approveFactoryPublish(runId: string) {
+  return request<any>(`/factory/runs/${runId}/approve_publish`, { method: "POST" });
+}
+
+
+export async function publishFactoryRun(runId: string) {
+  return request<any>(`/factory/runs/${runId}/publish`, { method: "POST" });
+}
+
+
+export async function retryFactoryStage(runId: string, payload: {
+  stage_name: string;
+  error_code?: string;
+  attempt?: number;
+}) {
+  return request<any>(`/factory/runs/${runId}/retry-stage`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 

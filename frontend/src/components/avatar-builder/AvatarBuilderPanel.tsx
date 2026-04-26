@@ -8,7 +8,7 @@ import MotionPanel from "./MotionPanel";
 import AvatarPreviewStage from "./AvatarPreviewStage";
 import SavePublishBar from "./SavePublishBar";
 
-const STEPS = ["Identity", "Visual", "Voice", "Motion", "Preview"];
+const STEPS = ["Danh tinh", "Hinh anh", "Giong noi", "Chuyen dong", "Xem truoc"];
 
 interface Props {
   avatarId: string | null;
@@ -46,7 +46,7 @@ export default function AvatarBuilderPanel({ avatarId, onComplete }: Props) {
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
         {!avatarId && currentStep !== 0 && (
           <p className="text-sm text-yellow-400">
-            Start by filling in the Identity step first.
+            Hay dien thong tin o buoc Danh tinh truoc.
           </p>
         )}
 

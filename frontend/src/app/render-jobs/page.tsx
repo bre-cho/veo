@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import DashboardShell from "@/src/components/DashboardShell";
 import IncidentDrawer from "@/src/components/IncidentDrawer";
 import ToastViewport, { type ToastItem, type ToastTone } from "@/src/components/ToastViewport";
+import { useT } from "@/src/i18n/useT";
 import { useSmartPoll } from "@/src/hooks/useSmartPoll";
 import {
   acknowledgeRenderIncident,
@@ -58,12 +59,12 @@ export const dynamic = "force-dynamic";
 
 const HEALTH_OPTIONS = ["all", "healthy", "degraded", "stalled", "failed", "completed", "queued"] as const;
 const SEGMENT_OPTIONS = [
-  { key: "active", label: "Active" },
-  { key: "untriaged", label: "Untriaged" },
-  { key: "assigned", label: "Assigned" },
-  { key: "muted", label: "Muted" },
-  { key: "resolved", label: "Resolved" },
-  { key: "mine", label: "Mine" },
+  { key: "active", labelKey: "renderjobsmain.segment.active" },
+  { key: "untriaged", labelKey: "renderjobsmain.segment.untriaged" },
+  { key: "assigned", labelKey: "renderjobsmain.segment.assigned" },
+  { key: "muted", labelKey: "renderjobsmain.segment.muted" },
+  { key: "resolved", labelKey: "renderjobsmain.segment.resolved" },
+  { key: "mine", labelKey: "renderjobsmain.segment.mine" },
 ] as const;
 const OPTIMISTIC_TTL_MS = 15000;
 
@@ -75,11 +76,11 @@ function buildActionReason(action: IncidentActionName | BulkActionName, actionRe
   const trimmed = actionReason.trim();
   if (trimmed) return trimmed;
   const defaults: Record<string, string> = {
-    ack: "Dashboard acknowledge",
-    assign: "Dashboard assign",
-    mute: "Dashboard mute",
-    resolve: "Dashboard resolve",
-    reopen: "Dashboard reopen",
+    ack: "Bang dieu khien ghi nhan",
+    assign: "Bang dieu khien gan nguoi",
+    mute: "Bang dieu khien tam tat",
+    resolve: "Bang dieu khien danh dau da xu ly",
+    reopen: "Bang dieu khien mo lai",
   };
   const note = noteDraft.trim();
   return note ? `${defaults[action]} | note: ${note.slice(0, 300)}` : defaults[action];
@@ -100,14 +101,16 @@ function SegmentButton({ active, label, onClick }: { active: boolean; label: str
 }
 
 export default function RenderJobsDashboardPage() {
+  const t = useT();
   return (
-    <Suspense fallback={<main className="min-h-screen bg-neutral-950 text-white p-8">Loading dashboard...</main>}>
+    <Suspense fallback={<main className="min-h-screen bg-neutral-950 text-white p-8">{t("renderjobsmain.loadingDashboard")}</main>}>
       <RenderJobsDashboardPageContent />
     </Suspense>
   );
 }
 
 function RenderJobsDashboardPageContent() {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -234,7 +237,7 @@ function RenderJobsDashboardPageContent() {
         setAclActive(first.is_active);
       }
     } catch (err) {
-      pushToast("Access profiles load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai access profile that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [accessProfile?.role, aclTargetActor, actor, pushToast]);
 
@@ -247,7 +250,7 @@ function RenderJobsDashboardPageContent() {
       setProductivity(response);
       setProductivityTrends(trendResponse);
     } catch (err) {
-      pushToast("Productivity board load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai bang nang suat that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -256,7 +259,7 @@ function RenderJobsDashboardPageContent() {
       const response = await listIncidentSavedViews(actor);
       setSavedViews(response.items || []);
     } catch (err) {
-      pushToast("Saved views load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai saved view that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -266,7 +269,7 @@ function RenderJobsDashboardPageContent() {
       setEffectiveAccess(response);
     } catch (err) {
       setEffectiveAccess(null);
-      pushToast("Effective access preview failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Xem truoc quyen truy cap hieu luc that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -276,7 +279,7 @@ function RenderJobsDashboardPageContent() {
       const response = await getRenderAccessProfile(actor);
       setAccessProfile(response);
     } catch (err) {
-      pushToast("Access profile load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai access profile that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -285,7 +288,7 @@ function RenderJobsDashboardPageContent() {
       const response = await listBulkIncidentActionHistory({ actor, limit: 20 });
       setBulkAuditRuns(response.items || []);
     } catch (err) {
-      pushToast("Bulk audit load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai du lieu kiem toan lo that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -308,8 +311,8 @@ function RenderJobsDashboardPageContent() {
       setSelectedKeys((prev) => prev.filter((key) => combined.incidents.items?.some((item) => item.incident_key === key)));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
-      if (mode === "refresh") pushToast("Dashboard refresh failed", err instanceof Error ? err.message : "Unknown error", "error");
+      setError(err instanceof Error ? err.message : "Tai bang dieu khien that bai");
+      if (mode === "refresh") pushToast("Lam moi bang dieu khien that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -341,7 +344,7 @@ function RenderJobsDashboardPageContent() {
       setError(null);
     } catch (err) {
       setHistoryItems([]); setActionItems([]); setNoteDraft("");
-      pushToast("Incident history load failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai lich su su co that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     } finally {
       setHistoryLoading(false);
     }
@@ -374,9 +377,9 @@ function RenderJobsDashboardPageContent() {
     try {
       await updateRenderIncidentNote({ incident_key: selectedIncidentKey, actor, note: noteDraft });
       await loadIncidentDetail(selectedIncidentKey);
-      pushToast("Incident note saved", selectedIncidentKey, "success");
+      pushToast("Da luu ghi chu su co", selectedIncidentKey, "success");
     } catch (err) {
-      pushToast("Incident note save failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Luu ghi chu su co that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     } finally {
       setNoteSaving(false);
     }
@@ -410,7 +413,7 @@ function RenderJobsDashboardPageContent() {
     } catch (err) {
       delete optimisticRef.current[incidentKey];
       setIncidents((prev) => prev.map((item) => item.incident_key === incidentKey ? previousIncident : item));
-      pushToast("Incident action failed", err instanceof Error ? err.message : `Failed to ${action} incident`, "error");
+      pushToast("Thao tac su co that bai", err instanceof Error ? err.message : `Khong the ${action} su co`, "error");
     } finally {
       setLoadingAction((prev) => ({ ...prev, [incidentKey]: null }));
     }
@@ -447,7 +450,7 @@ function RenderJobsDashboardPageContent() {
       await loadBulkAuditRuns();
       pushToast("Bulk action completed", `${action} → ${selectedCount} incidents`, "success");
     } catch (err) {
-      pushToast("Bulk action failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Thao tac hang loat that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
       await loadDashboard("refresh");
     } finally {
       setBulkLoading(null);
@@ -477,9 +480,9 @@ function RenderJobsDashboardPageContent() {
       });
       setBulkPreview(preview);
       setLastGuardrailCheck((preview as any).guardrails || null);
-      pushToast("Bulk preview ready", `${preview.eligible}/${preview.attempted} eligible`, (preview as any).guardrails?.ok === false ? "info" : "success");
+      pushToast("Ban xem truoc hang loat da san sang", `${preview.eligible}/${preview.attempted} eligible`, (preview as any).guardrails?.ok === false ? "info" : "success");
     } catch (err) {
-      pushToast("Bulk preview failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Ban xem truoc hang loat that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     } finally {
       setPreviewLoading(null);
     }
@@ -513,7 +516,7 @@ function RenderJobsDashboardPageContent() {
       pushToast("Saved view updated", editViewName || editingViewId, "success");
       setEditingViewId(null);
     } catch (err) {
-      pushToast("Saved view update failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Cap nhat saved view that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, currentFilters, editViewDescription, editViewName, editViewShared, editingViewId, loadSavedViews, pushToast]);
 
@@ -530,7 +533,7 @@ function RenderJobsDashboardPageContent() {
       await loadSavedViews();
       pushToast("Saved view created", undefined, "success");
     } catch (err) {
-      pushToast("Save view failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Luu view that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, currentFilters, loadSavedViews, pushToast, saveViewName, saveViewShared]);
 
@@ -548,7 +551,7 @@ function RenderJobsDashboardPageContent() {
       const detail = await getBulkIncidentActionHistoryDetail({ actor, run_id: runId });
       setBulkAuditDetail(detail);
     } catch (err) {
-      pushToast("Bulk audit detail failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Tai chi tiet kiem toan lo that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [actor, pushToast]);
 
@@ -564,7 +567,7 @@ function RenderJobsDashboardPageContent() {
       await loadProductivity();
       pushToast("Access profile updated", aclTargetActor, "success");
     } catch (err) {
-      pushToast("Access profile update failed", err instanceof Error ? err.message : "Unknown error", "error");
+      pushToast("Cap nhat access profile that bai", err instanceof Error ? err.message : "Loi khong xac dinh", "error");
     }
   }, [aclActive, aclRole, aclTargetActor, aclTeamId, actor, loadAccessProfiles, loadProductivity, pushToast]);
 
@@ -572,33 +575,33 @@ function RenderJobsDashboardPageContent() {
     <>
       <ToastViewport items={toasts} onDismiss={dismissToast} />
       <DashboardShell
-        eyebrow="Render Dashboard"
-        title="Incident work surface"
-        description="Segment incidents, save reusable views, and run bulk actions without leaving the dashboard. This upgrades the panel into an operator/team-lead work surface on top of the new incident workflow routes."
+        eyebrow={t("renderjobsmain.shell.eyebrow")}
+        title={t("renderjobsmain.shell.title")}
+        description={t("renderjobsmain.shell.description")}
         aside={<IncidentDrawer incident={selectedIncident} actor={actor} assignee={assignee} actionReason={actionReason} noteDraft={noteDraft} historyItems={historyItems} actionItems={actionItems} historyLoading={historyLoading} noteSaving={noteSaving} onActorChange={setActor} onAssigneeChange={setAssignee} onActionReasonChange={setActionReason} onNoteDraftChange={setNoteDraft} onSaveNote={() => void saveIncidentNote()} onClose={() => syncUrl({ incident: null })} onAcknowledge={() => selectedIncident && void handleIncidentAction(selectedIncident, "ack")} onAssign={() => selectedIncident && void handleIncidentAction(selectedIncident, "assign")} onMute={() => selectedIncident && void handleIncidentAction(selectedIncident, "mute")} onResolve={() => selectedIncident && void handleIncidentAction(selectedIncident, "resolve")} onReopen={() => selectedIncident && void handleIncidentAction(selectedIncident, "reopen")} loadingAction={selectedIncident ? loadingAction[selectedIncident.incident_key] : null} />}
       >
         <section className="grid gap-4 md:grid-cols-4">
-          <SummaryCard label="Total jobs" value={summary?.total_jobs ?? "—"} hint="Persisted render_jobs snapshot" />
-          <SummaryCard label="Healthy" value={summary?.healthy_jobs ?? "—"} hint="Healthy jobs right now" />
-          <SummaryCard label="Degraded / stalled" value={`${summary?.degraded_jobs ?? 0} / ${summary?.stalled_jobs ?? 0}`} hint="At-risk jobs" />
-          <SummaryCard label="Active scenes" value={summary?.total_active_scenes ?? "—"} hint="Processing scenes across jobs" />
+          <SummaryCard label={t("renderjobsmain.summary.totalJobs")} value={summary?.total_jobs ?? "—"} hint={t("renderjobsmain.summary.totalJobsHint")} />
+          <SummaryCard label={t("renderjobsmain.summary.healthy")} value={summary?.healthy_jobs ?? "—"} hint={t("renderjobsmain.summary.healthyHint")} />
+          <SummaryCard label={t("renderjobsmain.summary.degradedStalled")} value={`${summary?.degraded_jobs ?? 0} / ${summary?.stalled_jobs ?? 0}`} hint={t("renderjobsmain.summary.degradedStalledHint")} />
+          <SummaryCard label={t("renderjobsmain.summary.activeScenes")} value={summary?.total_active_scenes ?? "—"} hint={t("renderjobsmain.summary.activeScenesHint")} />
         </section>
 
         <section className="rounded-3xl border border-white/10 bg-white/5 p-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            {SEGMENT_OPTIONS.map((item) => <SegmentButton key={item.key} active={segment === item.key} label={item.label} onClick={() => { setSegment(item.key); syncUrl({ segment: item.key, incident: null, view: null }); }} />)}
+            {SEGMENT_OPTIONS.map((item) => <SegmentButton key={item.key} active={segment === item.key} label={t(item.labelKey)} onClick={() => { setSegment(item.key); syncUrl({ segment: item.key, incident: null, view: null }); }} />)}
           </div>
           <div className="grid gap-3 md:grid-cols-4">
-            <label className="space-y-2 text-sm"><span className="text-white/60">Provider</span><select value={providerFilter} onChange={(e) => { setProviderFilter(e.target.value); syncUrl({ provider: e.target.value, view: null }); }} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white">{providerOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-            <label className="space-y-2 text-sm"><span className="text-white/60">Health filter</span><select value={healthFilter} onChange={(e) => { setHealthFilter(e.target.value); syncUrl({ health: e.target.value, view: null }); }} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white">{HEALTH_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-            <label className="space-y-2 text-sm"><span className="text-white/60">Actor</span><input data-testid="dashboard-actor-input" value={actor} onChange={(e) => setActor(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white" /></label>
-            <label className="space-y-2 text-sm"><span className="text-white/60">Assignee</span><input data-testid="dashboard-assignee-input" value={assignee} onChange={(e) => setAssignee(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white" /></label>
+            <label className="space-y-2 text-sm"><span className="text-white/60">{t("renderjobsmain.filters.provider")}</span><select value={providerFilter} onChange={(e) => { setProviderFilter(e.target.value); syncUrl({ provider: e.target.value, view: null }); }} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white">{providerOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+            <label className="space-y-2 text-sm"><span className="text-white/60">{t("renderjobsmain.filters.health")}</span><select value={healthFilter} onChange={(e) => { setHealthFilter(e.target.value); syncUrl({ health: e.target.value, view: null }); }} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white">{HEALTH_OPTIONS.map((option) => <option key={option} value={option}>{t(`renderjobsmain.health.${option}`)}</option>)}</select></label>
+            <label className="space-y-2 text-sm"><span className="text-white/60">{t("renderjobsmain.filters.actor")}</span><input data-testid="dashboard-actor-input" value={actor} onChange={(e) => setActor(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white" /></label>
+            <label className="space-y-2 text-sm"><span className="text-white/60">{t("renderjobsmain.filters.assignee")}</span><input data-testid="dashboard-assignee-input" value={assignee} onChange={(e) => setAssignee(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white" /></label>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-white/70">
-            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); syncUrl({ show_muted: e.target.checked, view: null }); }} />Show muted</label>
-            <button type="button" onClick={() => void loadDashboard("refresh")} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10">{refreshing ? "Refreshing…" : "Refresh now"}</button>
-            <button type="button" onClick={() => { setProviderFilter("all"); setHealthFilter("all"); setSegment("active"); setShowMuted(false); syncUrl({ provider: "all", health: "all", segment: "active", show_muted: false, view: null, incident: null }); }} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10">Clear filters</button>
-            {activeView ? <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100">View: {activeView.name}</span> : null}
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showMuted} onChange={(e) => { setShowMuted(e.target.checked); syncUrl({ show_muted: e.target.checked, view: null }); }} />{t("renderjobsmain.filters.showMuted")}</label>
+            <button type="button" onClick={() => void loadDashboard("refresh")} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10">{refreshing ? t("renderjobsmain.filters.refreshing") : t("renderjobsmain.filters.refreshNow")}</button>
+            <button type="button" onClick={() => { setProviderFilter("all"); setHealthFilter("all"); setSegment("active"); setShowMuted(false); syncUrl({ provider: "all", health: "all", segment: "active", show_muted: false, view: null, incident: null }); }} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10">{t("renderjobsmain.filters.clear")}</button>
+            {activeView ? <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100">{t("renderjobsmain.filters.activeViewPrefix")} {activeView.name}</span> : null}
           </div>
         </section>
 
@@ -665,7 +668,7 @@ function RenderJobsDashboardPageContent() {
               </div>
               <label className="inline-flex items-center gap-2 text-xs text-white/55"><input type="checkbox" checked={incidents.length > 0 && selectedKeys.length === incidents.length} onChange={() => toggleSelectAll()} />Select page</label>
             </div>
-            {selectedCount ? <div className="rounded-2xl border border-sky-500/25 bg-sky-500/10 p-3 space-y-3"><div data-testid="bulk-actions-panel" className="flex flex-wrap items-center gap-2"><span data-testid="bulk-selected-count" className="text-sm font-semibold text-sky-100">{selectedCount} selected</span><button type="button" data-testid="bulk-preview-ack-button" onClick={() => void runBulkPreview("ack")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "ack" ? "Previewing…" : "Preview ack"}</button><button type="button" onClick={() => void runBulkPreview("assign")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "assign" ? "Previewing…" : "Preview assign"}</button><button type="button" onClick={() => void runBulkPreview("mute")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "mute" ? "Previewing…" : "Preview mute"}</button><button type="button" data-testid="bulk-preview-resolve-button" onClick={() => void runBulkPreview("resolve")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "resolve" ? "Previewing…" : "Preview resolve"}</button><button type="button" data-testid="bulk-ack-button" onClick={() => void runBulkAction("ack")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "ack" ? "Working…" : "Bulk ack"}</button><button type="button" onClick={() => void runBulkAction("assign")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "assign" ? "Working…" : "Bulk assign"}</button><button type="button" onClick={() => void runBulkAction("mute")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "mute" ? "Working…" : "Bulk mute 1h"}</button><button type="button" data-testid="bulk-resolve-button" onClick={() => void runBulkAction("resolve")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-60">{bulkLoading === "resolve" ? "Working…" : "Bulk resolve"}</button></div>{bulkPreview ? <div data-testid="bulk-preview-result" className="rounded-2xl border border-white/10 bg-black/20 p-3"><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-wide text-white/40">Bulk dry-run · {bulkPreview.action_type}</p><button type="button" onClick={() => setBulkPreview(null)} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/65">Clear</button></div><p className="mt-2 text-xs text-white/55">Eligible {bulkPreview.eligible} / {bulkPreview.attempted} · skipped {bulkPreview.skipped}</p>{(bulkPreview as any).guardrails ? <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${(bulkPreview as any).guardrails.ok ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-rose-500/25 bg-rose-500/10 text-rose-100"}`}><p className="font-semibold">Guardrails {(bulkPreview as any).guardrails.ok ? "passed" : "blocked"}</p><p className="mt-1 text-white/70">selection {(bulkPreview as any).guardrails.observed?.selection_size ?? 0} · high severity {(bulkPreview as any).guardrails.observed?.high_severity_items ?? 0}</p>{((bulkPreview as any).guardrails.blocked_reasons || []).length ? <div className="mt-2 space-y-1">{((bulkPreview as any).guardrails.blocked_reasons || []).map((reason: string) => <p key={reason}>• {reason}</p>)}</div> : null}</div> : null}<div className="mt-3 max-h-40 space-y-2 overflow-auto pr-1">{bulkPreview.items.slice(0, 10).map((item) => <div key={item.incident_key} className="rounded-xl border border-white/10 bg-white/5 p-2 text-xs text-white/70"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-white/85">{item.incident_key}</span><span className={`rounded-full border px-2 py-0.5 ${item.eligible ? "border-emerald-500/25 text-emerald-100" : "border-amber-500/25 text-amber-100"}`}>{item.eligible ? "eligible" : item.reason || "skip"}</span></div><p className="mt-1 text-white/45">{item.current_status || "open"} → {item.predicted_status || item.current_status || "open"}</p></div>)}</div></div> : null}</div> : null}
+            {selectedCount ? <div className="rounded-2xl border border-sky-500/25 bg-sky-500/10 p-3 space-y-3"><div data-testid="bulk-actions-panel" className="flex flex-wrap items-center gap-2"><span data-testid="bulk-selected-count" className="text-sm font-semibold text-sky-100">{selectedCount} selected</span><button type="button" data-testid="bulk-preview-ack-button" onClick={() => void runBulkPreview("ack")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "ack" ? "Previewing…" : "Xem truoc ghi nhan"}</button><button type="button" onClick={() => void runBulkPreview("assign")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "assign" ? "Previewing…" : "Xem truoc gan nguoi"}</button><button type="button" onClick={() => void runBulkPreview("mute")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "mute" ? "Previewing…" : "Xem truoc tam tat"}</button><button type="button" data-testid="bulk-preview-resolve-button" onClick={() => void runBulkPreview("resolve")} disabled={!!previewLoading || !!bulkLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{previewLoading === "resolve" ? "Previewing…" : "Xem truoc danh dau da xu ly"}</button><button type="button" data-testid="bulk-ack-button" onClick={() => void runBulkAction("ack")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "ack" ? "Working…" : "Bulk ack"}</button><button type="button" onClick={() => void runBulkAction("assign")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "assign" ? "Working…" : "Bulk assign"}</button><button type="button" onClick={() => void runBulkAction("mute")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-60">{bulkLoading === "mute" ? "Working…" : "Bulk mute 1h"}</button><button type="button" data-testid="bulk-resolve-button" onClick={() => void runBulkAction("resolve")} disabled={!!bulkLoading || !!previewLoading} className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-60">{bulkLoading === "resolve" ? "Working…" : "Bulk resolve"}</button></div>{bulkPreview ? <div data-testid="bulk-preview-result" className="rounded-2xl border border-white/10 bg-black/20 p-3"><div className="flex items-center justify-between gap-3"><p className="text-xs uppercase tracking-wide text-white/40">Bulk dry-run · {bulkPreview.action_type}</p><button type="button" onClick={() => setBulkPreview(null)} className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/65">Clear</button></div><p className="mt-2 text-xs text-white/55">Eligible {bulkPreview.eligible} / {bulkPreview.attempted} · skipped {bulkPreview.skipped}</p>{(bulkPreview as any).guardrails ? <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${(bulkPreview as any).guardrails.ok ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-rose-500/25 bg-rose-500/10 text-rose-100"}`}><p className="font-semibold">Guardrails {(bulkPreview as any).guardrails.ok ? "passed" : "blocked"}</p><p className="mt-1 text-white/70">selection {(bulkPreview as any).guardrails.observed?.selection_size ?? 0} · high severity {(bulkPreview as any).guardrails.observed?.high_severity_items ?? 0}</p>{((bulkPreview as any).guardrails.blocked_reasons || []).length ? <div className="mt-2 space-y-1">{((bulkPreview as any).guardrails.blocked_reasons || []).map((reason: string) => <p key={reason}>• {reason}</p>)}</div> : null}</div> : null}<div className="mt-3 max-h-40 space-y-2 overflow-auto pr-1">{bulkPreview.items.slice(0, 10).map((item) => <div key={item.incident_key} className="rounded-xl border border-white/10 bg-white/5 p-2 text-xs text-white/70"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-white/85">{item.incident_key}</span><span className={`rounded-full border px-2 py-0.5 ${item.eligible ? "border-emerald-500/25 text-emerald-100" : "border-amber-500/25 text-amber-100"}`}>{item.eligible ? "eligible" : item.reason || "skip"}</span></div><p className="mt-1 text-white/45">{item.current_status || "open"} → {item.predicted_status || item.current_status || "open"}</p></div>)}</div></div> : null}</div> : null}
             <div className="space-y-3">
               {incidents.map((incident) => {
                 const active = incident.incident_key === selectedIncidentKey;

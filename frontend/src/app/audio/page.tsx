@@ -20,11 +20,11 @@ export default function AudioStudioPage() {
   const [musicAssets, setMusicAssets] = useState<MusicAsset[]>([]);
   const [selectedVoiceProfileId, setSelectedVoiceProfileId] = useState<string>("");
   const [selectedMusicAssetId, setSelectedMusicAssetId] = useState<string>("");
-  const [scriptText, setScriptText] = useState("This is a cinematic voice-over test. The pacing should feel natural and easy to follow.");
-  const [displayName, setDisplayName] = useState("Narrator A");
-  const [consentText, setConsentText] = useState("I confirm that I own this voice or have explicit permission to use it.");
-  const [musicName, setMusicName] = useState("Calm underscore");
-  const [musicPrompt, setMusicPrompt] = useState("soft cinematic underscore, instrumental, warm piano, light pulse");
+  const [scriptText, setScriptText] = useState("Day la doan thu loi dan theo phong cach dien anh. Nhip doc can tu nhien va de theo doi.");
+  const [displayName, setDisplayName] = useState("Nguoi dan chuyen A");
+  const [consentText, setConsentText] = useState("Toi xac nhan toi so huu giong noi nay hoac da duoc cap phep su dung.");
+  const [musicName, setMusicName] = useState("Nen nhac nhe");
+  const [musicPrompt, setMusicPrompt] = useState("nen nhac dien anh nhe, khong loi, piano am, nhip nhe");
   const [stylePreset, setStylePreset] = useState("natural_conversational");
   const [breathPreset, setBreathPreset] = useState("cinematic_slow");
   const [narrationJob, setNarrationJob] = useState<NarrationJob | null>(null);
@@ -64,9 +64,9 @@ export default function AudioStudioPage() {
       });
       setSelectedVoiceProfileId(created.id);
       await load();
-      setMessage(`Voice profile created: ${created.display_name}`);
+      setMessage(`Da tao ho so giong noi: ${created.display_name}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to create voice profile");
+      setMessage(error instanceof Error ? error.message : "Khong tao duoc ho so giong noi");
     } finally {
       setBusy(false);
     }
@@ -85,9 +85,9 @@ export default function AudioStudioPage() {
       });
       setSelectedMusicAssetId(created.id);
       await load();
-      setMessage(`Music asset created: ${created.display_name}`);
+      setMessage(`Da tao tai nguyen nhac: ${created.display_name}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to create music asset");
+      setMessage(error instanceof Error ? error.message : "Khong tao duoc tai nguyen nhac");
     } finally {
       setBusy(false);
     }
@@ -95,7 +95,7 @@ export default function AudioStudioPage() {
 
   const handleGenerateNarration = async () => {
     if (!selectedVoiceProfileId) {
-      setMessage("Select or create a voice profile first.");
+      setMessage("Hay chon hoac tao ho so giong noi truoc.");
       return;
     }
     try {
@@ -108,9 +108,9 @@ export default function AudioStudioPage() {
         provider: "elevenlabs",
       });
       setNarrationJob(created);
-      setMessage(`Narration generated with ${created.segments.length} paced segments.`);
+      setMessage(`Da tao narration voi ${created.segments.length} doan theo nhip.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to generate narration");
+      setMessage(error instanceof Error ? error.message : "Khong tao duoc narration");
     } finally {
       setBusy(false);
     }
@@ -118,7 +118,7 @@ export default function AudioStudioPage() {
 
   const handleMix = async () => {
     if (!narrationJob?.id) {
-      setMessage("Generate narration first.");
+      setMessage("Hay tao narration truoc.");
       return;
     }
     try {
@@ -129,49 +129,49 @@ export default function AudioStudioPage() {
         mux_to_video: false,
       });
       setAudioOutput(created);
-      setMessage(`Audio mix status: ${created.status}`);
+      setMessage(`Trang thai phoi am: ${created.status}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to mix audio");
+      setMessage(error instanceof Error ? error.message : "Khong phoi duoc am thanh");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <DashboardShell title="Audio Studio" description="Voice profile, breath-paced narration, background music, and FFmpeg mix pipeline for video voice-over.">
+    <DashboardShell title="Xuong am thanh" description="Ho so giong noi, narration theo nhip tho, nhac nen va pipeline FFmpeg cho long tieng video.">
       <div className="space-y-6">
         <section className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border p-4 space-y-3" data-testid="audio-studio-voice-panel">
-            <h2 className="text-lg font-semibold">Voice profile</h2>
-            <input className="w-full rounded-xl border px-3 py-2" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Voice profile name" />
+            <h2 className="text-lg font-semibold">Ho so giong noi</h2>
+            <input className="w-full rounded-xl border px-3 py-2" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Ten ho so giong noi" />
             <textarea className="min-h-24 w-full rounded-xl border px-3 py-2" value={consentText} onChange={(e) => setConsentText(e.target.value)} />
-            <button className="rounded-xl border px-4 py-2" onClick={handleCreateVoice} disabled={busy}>Create safe voice profile</button>
+            <button className="rounded-xl border px-4 py-2" onClick={handleCreateVoice} disabled={busy}>Tao ho so giong noi an toan</button>
             <select className="w-full rounded-xl border px-3 py-2" value={selectedVoiceProfileId} onChange={(e) => setSelectedVoiceProfileId(e.target.value)}>
-              <option value="">Select voice profile</option>
+              <option value="">Chon ho so giong noi</option>
               {voiceProfiles.map((voice) => (
                 <option key={voice.id} value={voice.id}>{voice.display_name} · {voice.clone_mode} · {voice.consent_status}</option>
               ))}
             </select>
-            {selectedVoice && <p className="text-sm text-gray-500">Selected voice: {selectedVoice.display_name}</p>}
+            {selectedVoice && <p className="text-sm text-gray-500">Giong noi da chon: {selectedVoice.display_name}</p>}
           </div>
 
           <div className="rounded-2xl border p-4 space-y-3" data-testid="audio-studio-music-panel">
-            <h2 className="text-lg font-semibold">Background music</h2>
-            <input className="w-full rounded-xl border px-3 py-2" value={musicName} onChange={(e) => setMusicName(e.target.value)} placeholder="Music asset name" />
-            <textarea className="min-h-24 w-full rounded-xl border px-3 py-2" value={musicPrompt} onChange={(e) => setMusicPrompt(e.target.value)} placeholder="Prompt for generated instrumental music" />
-            <button className="rounded-xl border px-4 py-2" onClick={handleCreateMusic} disabled={busy}>Generate instrumental music</button>
+            <h2 className="text-lg font-semibold">Nhac nen</h2>
+            <input className="w-full rounded-xl border px-3 py-2" value={musicName} onChange={(e) => setMusicName(e.target.value)} placeholder="Ten tai nguyen nhac" />
+            <textarea className="min-h-24 w-full rounded-xl border px-3 py-2" value={musicPrompt} onChange={(e) => setMusicPrompt(e.target.value)} placeholder="Prompt de sinh nhac nen khong loi" />
+            <button className="rounded-xl border px-4 py-2" onClick={handleCreateMusic} disabled={busy}>Sinh nhac nen khong loi</button>
             <select className="w-full rounded-xl border px-3 py-2" value={selectedMusicAssetId} onChange={(e) => setSelectedMusicAssetId(e.target.value)}>
-              <option value="">Select music asset</option>
+              <option value="">Chon tai nguyen nhac</option>
               {musicAssets.map((music) => (
                 <option key={music.id} value={music.id}>{music.display_name} · {music.source_mode}</option>
               ))}
             </select>
-            {selectedMusic && <p className="text-sm text-gray-500">Selected music: {selectedMusic.display_name}</p>}
+            {selectedMusic && <p className="text-sm text-gray-500">Nhac da chon: {selectedMusic.display_name}</p>}
           </div>
         </section>
 
         <section className="rounded-2xl border p-4 space-y-3" data-testid="audio-studio-narration-panel">
-          <h2 className="text-lg font-semibold">Narration editor</h2>
+          <h2 className="text-lg font-semibold">Trinh sua narration</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <select className="rounded-xl border px-3 py-2" value={stylePreset} onChange={(e) => setStylePreset(e.target.value)}>
               <option value="natural_conversational">natural_conversational</option>
@@ -188,14 +188,14 @@ export default function AudioStudioPage() {
           </div>
           <textarea className="min-h-40 w-full rounded-xl border px-3 py-2" value={scriptText} onChange={(e) => setScriptText(e.target.value)} />
           <div className="flex gap-3">
-            <button className="rounded-xl border px-4 py-2" onClick={handleGenerateNarration} disabled={busy}>Generate narration</button>
-            <button className="rounded-xl border px-4 py-2" onClick={handleMix} disabled={busy || !narrationJob}>Mix voice + music</button>
+            <button className="rounded-xl border px-4 py-2" onClick={handleGenerateNarration} disabled={busy}>Tao narration</button>
+            <button className="rounded-xl border px-4 py-2" onClick={handleMix} disabled={busy || !narrationJob}>Mix giong noi + nhac</button>
           </div>
           {narrationJob && (
             <div className="rounded-xl bg-gray-50 p-3 text-sm" data-testid="audio-studio-narration-result">
-              <div>Status: {narrationJob.status}</div>
-              <div>Duration: {narrationJob.duration_ms || 0} ms</div>
-              <div>Segments: {narrationJob.segments.length}</div>
+              <div>Trang thai: {narrationJob.status}</div>
+              <div>Thoi luong: {narrationJob.duration_ms || 0} ms</div>
+              <div>So doan: {narrationJob.segments.length}</div>
               <ul className="mt-2 space-y-1">
                 {narrationJob.segments.slice(0, 6).map((segment) => (
                   <li key={segment.id}>#{segment.segment_index} · pause {segment.pause_after_ms} ms · {segment.text}</li>
@@ -205,9 +205,9 @@ export default function AudioStudioPage() {
           )}
           {audioOutput && (
             <div className="rounded-xl bg-gray-50 p-3 text-sm" data-testid="audio-studio-mix-result">
-              <div>Mix status: {audioOutput.status}</div>
-              <div>Mixed audio URL: {audioOutput.mixed_audio_url || "not uploaded"}</div>
-              <div>Final muxed video URL: {audioOutput.final_muxed_video_url || "not generated"}</div>
+              <div>Trang thai mix: {audioOutput.status}</div>
+              <div>URL audio sau mix: {audioOutput.mixed_audio_url || "chua tai len"}</div>
+              <div>URL video mux cuoi: {audioOutput.final_muxed_video_url || "chua tao"}</div>
             </div>
           )}
           {message && <p className="text-sm text-gray-600">{message}</p>}

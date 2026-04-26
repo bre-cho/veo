@@ -10,7 +10,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("App error:", error);
+    console.error("Loi ung dung:", error);
   }, [error]);
 
   return (
@@ -18,13 +18,13 @@ export default function Error({
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="rounded-3xl border border-red-500/20 bg-red-500/10 p-6">
           <h1 className="text-3xl font-semibold tracking-tight text-red-400">
-            Application Error
+            Loi ung dung
           </h1>
           <p className="mt-2 text-sm text-red-300/70">
-            {error.message || "An unexpected error occurred while rendering this page."}
+            {error.message || "Da xay ra loi khong mong doi khi tai trang nay."}
           </p>
           {error.digest && (
-            <p className="mt-1 text-xs font-mono text-red-300/50">Error ID: {error.digest}</p>
+            <p className="mt-1 text-xs font-mono text-red-300/50">Ma loi: {error.digest}</p>
           )}
         </header>
         <div className="flex gap-4">
@@ -32,13 +32,13 @@ export default function Error({
             onClick={() => reset()}
             className="inline-block rounded-2xl bg-amber-500/20 px-6 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-500/30"
           >
-            Try Again
+            Thu lai
           </button>
           <a
             href="/"
             className="inline-block rounded-2xl bg-sky-500/20 px-6 py-3 text-sm font-semibold text-sky-400 transition hover:bg-sky-500/30"
           >
-            Return to Home
+            Ve trang chu
           </a>
         </div>
       </div>

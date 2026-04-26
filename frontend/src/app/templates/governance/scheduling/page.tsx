@@ -36,7 +36,7 @@ export default function GovernanceSchedulingPage() {
       setEvaluation(evalRow);
       setPolicyPath(pathRow);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh scheduling page");
+      setError(err instanceof Error ? err.message : "Khong lam moi duoc trang lich dieu phoi");
     }
   }
 
@@ -44,15 +44,15 @@ export default function GovernanceSchedulingPage() {
     <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Governance scheduling</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Lich dieu phoi governance</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Schedule execution plans, control orchestration lifecycle, and evaluate post-plan outcome.
+            Len lich ke hoach thuc thi, dieu khien vong doi dieu phoi va danh gia ket qua sau ke hoach.
           </p>
         </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <label className="block">
-            <div className="mb-1.5 text-sm font-medium text-slate-800">Execution plan ID</div>
+            <div className="mb-1.5 text-sm font-medium text-slate-800">Ma execution plan</div>
             <input
               value={planId}
               onChange={(e) => setPlanId(e.target.value)}
@@ -66,7 +66,7 @@ export default function GovernanceSchedulingPage() {
             onClick={() => refresh(planId)}
             className="mt-4 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
           >
-            Refresh data
+            Tai lai du lieu
           </button>
         </section>
 

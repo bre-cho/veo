@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   createProjectFromPreview,
   ScriptPreviewPayload,
@@ -14,6 +15,7 @@ import PreviewEditingLayer from "@/src/components/PreviewEditingLayer";
 type UploadState = "idle" | "uploading" | "ready" | "error";
 
 export default function ScriptUploadPreviewFlow() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [preview, setPreview] = useState<ScriptPreviewPayload | null>(null);
@@ -21,6 +23,7 @@ export default function ScriptUploadPreviewFlow() {
   const [error, setError] = useState<string | null>(null);
 
   const [creatingProject, setCreatingProject] = useState(false);
+  const [autoStartRender, setAutoStartRender] = useState(true);
 
   const [validationState, setValidationState] = useState<{
     valid: boolean;
@@ -39,7 +42,7 @@ export default function ScriptUploadPreviewFlow() {
   // -----------------------------
   const handleUpload = async () => {
     if (!file) {
-      alert("Please select a .txt or .docx file");
+      alert("Vui long chon file .txt hoac .docx");
       return;
     }
 
@@ -58,7 +61,7 @@ export default function ScriptUploadPreviewFlow() {
       setUploadState("ready");
     } catch (err) {
       console.error(err);
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Tai len that bai");
       setUploadState("error");
     }
   };
@@ -77,7 +80,7 @@ export default function ScriptUploadPreviewFlow() {
       setValidationState(result);
 
       if (!result.valid) {
-        alert("Preview has validation errors. Please fix them first.");
+        alert("Ban xem truoc co loi kiem tra. Hay sua truoc khi tiep tuc.");
         return;
       }
 
@@ -85,18 +88,44 @@ export default function ScriptUploadPreviewFlow() {
         name: buildProjectName(preview),
         preview_payload: preview,
         confirmed: true,
+        auto_start_render: autoStartRender,
       });
 
-      alert("Project created successfully!");
+      const createdProject = created as {
+        id?: string;
+        render_job_id?: string;
+        auto_render?: {
+          ok?: boolean;
+          render_job_id?: string;
+          status?: string;
+          error?: string;
+        };
+      };
 
-      console.log("Created project:", created);
+      if (createdProject.auto_render?.ok) {
+        alert("da tao du an va da khoi dong render thanh cong");
+      } else if (autoStartRender) {
+        if (createdProject.auto_render?.error) {
+          alert(`Da tao du an, nhung khoi dong render that bai: ${createdProject.auto_render.error}`);
+        } else {
+          alert("da tao du an thanh cong. render se duoc khoi dong o buoc tiep theo.");
+        }
+      } else {
+        alert("Da tao du an thanh cong!");
+      }
+
+      console.log("Du an da tao:", created);
+
+      if (createdProject.id) {
+        router.push(`/projects/${createdProject.id}`);
+      }
 
       // reset nếu muốn
       // setPreview(null);
 
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Failed to create project");
+      alert(err instanceof Error ? err.message : "Khong tao duoc du an");
     } finally {
       setCreatingProject(false);
     }
@@ -109,29 +138,29 @@ export default function ScriptUploadPreviewFlow() {
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold text-white">
-          Script Upload → Preview → Create Project
+          Tai kich ban -&gt; Xem truoc -&gt; Tao du an
         </h1>
         <p className="text-sm text-white/60">
-          Upload your script file, edit scenes & subtitles, validate, and create project.
+          Tai file kich ban, chinh sua canh va phu de, kiem tra roi tao du an.
         </p>
       </header>
 
       {/* Upload Panel */}
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5 space-y-4">
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Aspect Ratio">
+          <Field label="Ti le khung hinh">
             <select
               value={aspectRatio}
               onChange={(e) => setAspectRatio(e.target.value as any)}
               className={inputClass}
             >
-              <option value="9:16">9:16 (Vertical)</option>
-              <option value="16:9">16:9 (Horizontal)</option>
-              <option value="1:1">1:1 (Square)</option>
+              <option value="9:16">9:16 (Doc)</option>
+              <option value="16:9">16:9 (Ngang)</option>
+              <option value="1:1">1:1 (Vuong)</option>
             </select>
           </Field>
 
-          <Field label="Platform">
+          <Field label="Nen tang">
             <select
               value={targetPlatform}
               onChange={(e) => setTargetPlatform(e.target.value as any)}
@@ -139,11 +168,11 @@ export default function ScriptUploadPreviewFlow() {
             >
               <option value="shorts">YouTube Shorts</option>
               <option value="tiktok">TikTok</option>
-              <option value="youtube">YouTube Long</option>
+              <option value="youtube">YouTube dai</option>
             </select>
           </Field>
 
-          <Field label="Style Preset">
+          <Field label="Mau phong cach">
             <input
               value={stylePreset}
               onChange={(e) => setStylePreset(e.target.value)}
@@ -166,7 +195,7 @@ export default function ScriptUploadPreviewFlow() {
             disabled={uploadState === "uploading"}
             className="rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
           >
-            {uploadState === "uploading" ? "Uploading..." : "Upload & Generate Preview"}
+            {uploadState === "uploading" ? "Dang tai len..." : "Tai len va tao ban xem truoc"}
           </button>
         </div>
 
@@ -191,16 +220,26 @@ export default function ScriptUploadPreviewFlow() {
         <section className="rounded-3xl border border-white/10 bg-black/20 p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-white/60">
             {validationState.valid
-              ? "Preview is valid. Ready to create project."
-              : "Fix validation issues before creating project."}
+              ? "Ban xem truoc hop le. San sang tao du an."
+              : "Hay sua loi kiem tra truoc khi tao du an."}
           </div>
+
+          <label className="inline-flex items-center gap-2 text-sm text-white/70">
+            <input
+              type="checkbox"
+              checked={autoStartRender}
+              onChange={(e) => setAutoStartRender(e.target.checked)}
+              disabled={creatingProject}
+            />
+            Tao du an va khoi dong render ngay
+          </label>
 
           <button
             onClick={() => void handleCreateProject()}
             disabled={!validationState.valid || creatingProject}
             className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {creatingProject ? "Creating..." : "Confirm & Create Project"}
+            {creatingProject ? "Dang tao..." : "Xac nhan va tao du an"}
           </button>
         </section>
       )}
@@ -215,7 +254,7 @@ export default function ScriptUploadPreviewFlow() {
 function buildProjectName(preview: ScriptPreviewPayload): string {
   const firstLine =
     preview.script_text?.split("\n").find((line) => line.trim().length > 0) ??
-    "New Project";
+    "Du an moi";
 
   return firstLine.slice(0, 60);
 }

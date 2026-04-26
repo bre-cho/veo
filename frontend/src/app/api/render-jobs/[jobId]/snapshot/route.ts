@@ -30,7 +30,7 @@ export async function GET(
         ok: false,
         error: {
           message:
-            error instanceof Error ? error.message : "Frontend snapshot proxy failed",
+            error instanceof Error ? error.message : "Proxy snapshot frontend that bai",
         },
       },
       { status: 502 },

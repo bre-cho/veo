@@ -70,7 +70,7 @@ export default function MotionPanel({ avatarId, onSaved }: Props) {
         disabled={saving}
         className="self-start rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
       >
-        {saving ? "Saving…" : "Save & Continue"}
+        {saving ? "Saving…" : "Luu va tiep tuc"}
       </button>
     </div>
   );

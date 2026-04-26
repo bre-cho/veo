@@ -71,7 +71,7 @@ export default function PreviewEditingLayer({
       onValidationChange?.(result);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to validate preview");
+      alert(error instanceof Error ? error.message : t("preview.alert.validateFailed"));
     } finally {
       setLoadingAction(null);
     }
@@ -84,7 +84,7 @@ export default function PreviewEditingLayer({
       onChange(next);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to rebuild subtitles");
+      alert(error instanceof Error ? error.message : t("preview.alert.rebuildSubtitlesFailed"));
     } finally {
       setLoadingAction(null);
     }
@@ -97,7 +97,7 @@ export default function PreviewEditingLayer({
       onChange(next);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to recalculate durations");
+      alert(error instanceof Error ? error.message : t("preview.alert.recalculateDurationsFailed"));
     } finally {
       setLoadingAction(null);
     }
@@ -110,7 +110,7 @@ export default function PreviewEditingLayer({
       onChange(next);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to recalculate preview");
+      alert(error instanceof Error ? error.message : t("preview.alert.recalculateAllFailed"));
     } finally {
       setLoadingAction(null);
     }
@@ -118,14 +118,14 @@ export default function PreviewEditingLayer({
 
   return (
     <div className="space-y-6">
-      <ValidationPanel issues={validationIssues} valid={isValid} />
+      <ValidationPanel issues={validationIssues} valid={isValid} t={t} />
 
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-white">{t("preview_regenerate_tools")}</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview.tools.title")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              {t("preview_regenerate_tools_desc")}
+              {t("preview.tools.subtitle")}
             </p>
           </div>
 
@@ -135,7 +135,9 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "subtitles" ? t("preview_rebuilding") : t("preview_rebuild_subtitles")}
+              {loadingAction === "subtitles"
+                ? t("preview.tools.rebuildSubtitlesLoading")
+                : t("preview.tools.rebuildSubtitles")}
             </button>
 
             <button
@@ -143,7 +145,9 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "durations" ? t("preview_recalculating") : t("preview_recalculate_durations")}
+              {loadingAction === "durations"
+                ? t("preview.tools.recalculateDurationsLoading")
+                : t("preview.tools.recalculateDurations")}
             </button>
 
             <button
@@ -151,7 +155,9 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {loadingAction === "all" ? t("preview_updating") : t("preview_recalculate_all")}
+              {loadingAction === "all"
+                ? t("preview.tools.recalculateAllLoading")
+                : t("preview.tools.recalculateAll")}
             </button>
 
             <button
@@ -159,7 +165,9 @@ export default function PreviewEditingLayer({
               disabled={loadingAction !== null}
               className="rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
             >
-              {loadingAction === "validate" ? t("preview_validating") : t("preview_validate_preview")}
+              {loadingAction === "validate"
+                ? t("preview.tools.validateLoading")
+                : t("preview.tools.validate")}
             </button>
           </div>
         </div>
@@ -172,17 +180,17 @@ export default function PreviewEditingLayer({
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-white">{t("preview_scene_editor")}</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview.scenes.title")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              {t("preview_scene_editor_desc")}
+              {t("preview.scenes.subtitle")}
             </p>
           </div>
 
           <button
-            onClick={() => onChange(addScene(preview))}
+            onClick={() => onChange(addScene(preview, t("preview.scenes.scenePrefix")))}
             className="rounded-2xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
           >
-            {t("preview_add_scene")}
+            {t("preview.scenes.add")}
           </button>
         </div>
 
@@ -204,24 +212,24 @@ export default function PreviewEditingLayer({
                     onClick={() => onChange(moveScene(preview, sceneRowIndex, -1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    {t("preview_move_up")}
+                    {t("preview.scenes.moveUp")}
                   </button>
                   <button
                     onClick={() => onChange(moveScene(preview, sceneRowIndex, 1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    {t("preview_move_down")}
+                    {t("preview.scenes.moveDown")}
                   </button>
                   <button
                     onClick={() => onChange(deleteScene(preview, sceneRowIndex))}
                     className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-200"
                   >
-                    {t("preview_delete_scene")}
+                    {t("preview.scenes.delete")}
                   </button>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-[120px_1fr_140px]">
-                  <Field label="Scene">
+                  <Field label={t("preview.scenes.fields.scene")}>
                     <input
                       ref={registerField(buildFieldKey("scene", sceneRowIndex, "scene_index"))}
                       value={scene.scene_index}
@@ -238,7 +246,7 @@ export default function PreviewEditingLayer({
                     />
                   </Field>
 
-                  <Field label="Title">
+                  <Field label={t("preview.scenes.fields.title")}>
                     <input
                       ref={registerField(buildFieldKey("scene", sceneRowIndex, "title"))}
                       value={scene.title}
@@ -263,7 +271,7 @@ export default function PreviewEditingLayer({
                     />
                   </Field>
 
-                  <Field label="Duration (sec)">
+                  <Field label={t("preview.scenes.fields.duration")}>
                     <input
                       ref={registerField(
                         buildFieldKey("scene", sceneRowIndex, "target_duration_sec"),
@@ -302,7 +310,7 @@ export default function PreviewEditingLayer({
                 </div>
 
                 <div className="mt-4">
-                  <Field label="Scene script">
+                  <Field label={t("preview.scenes.fields.script")}>
                     <textarea
                       ref={registerField(buildFieldKey("scene", sceneRowIndex, "script_text"))}
                       rows={5}
@@ -345,9 +353,9 @@ export default function PreviewEditingLayer({
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-white">{t("preview_subtitle_editor")}</h3>
+            <h3 className="text-lg font-semibold text-white">{t("preview.subtitles.title")}</h3>
             <p className="mt-1 text-sm text-white/55">
-              {t("preview_subtitle_editor_desc")}
+              {t("preview.subtitles.subtitle")}
             </p>
           </div>
 
@@ -355,7 +363,7 @@ export default function PreviewEditingLayer({
             onClick={() => onChange(addSubtitle(preview))}
             className="rounded-2xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
           >
-            {t("preview_add_subtitle")}
+            {t("preview.subtitles.add")}
           </button>
         </div>
 
@@ -377,24 +385,24 @@ export default function PreviewEditingLayer({
                     onClick={() => onChange(moveSubtitle(preview, subtitleRowIndex, -1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    {t("preview_move_up")}
+                    {t("preview.subtitles.moveUp")}
                   </button>
                   <button
                     onClick={() => onChange(moveSubtitle(preview, subtitleRowIndex, 1))}
                     className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
                   >
-                    {t("preview_move_down")}
+                    {t("preview.subtitles.moveDown")}
                   </button>
                   <button
                     onClick={() => onChange(deleteSubtitle(preview, subtitleRowIndex))}
                     className="rounded-xl border border-rose-500/30 px-3 py-2 text-xs text-rose-200"
                   >
-                    {t("preview_delete_subtitle")}
+                    {t("preview.subtitles.delete")}
                   </button>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-[110px_110px_110px_1fr]">
-                  <Field label="Scene">
+                  <Field label={t("preview.subtitles.fields.scene")}>
                     <input
                       ref={registerField(buildFieldKey("subtitle", subtitleRowIndex, "scene_index"))}
                       type="number"
@@ -428,7 +436,7 @@ export default function PreviewEditingLayer({
                     />
                   </Field>
 
-                  <Field label="Start">
+                  <Field label={t("preview.subtitles.fields.start")}>
                     <input
                       ref={registerField(buildFieldKey("subtitle", subtitleRowIndex, "start_sec"))}
                       type="number"
@@ -463,7 +471,7 @@ export default function PreviewEditingLayer({
                     />
                   </Field>
 
-                  <Field label="End">
+                  <Field label={t("preview.subtitles.fields.end")}>
                     <input
                       ref={registerField(buildFieldKey("subtitle", subtitleRowIndex, "end_sec"))}
                       type="number"
@@ -498,7 +506,7 @@ export default function PreviewEditingLayer({
                     />
                   </Field>
 
-                  <Field label="Text">
+                  <Field label={t("preview.subtitles.fields.text")}>
                     <input
                       ref={registerField(buildFieldKey("subtitle", subtitleRowIndex, "text"))}
                       value={seg.text}
@@ -535,9 +543,9 @@ export default function PreviewEditingLayer({
 
       <section className="rounded-3xl border border-white/10 bg-black/20 p-5">
         <div className="mb-3">
-          <h3 className="text-lg font-semibold text-white">{t("preview_rebuilt_script")}</h3>
+          <h3 className="text-lg font-semibold text-white">{t("preview.rebuilt.title")}</h3>
           <p className="mt-1 text-sm text-white/55">
-            {t("preview_rebuilt_script_desc")}
+            {t("preview.rebuilt.subtitle")}
           </p>
         </div>
 
@@ -567,17 +575,18 @@ export default function PreviewEditingLayer({
 function ValidationPanel({
   issues,
   valid,
+  t,
 }: {
   issues: ValidationIssue[];
   valid: boolean;
+  t: (key: string) => string;
 }) {
-  const t = useT();
   if (valid && issues.length === 0) {
     return (
       <div className="rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-5">
-        <h3 className="text-lg font-semibold text-emerald-200">{t("preview_valid")}</h3>
+        <h3 className="text-lg font-semibold text-emerald-200">{t("preview.validation.validTitle")}</h3>
         <p className="mt-1 text-sm text-emerald-100/80">
-          {t("preview_valid_desc")}
+          {t("preview.validation.validSubtitle")}
         </p>
       </div>
     );
@@ -585,9 +594,9 @@ function ValidationPanel({
 
   return (
     <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 p-5">
-      <h3 className="text-lg font-semibold text-rose-200">{t("preview_invalid")}</h3>
+      <h3 className="text-lg font-semibold text-rose-200">{t("preview.validation.invalidTitle")}</h3>
       <p className="mt-1 text-sm text-rose-100/80">
-        {t("preview_invalid_desc")}
+        {t("preview.validation.invalidSubtitle")}
       </p>
 
       <div className="mt-4 space-y-2">
@@ -753,14 +762,14 @@ function renumberScenes(preview: ScriptPreviewPayload): ScriptPreviewPayload {
   };
 }
 
-function addScene(preview: ScriptPreviewPayload): ScriptPreviewPayload {
+function addScene(preview: ScriptPreviewPayload, scenePrefix: string): ScriptPreviewPayload {
   const next = {
     ...preview,
     scenes: [
       ...preview.scenes,
       {
         scene_index: preview.scenes.length + 1,
-        title: `Scene ${preview.scenes.length + 1}`,
+        title: `${scenePrefix} ${preview.scenes.length + 1}`,
         script_text: "",
         target_duration_sec: 5,
       },

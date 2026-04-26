@@ -31,7 +31,7 @@ export default function CountryDropdown({ value, onChange, label }: Props) {
         disabled={loading}
       >
         <option value="">
-          {loading ? "Loading markets…" : "Select market"}
+          {loading ? "Dang tai thi truong..." : "Select market"}
         </option>
         {profiles.map((p) => (
           <option key={p.market_code} value={p.market_code}>

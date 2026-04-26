@@ -14,7 +14,7 @@ export default function MarketplaceSearchBar({ value, onChange, placeholder }: P
         className="flex-1 bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder ?? "Search avatars…"}
+        placeholder={placeholder ?? "Tim avatar..."}
       />
       {value && (
         <button

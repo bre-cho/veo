@@ -19,7 +19,7 @@ export default function SavePublishBar({ avatarId, onPublished }: Props) {
     setStatus(null);
     try {
       const res = await publishAvatar(avatarId);
-      setStatus(res.status ?? "published");
+      setStatus(res.status ?? "da xuat ban");
       onPublished?.();
     } catch (e) {
       setError(String(e));
@@ -32,9 +32,9 @@ export default function SavePublishBar({ avatarId, onPublished }: Props) {
     <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 px-5 py-4">
       <button
         className="rounded-xl border border-neutral-700 bg-neutral-800 px-5 py-2 text-sm font-semibold text-neutral-300 transition hover:bg-neutral-700"
-        onClick={() => setStatus("draft saved")}
+        onClick={() => setStatus("da luu ban nhap")}
       >
-        Save Draft
+        Luu ban nhap
       </button>
 
       <button
@@ -42,7 +42,7 @@ export default function SavePublishBar({ avatarId, onPublished }: Props) {
         disabled={publishing}
         className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
       >
-        {publishing ? "Publishing…" : "Publish"}
+        {publishing ? "Dang xuat ban..." : "Xuat ban"}
       </button>
 
       {status && <span className="text-xs text-green-400">{status} ✓</span>}

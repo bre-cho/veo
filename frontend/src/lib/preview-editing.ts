@@ -73,7 +73,7 @@ export function addScene(preview: ScriptPreviewPayload): ScriptPreviewPayload {
       ...preview.scenes,
       {
         scene_index: preview.scenes.length + 1,
-        title: `Scene ${preview.scenes.length + 1}`,
+        title: `Canh ${preview.scenes.length + 1}`,
         script_text: "",
         target_duration_sec: 5,
       },

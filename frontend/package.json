@@ -5,7 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "i18n:check": "python ../scripts/ci/check_frontend_i18n.py"
   },
   "dependencies": {
     "next": "15.5.9",

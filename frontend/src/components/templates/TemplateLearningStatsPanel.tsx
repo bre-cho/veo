@@ -117,12 +117,12 @@ export default function TemplateLearningStatsPanel({
               </div>
 
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-                <Cell label="Render" value={num(stat.avg_render_score)} />
+                <Cell label="Dung phim" value={num(stat.avg_render_score)} />
                 <Cell label="Upload" value={num(stat.avg_upload_score)} />
                 <Cell label="Retention" value={num(stat.avg_retention_score)} />
                 <Cell label="Final priority" value={num(stat.avg_final_priority_score)} />
-                <Cell label="Success rate" value={pct(stat.success_rate)} />
-                <Cell label="Retry rate" value={pct(stat.retry_rate)} />
+                <Cell label="Ti le thanh cong" value={pct(stat.success_rate)} />
+                <Cell label="Ti le thu lai" value={pct(stat.retry_rate)} />
                 <Cell label="Rerender rate" value={pct(stat.rerender_rate)} />
                 <Cell label="Scene failure" value={pct(stat.avg_scene_failure_rate)} />
                 <Cell label="Stability" value={num(stat.stability_index)} />
