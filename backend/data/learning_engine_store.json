@@ -252,6 +252,27 @@
     "recorded_at": 1776725556.2192364
   },
   {
+    "video_id": "test-vid-999",
+    "hook_pattern": "Did you know?",
+    "cta_pattern": "Shop now",
+    "template_family": "sales_conversion",
+    "conversion_score": 0.75,
+    "view_count": 5000,
+    "click_through_rate": 0.08,
+    "platform": null,
+    "market_code": null,
+    "avatar_id": null,
+    "product_id": null,
+    "experiment_id": null,
+    "variant_id": null,
+    "performance_metrics": {},
+    "persona_id": null,
+    "product_category": null,
+    "funnel_stage": null,
+    "campaign_id": null,
+    "recorded_at": 1777182619.2125962
+  },
+  {
     "video_id": "test-job-signal-001",
     "hook_pattern": "short",
     "cta_pattern": "unknown",
@@ -270,7 +291,7 @@
     "product_category": null,
     "funnel_stage": null,
     "campaign_id": null,
-    "recorded_at": 1777007286.9255197
+    "recorded_at": 1777182625.8791559
   },
   {
     "video_id": "test-job-platform-001",
@@ -291,27 +312,6 @@
     "product_category": null,
     "funnel_stage": null,
     "campaign_id": null,
-    "recorded_at": 1777007286.9639995
-  },
-  {
-    "video_id": "test-vid-999",
-    "hook_pattern": "Did you know?",
-    "cta_pattern": "Shop now",
-    "template_family": "sales_conversion",
-    "conversion_score": 0.75,
-    "view_count": 5000,
-    "click_through_rate": 0.08,
-    "platform": null,
-    "market_code": null,
-    "avatar_id": null,
-    "product_id": null,
-    "experiment_id": null,
-    "variant_id": null,
-    "performance_metrics": {},
-    "persona_id": null,
-    "product_category": null,
-    "funnel_stage": null,
-    "campaign_id": null,
-    "recorded_at": 1777141085.5462563
+    "recorded_at": 1777182625.9094934
   }
 ]

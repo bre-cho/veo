@@ -115,6 +115,7 @@ class ConfirmCreateProjectRequest(BaseModel):
     idea: str | None = None
     preview_payload: ScriptPreviewPayload
     confirmed: bool = True
+    auto_start_render: bool = False
 
     @field_validator("name")
     @classmethod

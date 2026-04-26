@@ -187,6 +187,7 @@ class RenderJobCreateRequest(BaseModel):
 # =========================
 class RenderJobCreateResponse(BaseModel):
     id: str
+    job_id: str
     project_id: str
     provider: str
     status: str
@@ -340,6 +341,7 @@ async def create_render_job(
 
     response = RenderJobCreateResponse(
         id=refreshed.id,
+        job_id=refreshed.id,
         project_id=refreshed.project_id,
         provider=refreshed.provider,
         status=refreshed.status,

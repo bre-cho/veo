@@ -42,6 +42,7 @@ _REQUIRED_ROUTER_SPECS: list[tuple[str, str]] = [
     ("app.api.veo_workspace", "router"),
     # Render execution
     ("app.api.render_execution", "router"),
+    ("app.services.render_plan", "router"),
     ("app.api.render_job_status", "router"),
     ("app.api.render_dashboard", "router"),
     ("app.api.render_job_health", "router"),

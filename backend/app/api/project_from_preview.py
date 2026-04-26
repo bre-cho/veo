@@ -3,17 +3,24 @@ from __future__ import annotations
 import json
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.schemas.script_preview import ConfirmCreateProjectRequest
 from app.services.project_workspace_service import PROJECT_STORAGE_DIR
+from app.services.project_workspace_service import load_project
+from app.services.project_render_runtime import trigger_project_render
 from app.services.script_validation_issues import validate_preview_with_issues
 
 router = APIRouter(tags=["projects"])
 
 
 @router.post("/api/v1/projects/create-from-script-preview")
-async def create_project_from_script_preview(payload: ConfirmCreateProjectRequest):
+async def create_project_from_script_preview(
+    payload: ConfirmCreateProjectRequest,
+    db: Session = Depends(get_db),
+):
     try:
         if not payload.confirmed:
             raise HTTPException(status_code=400, detail="Confirmation required")
@@ -77,6 +84,30 @@ async def create_project_from_script_preview(payload: ConfirmCreateProjectReques
         project_dir.mkdir(parents=True, exist_ok=True)
         (project_dir / "project.json").write_text(json.dumps(project, ensure_ascii=False, indent=2), encoding="utf-8")
         (project_dir / "script.txt").write_text(project["script_text"], encoding="utf-8")
+
+        auto_render_result: dict[str, object] | None = None
+        if payload.auto_start_render:
+            try:
+                render_result = trigger_project_render(db, project_id)
+                latest_project = load_project(project_id)
+                if latest_project:
+                    project = latest_project
+                auto_render_result = {
+                    "ok": True,
+                    "render_job_id": render_result.get("render_job_id"),
+                    "status": render_result.get("status"),
+                }
+            except Exception as exc:  # noqa: BLE001
+                auto_render_result = {
+                    "ok": False,
+                    "error": str(exc),
+                }
+
+        if auto_render_result is not None:
+            project = {
+                **project,
+                "auto_render": auto_render_result,
+            }
 
         return {
             "ok": True,

@@ -1,9 +1,5 @@
 """script_engine — orchestrator that assembles the full voiceover script.
 
-# Kept for backward-compat: ScriptToRenderAdapter imports this constant.
-DEFAULT_VOICE_TONE = "documentary, calm"
-
-
 Contains two engines:
 
 ``ScriptEngine`` (single-scene)
@@ -50,6 +46,9 @@ from app.drama.script.schemas.script_output import ScriptOutput, ScriptSegment, 
 from app.drama.script.schemas.script_request import ScriptRequest
 
 logger = logging.getLogger(__name__)
+
+# Kept for backward-compat: ScriptToRenderAdapter imports this constant.
+DEFAULT_VOICE_TONE = "documentary, calm"
 
 
 def _build_tension_curve(drama_state: Dict[str, Any]) -> List[str]:

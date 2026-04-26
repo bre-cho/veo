@@ -21,7 +21,7 @@ class NextLevelScriptRequest(BaseModel):
     episode_id: str
 
     drama_state: Dict[str, Any] = Field(
-        ...,
+        default_factory=lambda: {"tension_score": 50},
         description=(
             "Drama state dict.  Must contain at least ``tension_score`` (0–100). "
             "Other keys: outcome_type, dominant_character_id, etc."
@@ -35,7 +35,7 @@ class NextLevelScriptRequest(BaseModel):
 
     # Multi-scene: ordered list of scene context dicts
     scene_contexts: List[Dict[str, Any]] = Field(
-        ...,
+        default_factory=list,
         description=(
             "Ordered list of scene contexts for this episode. "
             "Each dict may include scene_id, hidden_intent, hidden_conflict, etc."
