@@ -1,1 +1,0 @@
-"""Script Generation Engine package."""
