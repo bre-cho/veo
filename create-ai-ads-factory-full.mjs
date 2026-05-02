@@ -1082,11 +1082,11 @@ write("docs/09-launch-checklist.md", `
 `);
 
 try {
-  execSync(\`zip -r \${root}.zip \${root}\`, { stdio: "inherit" });
+  execSync(`zip -r ${root}.zip ${root}`, { stdio: "inherit" });
   console.log("✅ Created:", root);
   console.log("✅ Created zip:", root + ".zip");
 } catch {
   console.log("✅ Created:", root);
   console.log("⚠️ zip command not found. Run manually:");
-  console.log(\`zip -r \${root}.zip \${root}\`);
+  console.log(`zip -r ${root}.zip ${root}`);
 }
