@@ -224,7 +224,7 @@ export function AgentStreamingConsole() {
       <h1 className="text-3xl font-black">🧠 AI Ads Factory Orchestrator</h1>
 
       <section className="mt-6 rounded-2xl bg-[#111827] p-5 space-y-3">
-        <h2 className="text-xl font-bold">Auth</h2>
+        <h2 className="text-xl font-bold">Xác thực</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             className="rounded-lg bg-black/30 p-3"
@@ -234,7 +234,7 @@ export function AgentStreamingConsole() {
           />
           <input
             className="rounded-lg bg-black/30 p-3"
-            placeholder="Password"
+            placeholder="Mật khẩu"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -264,12 +264,12 @@ export function AgentStreamingConsole() {
         </div>
 
         <button onClick={run} disabled={running} className="mt-4 rounded-xl bg-[#2563EB] px-5 py-3 font-bold disabled:opacity-50">
-          {running ? "Đang chạy 10 agents..." : "Run Full Factory"}
+          {running ? "Đang chạy 10 agents..." : "Chạy Full Factory"}
         </button>
       </section>
 
       <section className="mt-6 rounded-2xl bg-[#111827] p-5">
-        <h2 className="text-xl font-bold">Image Generation Job Queue</h2>
+        <h2 className="text-xl font-bold">Hàng đợi tạo ảnh AI</h2>
         <div className="mt-3 flex flex-col gap-3">
           <textarea
             className="rounded-lg bg-black/30 p-3 min-h-24"
@@ -279,7 +279,7 @@ export function AgentStreamingConsole() {
           <button onClick={createJob} className="w-fit rounded-lg bg-[#FACC15] text-black px-4 py-2 font-bold">
             Tạo job
           </button>
-          <p className="text-sm text-gray-300">Job ID: {jobId || "-"}</p>
+          <p className="text-sm text-gray-300">Mã công việc: {jobId || "-"}</p>
           <p className="text-sm text-gray-300">Trạng thái: {jobState || "-"}</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {jobAssets.map((url) => (

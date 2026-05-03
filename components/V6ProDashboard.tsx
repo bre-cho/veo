@@ -324,16 +324,16 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
           <p className="text-sm font-black uppercase tracking-[0.24em] text-[#FACC15]">V6 Pro Dashboard</p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <h1 className="text-4xl font-black tracking-tight sm:text-5xl">Auto detect industry, score 3 variants, luu winner DNA.</h1>
+              <h1 className="text-4xl font-black tracking-tight sm:text-5xl">Tự động phát hiện ngành, chấm điểm 3 biến thể, lưu winner DNA.</h1>
               <p className="mt-4 text-base text-slate-300 sm:text-lg">
-                Patch pack da duoc merge vao App Router hien tai. UI nay goi truc tiep cac route V6 Pro trong Next va tu dong fallback memory neu chua cau hinh Supabase service role.
+                Patch pack đã được tích hợp vào App Router hiện tại. Giao diện này gọi trực tiếp các route V6 Pro trong Next.js và tự động fallback về memory nếu chưa cấu hình Supabase service role.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <MetricCard label="Campaigns" value={String(campaigns.length)} />
+              <MetricCard label="Chiến dịch" value={String(campaigns.length)} />
               <MetricCard label="Winner DNA" value={String(winners.length)} />
-              <MetricCard label="Goal mac dinh" value={form.goal} />
-              <MetricCard label="Mode" value={process.env.NEXT_PUBLIC_SUPABASE_URL ? "db/memory" : "memory"} />
+              <MetricCard label="Mục tiêu" value={form.goal} />
+              <MetricCard label="Chế độ" value={process.env.NEXT_PUBLIC_SUPABASE_URL ? "db/memory" : "memory"} />
             </div>
           </div>
         </div>
@@ -341,13 +341,13 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-black">Tao campaign</h2>
+              <h2 className="text-2xl font-black">Tạo chiến dịch</h2>
               <button
                 onClick={generate}
                 disabled={loading}
                 className="rounded-2xl bg-[#2563EB] px-5 py-3 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Dang generate..." : "Generate ads"}
+                {loading ? "Đang tạo..." : "Tạo quảng cáo"}
               </button>
             </div>
 
@@ -373,7 +373,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
           <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
             <h2 className="text-2xl font-black">Winner</h2>
             {!result?.winner ? (
-              <p className="mt-4 text-sm text-slate-400">Chua co ket qua. Hay generate mot campaign de xem winner.</p>
+              <p className="text-sm text-slate-400">Chưa có kết quả. Hãy tạo một chiến dịch để xem winner.</p>
             ) : (
               <div className="mt-5 space-y-4">
                 <div className="inline-flex rounded-full border border-[#FACC15]/30 bg-[#FACC15]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-[#FACC15]">
@@ -385,7 +385,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <InfoCard label="CTA" value={result.winner.cta} />
-                  <InfoCard label="Total score" value={`${result.winner.score.total}/100`} />
+                  <InfoCard label="Điểm tổng" value={`${result.winner.score.total}/100`} />
                 </div>
                 {enableDeployDraft ? (
                   <button
@@ -393,7 +393,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                     disabled={deployingDraft}
                     className="w-full rounded-2xl border border-[#FACC15]/30 bg-[#FACC15]/20 px-4 py-3 text-sm font-black text-[#FACC15] transition hover:bg-[#FACC15]/30 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {deployingDraft ? "Dang tao draft payload..." : "Deploy Draft (Meta + TikTok)"}
+                    {deployingDraft ? "Đang tạo draft payload..." : "Triển khai Draft (Meta + TikTok)"}
                   </button>
                 ) : null}
                 <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
@@ -402,7 +402,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                 </div>
                 {result.next_hints?.length ? (
                   <div className="rounded-3xl border border-[#2563EB]/20 bg-[#2563EB]/10 p-4">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">Next hints</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">Gợi ý tiếp theo</p>
                     <div className="mt-3 space-y-2 text-sm text-slate-200">
                       {result.next_hints.map((hint) => (
                         <p key={hint}>{hint}</p>
@@ -418,8 +418,8 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
         {result?.scored_variants ? (
           <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-black">3 bien the</h2>
-              <p className="text-sm text-slate-400">Authority, viral, conversion duoc score tren cung mot bo rule.</p>
+              <h2 className="text-2xl font-black">3 biến thể</h2>
+              <p className="text-sm text-slate-400">Authority, viral, conversion được chấm điểm trên cùng một bộ quy tắc.</p>
             </div>
             <div className="mt-5 grid gap-4 lg:grid-cols-3">
               {Object.values(result.scored_variants).map((variant) => (
@@ -433,10 +433,10 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                   </div>
                   <p className="mt-4 text-sm leading-6 text-slate-300">{variant.hook}</p>
                   <div className="mt-5 grid grid-cols-2 gap-3 text-sm text-slate-200">
-                    <ScorePill label="Attention" value={variant.score.attention} />
-                    <ScorePill label="Trust" value={variant.score.trust} />
-                    <ScorePill label="Conversion" value={variant.score.conversion} />
-                    <ScorePill label="Visual" value={variant.score.visual} />
+                    <ScorePill label="Chú ý" value={variant.score.attention} />
+                    <ScorePill label="Tin cậy" value={variant.score.trust} />
+                    <ScorePill label="Chuyển đổi" value={variant.score.conversion} />
+                    <ScorePill label="Hình ảnh" value={variant.score.visual} />
                   </div>
                 </article>
               ))}
@@ -458,12 +458,12 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">Meta draft schema</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">Schema Meta</p>
                   <button
                     onClick={() => copyPayload("meta")}
                     className="rounded-xl border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-200 hover:bg-white/10"
                   >
-                    {copiedTarget === "meta" ? "Copied" : "Copy JSON"}
+                    {copiedTarget === "meta" ? "Đã sao chép" : "Copy JSON"}
                   </button>
                 </div>
                 <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-6 text-slate-200">
@@ -473,12 +473,12 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
 
               <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">TikTok draft schema</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#93C5FD]">Schema TikTok</p>
                   <button
                     onClick={() => copyPayload("tiktok")}
                     className="rounded-xl border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-200 hover:bg-white/10"
                   >
-                    {copiedTarget === "tiktok" ? "Copied" : "Copy JSON"}
+                    {copiedTarget === "tiktok" ? "Đã sao chép" : "Copy JSON"}
                   </button>
                 </div>
                 <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-6 text-slate-200">
@@ -488,9 +488,9 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
             </div>
 
             <div className="mt-5 rounded-[24px] border border-[#FACC15]/25 bg-[#FACC15]/5 p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#FACC15]">Live publish gate</p>
-              <p className="mt-2 text-sm text-slate-300">Bat buoc approval token + confirm_live=true o backend de tranh live ngoai y muon.</p>
-              <p className="mt-2 text-xs text-slate-500">Rotating token: dat DEPLOY_APPROVAL_TOKEN_SECRET va chay lenh npm run token:approval. Token mac dinh het han sau 10 phut.</p>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#FACC15]">Cổng đăng Live</p>
+              <p className="mt-2 text-sm text-slate-300">Bắt buộc nhập approval token + confirm_live=true ở backend để tránh đăng live ngoài ý muốn.</p>
+              <p className="mt-2 text-xs text-slate-500">Rotating token: đặt DEPLOY_APPROVAL_TOKEN_SECRET và chạy lệnh npm run token:approval. Token mặc định hết hạn sau 10 phút.</p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
                 <input
@@ -505,19 +505,19 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                   disabled={publishingLive}
                   className="rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {publishingLive ? "Dang publish..." : "Publish Live"}
+                  {publishingLive ? "Đang đăng..." : "Đăng Live"}
                 </button>
               </div>
 
               {publishResult ? (
                 <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Publish result</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Kết quả đăng</p>
                     <button
                       onClick={copyPublishResult}
                       className="rounded-xl border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-200 hover:bg-white/10"
                     >
-                      {copiedTarget === "publish" ? "Copied" : "Copy JSON"}
+                      {copiedTarget === "publish" ? "Đã sao chép" : "Copy JSON"}
                     </button>
                   </div>
                   <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-6 text-slate-200">
@@ -532,8 +532,8 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
         <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 className="text-2xl font-black">V7 Audit Logs</h2>
-              <p className="mt-2 text-sm text-slate-400">Loc theo campaign_id, action, status va platform de theo doi draft, publish va token bi tu choi.</p>
+              <h2 className="text-2xl font-black">Nhật ký V7 Audit</h2>
+              <p className="mt-2 text-sm text-slate-400">Lọc theo campaign_id, action, status và platform để theo dõi draft, publish và token bị từ chối.</p>
             </div>
             <button
               onClick={() =>
@@ -547,7 +547,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
               disabled={loadingAudit}
               className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loadingAudit ? "Dang tai audit..." : "Refresh audit"}
+              {loadingAudit ? "Đang tải..." : "Làm mới"}
             </button>
           </div>
 
@@ -555,7 +555,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
             <input
               value={auditCampaignFilter}
               onChange={(event) => setAuditCampaignFilter(event.target.value)}
-              placeholder="Filter campaign_id"
+              placeholder="Lọc theo campaign_id"
               className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-[#93C5FD]/60"
             />
             <select
@@ -563,7 +563,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
               onChange={(event) => setAuditActionFilter(event.target.value)}
               className="w-full rounded-2xl border border-white/10 bg-[#07111F] px-4 py-3 text-sm text-white outline-none focus:border-[#93C5FD]/60"
             >
-              <option value="">Tat ca action</option>
+              <option value="">Tất cả action</option>
               <option value="draft_created">draft_created</option>
               <option value="publish_attempt">publish_attempt</option>
               <option value="publish_denied">publish_denied</option>
@@ -574,7 +574,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
               onChange={(event) => setAuditStatusFilter(event.target.value)}
               className="w-full rounded-2xl border border-white/10 bg-[#07111F] px-4 py-3 text-sm text-white outline-none focus:border-[#93C5FD]/60"
             >
-              <option value="">Tat ca status</option>
+              <option value="">Tất cả trạng thái</option>
               <option value="ok">ok</option>
               <option value="error">error</option>
             </select>
@@ -583,7 +583,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
               onChange={(event) => setAuditPlatformFilter(event.target.value)}
               className="w-full rounded-2xl border border-white/10 bg-[#07111F] px-4 py-3 text-sm text-white outline-none focus:border-[#93C5FD]/60"
             >
-              <option value="">Tat ca platform</option>
+              <option value="">Tất cả nền tảng</option>
               <option value="meta">meta</option>
               <option value="tiktok">tiktok</option>
             </select>
@@ -597,7 +597,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
               }}
               className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white hover:bg-white/[0.08]"
             >
-              Reset filter
+              Đặt lại bộ lọc
             </button>
           </div>
 
@@ -625,14 +625,14 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-400">Chua co audit log phu hop bo loc hien tai.</p>
+              <p className="text-sm text-slate-400">Chưa có audit log phù hợp bộ lọc hiện tại.</p>
             )}
           </div>
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
           <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
-            <h2 className="text-2xl font-black">Campaign gan day</h2>
+            <h2 className="text-2xl font-black">Chiến dịch gần đây</h2>
             <div className="mt-5 space-y-3">
               {campaigns.length ? (
                 campaigns.map((campaign) => (
@@ -644,7 +644,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-400">Chua co campaign nao.</p>
+                <p className="text-sm text-slate-400">Chưa có chiến dịch nào.</p>
               )}
             </div>
           </section>
@@ -667,7 +667,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-400">Chua co winner DNA nao.</p>
+                <p className="text-sm text-slate-400">Chưa có winner DNA nào.</p>
               )}
             </div>
           </section>

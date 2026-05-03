@@ -24,7 +24,7 @@ export function PromptOptimizerPanel() {
 
   return (
     <main className="ds-page min-h-screen p-6">
-      <h1 className="text-4xl font-black">Prompt Engine V2 <span className="ds-highlight">Conversion Optimizer</span></h1>
+      <h1 className="text-4xl font-black">Prompt Engine V2 <span className="ds-highlight">Tối ưu Chuyển đổi</span></h1>
 
       <div className="mt-6 grid grid-cols-2 gap-6">
         <section className="ds-card">
@@ -33,7 +33,7 @@ export function PromptOptimizerPanel() {
         </section>
 
         <section className="ds-card">
-          <label className="font-bold">Product</label>
+          <label className="font-bold">Sản phẩm</label>
           <input value={product} onChange={(e) => setProduct(e.target.value)} className="mt-3 w-full rounded-lg bg-black/30 p-3" />
           <button onClick={run} className="ds-button mt-4">Tối ưu prompt conversion</button>
 

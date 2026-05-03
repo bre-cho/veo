@@ -39,7 +39,7 @@ export function RealAdsSystemDemo() {
         <p className="mt-2 text-gray-600">Nhập sản phẩm → sinh 3 ads → chấm điểm → chọn winner.</p>
         <div className="mt-4 flex gap-3">
           <input className="flex-1 rounded-xl border px-4 py-3" value={product} onChange={(e) => setProduct(e.target.value)} />
-          <button onClick={run} className="rounded-xl bg-black px-5 py-3 text-white">{loading ? 'Đang chạy...' : 'Generate'}</button>
+          <button onClick={run} className="rounded-xl bg-black px-5 py-3 text-white">{loading ? 'Đang chạy...' : 'Tạo ads'}</button>
         </div>
       </div>
 
@@ -57,13 +57,13 @@ export function RealAdsSystemDemo() {
             <div className="font-bold text-xl">{v.title}</div>
             <div className="text-sm text-gray-500">{v.mechanism}</div>
             <p className="mt-3 font-semibold">{v.hook}</p>
-            <div className="mt-3 text-sm">Final: <b>{v.score.finalScore}</b> | CTR: {v.score.ctr} | Trust: {v.score.trust}</div>
+            <div className="mt-3 text-sm">Điểm: <b>{v.score.finalScore}</b> | CTR: {v.score.ctr} | Trust: {v.score.trust}</div>
             <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-gray-100 p-3 text-xs whitespace-pre-wrap">{v.imagePrompt}</pre>
             <button
               onClick={() => copyPrompt(v.id, v.imagePrompt)}
               className="mt-3 w-full rounded-xl border px-3 py-2"
             >
-              {copiedId === v.id ? 'Da copy' : 'Copy prompt'}
+              {copiedId === v.id ? 'Đã sao chép' : 'Sao chép prompt'}
             </button>
           </div>
         ))}
