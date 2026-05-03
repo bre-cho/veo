@@ -6,19 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:smoke": "tsx tests/v6-pro-smoke.ts",
+    "token:approval": "tsx scripts/generate-approval-token.ts"
   },
   "dependencies": {
+    "@remotion/bundler": "^4.0.456",
+    "@remotion/renderer": "^4.0.456",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "framer-motion": "latest",
+    "html-to-image": "latest",
     "js-yaml": "latest",
     "next": "latest",
     "openai": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "remotion": "^4.0.456",
     "stripe": "latest",
-    "zod": "latest"
+    "zod": "latest",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.4",
@@ -29,6 +36,7 @@
     "autoprefixer": "latest",
     "postcss": "latest",
     "tailwindcss": "latest",
+    "tsx": "latest",
     "typescript": "latest"
   }
 }

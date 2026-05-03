@@ -1,0 +1,18 @@
+{
+  "fresh_ingredient": {
+    "industries": ["beverage", "seafood", "food"],
+    "visuals": ["splash", "ice", "ingredient explosion", "fresh green/yellow/blue palette", "bold headline"]
+  },
+  "beauty_trust": {
+    "industries": ["skincare", "cosmetic", "sunscreen"],
+    "visuals": ["model close-up", "product hero", "benefit icons", "soft luxury light", "minimal claim"]
+  },
+  "luxury_identity": {
+    "industries": ["fashion", "perfume", "premium"],
+    "visuals": ["serif typography", "gold lighting", "cinematic car/yacht/city", "status pose", "editorial layout"]
+  },
+  "conversion_problem": {
+    "industries": ["treatment", "body", "problem solution"],
+    "visuals": ["before-after", "checklist", "review proof", "clear CTA", "pain-point hook"]
+  }
+}

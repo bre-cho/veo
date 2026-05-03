@@ -18,6 +18,9 @@ export default function HomePage() {
           <Link href="/studio" className="rounded-xl bg-white/10 px-6 py-4 font-bold">
             Mở Studio
           </Link>
+          <Link href="/v5-demo" className="rounded-xl bg-[#FACC15] px-6 py-4 font-bold text-black">
+            Mở V5 Demo
+          </Link>
         </div>
       </section>
     </main>

@@ -1,0 +1,24 @@
+# 02 — ENV Config
+
+Local:
+
+```env
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+OPENAI_API_KEY=
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+```
+
+Production:
+
+```env
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
+```
+
+Không commit .env.local.
