@@ -221,7 +221,8 @@ export function AgentStreamingConsole() {
 
   return (
     <main className="min-h-screen bg-[#0A0F2C] text-white p-6">
-      <h1 className="text-3xl font-black">🧠 AI Ads Factory Orchestrator</h1>
+      <h1 className="text-3xl font-black">Poster Design Đa Ngành Nghề</h1>
+      <p className="mt-2 text-gray-300">Mẫu không chỉ đẹp mà còn có logic kéo tăng nhấp, thu khách hàng tiềm năng và bán hàng.</p>
 
       <section className="mt-6 rounded-2xl bg-[#111827] p-5 space-y-3">
         <h2 className="text-xl font-bold">Xác thực</h2>

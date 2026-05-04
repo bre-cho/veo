@@ -1,0 +1,18 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg3" x1="120" y1="0" x2="960" y2="1920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A102F"/>
+      <stop offset="0.5" stop-color="#1D2E77"/>
+      <stop offset="1" stop-color="#0C3954"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg3)"/>
+  <circle cx="280" cy="360" r="230" fill="#22D3EE" fill-opacity="0.22"/>
+  <circle cx="860" cy="560" r="260" fill="#6366F1" fill-opacity="0.28"/>
+  <rect x="80" y="180" width="920" height="1560" rx="36" fill="white" fill-opacity="0.05" stroke="white" stroke-opacity="0.24"/>
+  <text x="540" y="490" text-anchor="middle" fill="#22D3EE" font-size="64" font-family="Arial, sans-serif" font-weight="800">LAUNCH DAY</text>
+  <text x="540" y="690" text-anchor="middle" fill="white" font-size="190" font-family="Arial, sans-serif" font-weight="900">03</text>
+  <text x="540" y="790" text-anchor="middle" fill="white" font-size="72" font-family="Arial, sans-serif" font-weight="700">DAYS LEFT</text>
+  <rect x="190" y="1320" width="700" height="140" rx="24" fill="#22D3EE"/>
+  <text x="540" y="1405" text-anchor="middle" fill="#071028" font-size="48" font-family="Arial, sans-serif" font-weight="900">ĐẶT CHỖ NGAY</text>
+</svg>

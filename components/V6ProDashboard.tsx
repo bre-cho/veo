@@ -321,12 +321,12 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
     <main className="min-h-screen bg-[#07111F] text-white">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
         <div className="overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,0.22),_transparent_28%),linear-gradient(135deg,#0f172a,#111827_55%,#172554)] p-8 shadow-[0_30px_100px_rgba(0,0,0,0.35)]">
-          <p className="text-sm font-black uppercase tracking-[0.24em] text-[#FACC15]">V6 Pro Dashboard</p>
+          <p className="text-sm font-black uppercase tracking-[0.24em] text-[#FACC15]">Bảng điều khiển chiến dịch</p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <h1 className="text-4xl font-black tracking-tight sm:text-5xl">Tự động phát hiện ngành, chấm điểm 3 biến thể, lưu winner DNA.</h1>
               <p className="mt-4 text-base text-slate-300 sm:text-lg">
-                Patch pack đã được tích hợp vào App Router hiện tại. Giao diện này gọi trực tiếp các route V6 Pro trong Next.js và tự động fallback về memory nếu chưa cấu hình Supabase service role.
+                Patch pack đã được tích hợp vào App Router hiện tại. Giao diện này gọi trực tiếp các route tạo chiến dịch trong Next.js và tự động fallback về memory nếu chưa cấu hình Supabase service role.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -447,7 +447,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
         {enableDeployDraft && draftPayload ? (
           <section className="rounded-[28px] border border-[#FACC15]/20 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-black">V7 Draft Payload</h2>
+              <h2 className="text-2xl font-black">Payload bản nháp phân phối</h2>
               <span className="rounded-full border border-[#FACC15]/30 bg-[#FACC15]/10 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FACC15]">
                 {draftPayload.mode}
               </span>
@@ -532,7 +532,7 @@ export function V6ProDashboard({ enableDeployDraft = true }: { enableDeployDraft
         <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-6 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 className="text-2xl font-black">Nhật ký V7 Audit</h2>
+              <h2 className="text-2xl font-black">Nhật ký kiểm toán phân phối</h2>
               <p className="mt-2 text-sm text-slate-400">Lọc theo campaign_id, action, status và platform để theo dõi draft, publish và token bị từ chối.</p>
             </div>
             <button

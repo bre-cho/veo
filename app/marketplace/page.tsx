@@ -25,11 +25,11 @@ export default function MarketplacePage() {
 
   async function checkout(pack: (typeof packs)[number]) {
     if (!token) {
-      setMessage("Bạn cần đăng nhập ở trang Factory trước khi checkout.");
+      setMessage("Bạn cần đăng nhập ở trang Xưởng trước khi thanh toán.");
       return;
     }
 
-    setMessage("Đang tạo Stripe checkout...");
+    setMessage("Đang tạo phiên thanh toán Stripe...");
     const res = await fetch("/api/stripe/checkout", {
       method: "POST",
       headers: {
@@ -41,7 +41,7 @@ export default function MarketplacePage() {
 
     const payload = await res.json();
     if (!res.ok || !payload.url) {
-      setMessage(payload.error || "Không thể tạo checkout session.");
+      setMessage(payload.error || "Không thể tạo phiên thanh toán.");
       return;
     }
 
@@ -50,8 +50,8 @@ export default function MarketplacePage() {
 
   return (
     <main className="min-h-screen bg-[#0A0F2C] text-white p-6">
-      <h1 className="text-4xl font-black">Revenue Preset Marketplace</h1>
-      <p className="mt-3 text-gray-300">Template không chỉ đẹp — mà có logic kéo click, lead và sale.</p>
+      <h1 className="text-4xl font-black">Thư viện mẫu poster đa ngành nghề</h1>
+      <p className="mt-3 text-gray-300">Mẫu không chỉ đẹp mà còn có logic kéo tăng nhấp, thu khách hàng tiềm năng và bán hàng.</p>
       {message && <p className="mt-3 text-sm text-yellow-300">{message}</p>}
       {!supabase && (
         <p className="mt-3 text-sm text-red-300">
@@ -71,7 +71,7 @@ export default function MarketplacePage() {
                 onClick={() => checkout(p)}
                 className="rounded-lg bg-[#2563EB] px-4 py-2 font-bold"
               >
-                Mua pack
+                Mua gói
               </button>
             </div>
           </div>

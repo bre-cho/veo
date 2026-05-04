@@ -35,7 +35,7 @@ export function RealAdsSystemDemo() {
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-6">
       <div className="rounded-2xl border p-6 shadow-sm bg-white">
-        <h1 className="text-3xl font-bold">VISUAL ENGINE V5 — REAL ADS SYSTEM</h1>
+        <h1 className="text-3xl font-bold">VISUAL ENGINE — REAL ADS SYSTEM</h1>
         <p className="mt-2 text-gray-600">Nhập sản phẩm → sinh 3 ads → chấm điểm → chọn winner.</p>
         <div className="mt-4 flex gap-3">
           <input className="flex-1 rounded-xl border px-4 py-3" value={product} onChange={(e) => setProduct(e.target.value)} />

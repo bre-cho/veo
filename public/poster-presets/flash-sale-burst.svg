@@ -1,0 +1,18 @@
+<svg width="1200" height="1500" viewBox="0 0 1200 1500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg1" x1="0" y1="0" x2="1200" y2="1500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A0D13"/>
+      <stop offset="0.45" stop-color="#7A1E2E"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="1500" fill="url(#bg1)"/>
+  <circle cx="980" cy="220" r="220" fill="#FACC15" fill-opacity="0.26"/>
+  <rect x="90" y="120" width="1020" height="1260" rx="34" fill="white" fill-opacity="0.06" stroke="white" stroke-opacity="0.2"/>
+  <text x="150" y="260" fill="#FACC15" font-size="64" font-family="Arial, sans-serif" font-weight="800">FLASH SALE</text>
+  <text x="150" y="360" fill="white" font-size="108" font-family="Arial, sans-serif" font-weight="900">-50%</text>
+  <text x="150" y="450" fill="white" fill-opacity="0.9" font-size="42" font-family="Arial, sans-serif">Chỉ trong 48 giờ</text>
+  <rect x="150" y="980" width="900" height="180" rx="28" fill="#FACC15"/>
+  <text x="600" y="1085" text-anchor="middle" fill="#111827" font-size="56" font-family="Arial, sans-serif" font-weight="900">MUA NGAY</text>
+  <text x="600" y="1150" text-anchor="middle" fill="#111827" font-size="30" font-family="Arial, sans-serif" font-weight="700">NHẬN QUÀ KÈM HÔM NAY</text>
+</svg>

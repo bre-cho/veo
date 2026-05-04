@@ -1,0 +1,15 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1200" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#22365F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="1200" fill="url(#bg2)"/>
+  <rect x="110" y="110" width="980" height="980" rx="32" fill="#F3F4F6"/>
+  <rect x="250" y="250" width="700" height="320" rx="22" fill="#DBEAFE"/>
+  <text x="600" y="680" text-anchor="middle" fill="#1E3A8A" font-size="56" font-family="Arial, sans-serif" font-weight="800">PREMIUM EDITION</text>
+  <text x="600" y="760" text-anchor="middle" fill="#1F2937" font-size="36" font-family="Arial, sans-serif">Tối giản, tinh gọn, sang trọng</text>
+  <rect x="370" y="840" width="460" height="110" rx="16" fill="#2563EB"/>
+  <text x="600" y="908" text-anchor="middle" fill="white" font-size="40" font-family="Arial, sans-serif" font-weight="700">KHÁM PHÁ</text>
+</svg>
