@@ -40,6 +40,13 @@
   "exclude": [
     "node_modules",
     "ai-ads-factory-saas/**",
-    "ai-poster-studio-pro/**"
+    "ai-poster-studio-pro/**",
+    "auto-poster-system-v4/**",
+    "BEAUTY_ENGINE_V4_PRESET_LIBRARY_PATCH/**",
+    "marketplace_v3_preview_ai_recommend/**",
+    "POSTER_QA_AUTOFIX_CTR_VIDEO_PATCH_PACK/**",
+    "QA_WINNER_DNA_RECALL_GATE_PATCH/**",
+    "SCALE_INTELLIGENCE_ENGINE_PACK/**",
+    "SELF_LEARNING_AI_ADS_ENGINE_PACK/**"
   ]
 }

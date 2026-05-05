@@ -1,5 +1,6 @@
 import { SaasShell } from "@/components/shared/SaasShell";
 import { MetricCard } from "@/components/shared/MetricCard";
+import { PatchApiControlPanel } from "@/components/dashboard/PatchApiControlPanel";
 
 const rows = [
   { name: "Giftset doanh nghiệp", industry: "Gift", winner: "Conversion", score: 96, status: "Ready" },
@@ -44,6 +45,8 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+
+        <PatchApiControlPanel />
       </section>
     </SaasShell>
   );
